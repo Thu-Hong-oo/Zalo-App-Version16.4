@@ -61,22 +61,43 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   const { title, otherParticipantPhone, avatar } = route.params;
 
   useEffect(() => {
-    // Hide bottom tab when entering this screen
-    navigation.getParent()?.setOptions({
-      tabBarStyle: { display: 'none' }
-    });
-
     initializeSocket();
     loadChatHistory();
-    
-    // Show bottom tab when leaving this screen
     return () => {
-      navigation.getParent()?.setOptions({
-        tabBarStyle: { display: 'flex' }
-      });
       if (socket) socket.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    navigation.setOptions({
+      tabBarVisible: false,
+    });
+  }, [navigation]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      navigation.getParent()?.setOptions({
+        tabBarStyle: { display: 'none' },
+        tabBarVisible: false
+      });
+    });
+
+    const unsubscribeBlur = navigation.addListener('blur', () => {
+      navigation.getParent()?.setOptions({
+        tabBarStyle: undefined,
+        tabBarVisible: true
+      });
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeBlur();
+      navigation.getParent()?.setOptions({
+        tabBarStyle: undefined,
+        tabBarVisible: true
+      });
+    };
+  }, [navigation]);
 
   const initializeSocket = async () => {
     try {
@@ -653,9 +674,10 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         <Text style={styles.headerTitle}>{title}</Text>
       </View>
       <KeyboardAvoidingView
-        style={styles.keyboardAvoidingView}
+        style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+   
       >
         <View style={styles.chatContainer}>
           <FlatList
@@ -664,7 +686,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
             renderItem={renderMessage}
             keyExtractor={(item) => item.messageId}
             onContentSizeChange={scrollToBottom}
-            contentContainerStyle={styles.flatListContent}
+            contentContainerStyle={{ flexGrow: 1 }}
           />
           {isTyping && <Text style={styles.typingText}>Đang soạn tin nhắn...</Text>}
         </View>
@@ -835,15 +857,9 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginLeft: 10,
   },
-  keyboardAvoidingView: {
-    flex: 1,
-  },
   chatContainer: {
     flex: 1,
-    padding: 10,
-  },
-  flatListContent: {
-    flexGrow: 1,
+    paddingHorizontal: 10,
   },
   messageContainer: {
     maxWidth: "80%",
@@ -894,6 +910,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 10,
     backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#E5E5E5",
   },
   input: {
     flex: 1,

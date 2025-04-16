@@ -52,6 +52,7 @@ function MainApp({ setIsAuthenticated }) {
   const [error, setError] = useState(null)
   const [userCache, setUserCache] = useState({})
   const [selectedChat, setSelectedChat] = useState(null)
+  const [lastUpdate, setLastUpdate] = useState(Date.now())
   const navigate = useNavigate()
 
   const fetchUserInfo = async (phone) => {
@@ -174,7 +175,8 @@ function MainApp({ setIsAuthenticated }) {
             time: formatTime(data.timestamp || new Date().getTime()),
             unreadCount: !data.isFromMe ? (chatToUpdate.unreadCount || 0) + 1 : chatToUpdate.unreadCount,
             isFromMe: data.isFromMe || false,
-            lastMessageId: data.messageId // Store message ID if available
+            lastMessageId: data.messageId, // Store message ID if available
+            lastUpdate: new Date().getTime() // Add timestamp to force re-render
           };
 
           // Log the update for debugging
@@ -313,6 +315,35 @@ function MainApp({ setIsAuthenticated }) {
     }
   ]
 
+  // Add this useEffect to force re-render when chats change
+  useEffect(() => {
+    const checkForUpdates = async () => {
+      const response = await api.get('/chat/conversations');
+      if (response.data.status === 'success' && response.data.data?.conversations) {
+        const serverChats = response.data.data.conversations;
+        
+        // Compare with current chats
+        const hasNewMessages = serverChats.some((serverChat) => {
+          const currentChat = chats.find(chat => chat.id === serverChat.conversationId);
+          return !currentChat || 
+                 currentChat.message !== (serverChat.lastMessage?.content || "") ||
+                 currentChat.time !== formatTime(serverChat.lastMessage?.timestamp);
+        });
+
+        if (hasNewMessages) {
+          console.log("New messages detected, updating chat list...");
+          fetchConversations();
+          setLastUpdate(Date.now());
+        }
+      }
+    };
+
+    // Check for updates every 5 seconds
+    const intervalId = setInterval(checkForUpdates, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [chats]);
+
   return (
     <div className="d-flex vh-100" style={{ backgroundColor: "#f0f5ff" }}>
       {/* Sidebar */}
@@ -443,7 +474,14 @@ function MainApp({ setIsAuthenticated }) {
               >
                 <div className="chat-avatar">
                   {chat.avatar ? (
-                    <img src={chat.avatar} alt={chat.title} />
+                    <img 
+                      src={chat.avatar} 
+                      alt={chat.title} 
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(chat.title)}&background=random`;
+                      }}
+                    />
                   ) : (
                     <div className="avatar-placeholder">
                       {chat.title.slice(0, 2).toUpperCase()}
@@ -457,10 +495,9 @@ function MainApp({ setIsAuthenticated }) {
                   <div className="chat-header">
                     <h3 className="chat-title">{chat.title}</h3>
                     <span className="chat-time">{chat.time}</span>
-               
                   </div>
-                     <p className={`chat-message ${chat.unreadCount > 0 ? 'unread' : ''}`}>
-                    {chat.message}
+                  <p className={`chat-message ${chat.unreadCount > 0 ? 'unread' : ''}`}>
+                    {chat.isFromMe ? 'Bạn: ' : ''}{chat.message}
                   </p>
                 </div>
               </div>
