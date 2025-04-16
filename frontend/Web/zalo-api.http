@@ -1,0 +1,68 @@
+### Login to get token first
+# @name login
+POST http://localhost:3000/api/auth/login
+Content-Type: application/json
+
+{
+    "phone": "0374374329",
+    "password": "123456"
+}
+
+### Save the token from login response
+@authToken = {{login.response.body.data.accessToken}}
+
+### Get conversations
+GET http://localhost:3000/api/chat/conversations
+Authorization: Bearer {{authToken}}
+
+### Get chat history with a specific user
+GET http://localhost:3000/api/chat/history/0987654321
+Authorization: Bearer {{authToken}}
+
+### Get chat history with pagination
+GET http://localhost:3000/api/chat/history/0987654321?limit=20
+Authorization: Bearer {{authToken}}
+
+### Get chat history with last evaluated key
+GET http://localhost:3000/api/chat/history/0987654321?lastEvaluatedKey={"messageId":"some-id","timestamp":123456789}
+Authorization: Bearer {{authToken}}
+
+### Get conversations with pagination
+GET http://localhost:3000/api/chat/conversations?limit=20
+Authorization: Bearer {{authToken}}
+
+### Get conversations with last evaluated key
+GET http://localhost:3000/api/chat/conversations?lastEvaluatedKey={"conversationId":"some-id"}
+Authorization: Bearer {{authToken}}
+
+### WebSocket Connection Test (Note: This needs to be tested using a WebSocket client)
+# Connect to WebSocket with token
+# ws://localhost:3000
+# Headers:
+# Authorization: Bearer {{authToken}}
+
+# Example WebSocket events to test:
+# 1. send-message:
+# {
+#   "receiverPhone": "0987654321",
+#   "content": "Hello!"
+# }
+#
+# 2. typing:
+# {
+#   "receiverPhone": "0987654321"
+# }
+#
+# 3. stop-typing:
+# {
+#   "receiverPhone": "0987654321"
+# }
+#
+# Expected WebSocket events to listen for:
+# - new-message
+# - message-sent
+# - user-online
+# - user-offline
+# - typing
+# - stop-typing
+# - error 
