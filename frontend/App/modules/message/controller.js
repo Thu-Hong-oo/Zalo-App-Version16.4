@@ -1,6 +1,17 @@
 import api from '../../config/api';
 import { API_URL } from '../../config/api';
 
+// // Hàm khởi tạo API
+// export const initApi = async () => {
+//   try {
+//     const url = await getApiUrlAsync();
+//     api.defaults.baseURL = url;
+//     console.log('✅ API initialized with URL:', url);
+//   } catch (error) {
+//     console.log('Failed to initialize API:', error);
+//     throw error;
+//   }
+// };
 const messageService = {
   // Gửi tin nhắn văn bản
   sendMessage: async (from, to, content) => {

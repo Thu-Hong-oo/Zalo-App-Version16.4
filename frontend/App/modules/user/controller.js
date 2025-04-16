@@ -14,7 +14,7 @@ export const initUserApi = async () => {
       timeout: api.defaults.timeout
     });
   } catch (error) {
-    console.log('Failed to initialize User API:', error);
+    console.error('Failed to initialize User API:', error);
     throw error;
   }
 };
@@ -32,15 +32,14 @@ export const getUserProfile = async () => {
     console.log('API base URL:', api.defaults.baseURL);
     
     const response = await api.get('/users/profile');
-
     // Log response để debug
     console.log('User profile response:', response.data);
     
     if (!response.data) {
       throw new Error('Không nhận được dữ liệu từ server');
     }
-
     return response.data;
+
   } catch (error) {
     console.error('Get user profile error:', error);
     if (error.response) {
@@ -84,7 +83,6 @@ export const updateStatus = async (status) => {
     if (!token) {
       throw new Error('Không tìm thấy token xác thực');
     }
-
     const response = await api.put('/users/status', { status });
     return response.data;
   } catch (error) {
@@ -184,14 +182,14 @@ export const updateAvatar = async (file) => {
     });
 
     // Sử dụng fetch thay vì axios để upload file trên thiết bị di động
-    const apiUrl = await getApiUrlAsync();
-    console.log('Uploading to URL:', `${apiUrl}/users/avatar`);
+    // const apiUrl = await getApiUrlAsync();
+    //console.log('Uploading to URL:', `${apiUrl}/users/avatar`);
     
     // Thêm timeout dài hơn cho upload file
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 giây timeout
     
-    const response = await fetch(`${apiUrl}/users/avatar`, {
+    const response = await fetch(getApiUrl()+"/users/avatar", {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -240,8 +238,8 @@ export const updateAvatar = async (file) => {
       
       // Thử lại với axios nếu fetch thất bại
       try {
-        console.log('Retrying with axios...');
-        const apiUrl = await getApiUrlAsync();
+        // console.log('Retrying with axios...');
+        // const apiUrl = await getApiUrlAsync();
         
         const response = await api.post('/users/avatar', formData, {
           headers: {

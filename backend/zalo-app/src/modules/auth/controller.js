@@ -1,8 +1,8 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const Joi = require('joi');
+const Joi = require('joi');//Xác thực dữ liệu đầu vào
 const User = require('../user/model');
-const twilioService = require('../../core/services/twilioService');
+const twilioService = require('../../services/twilioService');
 require('dotenv').config();
 
 // Helper function to format phone number
@@ -140,7 +140,7 @@ const sendRegisterOTP = async (req, res) => {
         // Check if phone number already exists
         const existingUser = await User.getByPhone(formattedPhone);
         if (existingUser) {
-            return res.status(400).json({ message: 'Số điện thoại đã được đăng ký' });
+            return res.status(409).json({ message: 'Số điện thoại đã được đăng ký' });
         }
 
         // Send OTP using twilioService
@@ -191,7 +191,7 @@ const completeRegistration = async (req, res) => {
         // Check if phone number already exists
         const existingUser = await User.getByPhone(formattedPhone);
         if (existingUser) {
-            return res.status(400).json({ message: 'Số điện thoại đã được đăng ký' });
+            return res.status(409).json({ message: 'Số điện thoại đã được đăng ký' });
         }
 
         // Hash password
@@ -522,7 +522,7 @@ const requireOnlineStatus = async (req, res, next) => {
     }
 };
 
-// Change password - không yêu cầu trạng thái online
+// Change password - không yêu cầu trạng thái online//vì có thể thay đổi lúc đăng nhập
 const changePassword = async (req, res) => {
     try {
         const { error } = changePasswordSchema.validate(req.body);

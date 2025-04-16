@@ -9,6 +9,7 @@ import {
   SafeAreaView,
   StatusBar,
   Modal,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -21,7 +22,7 @@ import {
 } from "../services/storage";
 
 const LoginScreen = ({ navigation }) => {
-  const { setIsLoggedIn } = useContext(AuthContext);
+  const { setIsLoggedIn, setToken, setRefreshToken, setUser } = useContext(AuthContext);
   // const [phoneNumber, setPhoneNumber] = useState("0123456789");
   // const [password, setPassword] = useState("nguyenngoc");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -57,59 +58,34 @@ const LoginScreen = ({ navigation }) => {
   };
 
   const handleLogin = async () => {
-    if (!phoneNumber) {
-      showNotification("Lỗi", "Vui lòng nhập số điện thoại");
-      return;
-    }
-
-    // Validate phone number format (Vietnamese phone number)
-    const phoneRegex = /^0[0-9]{9}$/;
-    if (!phoneRegex.test(phoneNumber)) {
-      showNotification(
-        "Lỗi",
-        "Số điện thoại không hợp lệ. Vui lòng nhập số điện thoại 10 chữ số bắt đầu bằng số 0"
-      );
-      return;
-    }
-
-    if (!password) {
-      showNotification("Lỗi", "Vui lòng nhập mật khẩu");
+    if (!phoneNumber || !password) {
+      Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ thông tin');
       return;
     }
 
     try {
       setLoading(true);
       const response = await login(phoneNumber, password);
-
-      if (response) {
-        console.log("Login response:", response);
-
+      
+      if (response.accessToken && response.refreshToken) {
         // Lưu tokens
-        if (response.accessToken) {
-          await saveAccessToken(response.accessToken);
-          console.log("Access token saved");
-        } else {
-          throw new Error("Không nhận được access token");
-        }
-
-        if (response.refreshToken) {
-          await saveRefreshToken(response.refreshToken);
-          console.log("Refresh token saved");
-        }
-
-        // Lưu thông tin user
-        if (response.user) {
-          await saveUserInfo(response.user);
-          console.log("User info saved:", response.user);
-        }
-
+        AsyncStorage.setItem('accessToken', response.accessToken);
+        AsyncStorage.setItem('refreshToken', response.refreshToken);
+        
+        // Cập nhật context
+        setToken(response.accessToken);
+        setRefreshToken(response.refreshToken);
+        setUser(response.user);
         setIsLoggedIn(true);
+
+      } else {
+        throw new Error('Không nhận được token từ server');
       }
     } catch (error) {
-      console.error("Login error:", error);
-      showNotification(
-        "Lỗi",
-        error.response?.data?.message || error.message || "Đăng nhập thất bại"
+      console.error('Login error:', error);
+      Alert.alert(
+        'Lỗi đăng nhập',
+        error.message || 'Đã xảy ra lỗi khi đăng nhập. Vui lòng thử lại sau.'
       );
     } finally {
       setLoading(false);

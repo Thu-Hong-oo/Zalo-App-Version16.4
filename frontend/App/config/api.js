@@ -1,41 +1,43 @@
-import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
 import { Platform } from "react-native";
-import Constants from "expo-constants";
-// cấu hình và quản lý các HTTP requests
 
-// Cấu hình API
-const COMPUTER_IP = "192.168.148.43";
-const API_URL = `http://${COMPUTER_IP}:3000/api`;
+// Default configuration
+const COMPUTER_IP = "172.20.77.189"; // Your computer's IP address
+const API_PORT = "3000";
 
-// Hàm lấy API URL với logging
-export const getApiUrlAsync = async () => {
-  try {
-    console.log("Getting API URL...");
-    console.log("Platform:", Platform.OS);
-    console.log("App ownership:", Constants.appOwnership);
-    console.log("Using IP:", COMPUTER_IP);
-    console.log("Final API URL:", API_URL);
-    return API_URL;
-  } catch (error) {
-    console.log("❌ Error getting IP:", error);
-    return API_URL;
+// Get the appropriate base URL based on environment
+const getDefaultBaseUrl = () => {
+  // Use computer IP for both dev and prod on mobile
+  if (Platform.OS !== 'web') {
+    return `http://${COMPUTER_IP}:${API_PORT}`;
   }
+  // Use localhost only for web
+  return `http://localhost:${API_PORT}`;
 };
 
-// Tạo instance Axios
+const BASE_URL = getDefaultBaseUrl();
+const API_URL = `${BASE_URL}/api`;
+
+// Get base URL for socket
+export const getBaseUrl = () => BASE_URL;
+
+// Get API URL
+export const getApiUrl = () => API_URL;
+
+// Get API URL (async version for backward compatibility)
+export const getApiUrlAsync = async () => Promise.resolve(API_URL);
+
+// Create Axios instance
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 60000, // Tăng timeout lên 60 giây
+  timeout: 10000,
   headers: {
     "Content-Type": "application/json",
-    Accept: "application/json",
   },
-  maxContentLength: Infinity,
-  maxBodyLength: Infinity,
 });
 
-// Request interceptor
+// Add request interceptor
 api.interceptors.request.use(
   async (config) => {
     try {
@@ -43,73 +45,73 @@ api.interceptors.request.use(
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
-
-      // Không thay đổi Content-Type nếu đang upload file
-      if (config.data instanceof FormData) {
-        delete config.headers["Content-Type"];
-      }
-
-      // Log request details
-      console.log("Request config:", {
+      console.log('Request config:', {
         url: config.url,
         method: config.method,
-        headers: config.headers,
-        data: config.data,
+        baseURL: config.baseURL,
       });
-
       return config;
     } catch (error) {
-      console.error("Request interceptor error:", error);
-      return Promise.reject(error);
+      console.error('Error in request interceptor:', error);
+      return config;
     }
   },
   (error) => {
-    console.error("Request error:", error);
+    console.error('Request error:', error);
     return Promise.reject(error);
   }
 );
 
-// Response interceptor//Xử lý sau khi nhận response
+// Add response interceptor
 api.interceptors.response.use(
-  (response) => {
-    // Log successful response
-    console.log("Response:", {
-      status: response.status,
-      data: response.data,
-      headers: response.headers,
-    });
-    return response;
-  },
+  (response) => response,
   (error) => {
-    console.error("Response error:", {
-      message: error.message,
-      code: error.code,
-      response: error.response?.data,
-      status: error.response?.status,
-    });
-
-    if (error.code === "ECONNABORTED") {
-      throw new Error("Kết nối quá thời gian. Vui lòng thử lại.");
+    // Network or timeout error
+    if (error.code === 'ECONNABORTED') {
+      throw new Error('Kết nối quá thời gian. Vui lòng thử lại.');
     }
-
+    
     if (!error.response) {
-      // Network error
-      throw new Error(
-        "Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng."
-      );
+      console.error('Network error details:', {
+        message: error.message,
+        code: error.code,
+        config: {
+          url: error.config?.url,
+          method: error.config?.method,
+          baseURL: error.config?.baseURL,
+        }
+      });
+      throw new Error('Không thể kết nối đến máy chủ. Vui lòng kiểm tra:\n1. Điện thoại và máy tính có cùng mạng WiFi\n2. Địa chỉ IP máy tính đã đúng chưa\n3. Server đã chạy chưa');
     }
 
-    if (error.response.status === 401) {
-      // Handle unauthorized
-      throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+    // Server error with response
+    if (error.response?.status === 401) {
+      // Handle unauthorized error
+      AsyncStorage.removeItem("accessToken");
     }
-
-    if (error.response.status === 400) {
-      throw new Error(error.response.data.message || "Yêu cầu không hợp lệ");
-    }
-
-    throw error.response.data || error;
+    
+    throw error;
   }
 );
+
+// Function to update baseURL
+export const updateBaseURL = (newBaseURL) => {
+  api.defaults.baseURL = `${newBaseURL}/api`;
+  console.log('Updated API baseURL:', api.defaults.baseURL);
+};
+
+// Check server connection
+export const checkServerConnection = async () => {
+  try {
+    const response = await axios.get(`${BASE_URL}/health`, { 
+      timeout: 5000,
+      headers: { 'Cache-Control': 'no-cache' }
+    });
+    return response.status === 200;
+  } catch (error) {
+    console.error('Server connection check failed:', error);
+    return false;
+  }
+};
 
 export default api;

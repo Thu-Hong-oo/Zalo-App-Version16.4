@@ -6,7 +6,7 @@ const morgan = require("morgan");
 const winston = require("winston");
 const multer = require("multer");
 const path = require("path");
-const { errorHandler } = require("./middleware/error");
+// const { errorHandler } = require("./middleware/error");
 const { createServer } = require("http");
 const { Server } = require("socket.io");
 const PORT = process.env.PORT || 3030;
@@ -14,7 +14,7 @@ const PORT = process.env.PORT || 3030;
 // Import routes
 const authRoutes = require("./modules/auth/routes");
 const userRoutes = require("./modules/user/routes");
-const gatewayRoutes = require("./modules/gateway/routes");
+// const gatewayRoutes = require("./modules/gateway/routes");
 
 const {
   routes: chatRoutes,
@@ -37,23 +37,23 @@ const io = new Server(httpServer, {
   pingInterval: 25000, // Tăng khoảng thời gian ping
 });
 
-// Configure logger
-const logger = winston.createLogger({
-  level: "info",
-  format: winston.format.json(),
-  transports: [
-    new winston.transports.File({ filename: "error.log", level: "error" }),
-    new winston.transports.File({ filename: "combined.log" }),
-  ],
-});
+// // Configure logger
+// const logger = winston.createLogger({
+//   level: "info",
+//   format: winston.format.json(),
+//   transports: [
+//     new winston.transports.File({ filename: "error.log", level: "error" }),
+//     new winston.transports.File({ filename: "combined.log" }),
+//   ],
+// });
 
-if (process.env.NODE_ENV !== "production") {
-  logger.add(
-    new winston.transports.Console({
-      format: winston.format.simple(),
-    })
-  );
-}
+// if (process.env.NODE_ENV !== "production") {
+//   logger.add(
+//     new winston.transports.Console({
+//       format: winston.format.simple(),
+//     })
+//   );
+// }
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -80,7 +80,7 @@ const upload = multer({
 // Middleware
 app.use(
   cors({
-    origin: "*", // Cho phép tất cả các origin
+    origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:8081"], // Cho phép cả ba origin
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: [
       "Content-Type",
@@ -110,18 +110,18 @@ app.use((req, res, next) => {
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
-app.use("/api", gatewayRoutes);
+// app.use("/api", gatewayRoutes);
 app.use("/api/chat", chatRoutes);
 
 // Error handling middleware
-app.use(errorHandler);
+// app.use(errorHandler);
 
 // Initialize socket
 initializeSocket(io);
 
 // Start server
 httpServer.listen(PORT, "0.0.0.0", () => {
-  logger.info(`Server đang chạy trên port ${PORT}`);
+  // logger.info(`Server đang chạy trên port ${PORT}`);
   console.log(`Server có thể truy cập từ: http://localhost:${PORT}`);
   console.log(`Hoặc từ IP của máy: http://<your-ip>:${PORT}`);
 });

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { auth } = require('../../core/middleware/auth');
+const  auth  = require('../../middleware/auth');
 const userController = require('./controller');
 
 // Debug logs for each middleware

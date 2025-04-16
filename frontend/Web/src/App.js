@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from "react"
+import { useState, useEffect, createContext, useContext, useCallback } from "react"
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom"
 import {
   Search,
@@ -23,12 +23,26 @@ import "./App.css"
 import { io } from "socket.io-client"
 import Login from "./components/Login"
 import ChatDirectly from "./components/ChatDirectly"
-import api from "./config/api"
+import api, { getBaseUrl ,getApiUrl} from "./config/api"
 
 // Create socket context
 export const SocketContext = createContext(null)
 
+// Add debounce function
+const debounce = (func, wait) => {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+};
+
 function MainApp({ setIsAuthenticated }) {
+  const { socket, socketConnected } = useContext(SocketContext)
   const [activeTab, setActiveTab] = useState("Ưu tiên")
   const [currentSlide, setCurrentSlide] = useState(0)
   const [user, setUser] = useState(null)
@@ -39,7 +53,6 @@ function MainApp({ setIsAuthenticated }) {
   const [userCache, setUserCache] = useState({})
   const [selectedChat, setSelectedChat] = useState(null)
   const navigate = useNavigate()
-  const socket = useContext(SocketContext)
 
   const fetchUserInfo = async (phone) => {
     try {
@@ -63,38 +76,52 @@ function MainApp({ setIsAuthenticated }) {
 
   const fetchConversations = async () => {
     try {
+      console.log("Fetching conversations...");
       const response = await api.get('/chat/conversations');
+      console.log("Conversations response:", response.data);
       
       if (response.data.status === 'success' && response.data.data?.conversations) {
         const newChats = await Promise.all(
           response.data.data.conversations.map(async (conv) => {
-            const otherParticipant = conv.participant.isCurrentUser
-              ? conv.otherParticipant
-              : conv.participant;
-  
-            const userInfo = await fetchUserInfo(otherParticipant.phone);
-  
-            return {
-              id: conv.conversationId,
-              title: userInfo?.name || otherParticipant.phone,
-              message: conv.lastMessage.content,
-              time: formatTime(conv.lastMessage.timestamp),
-              avatar: userInfo?.avatar,
-              isFromMe: conv.lastMessage.isFromMe,
-              unreadCount: conv.unreadCount || 0,
-              otherParticipantPhone: otherParticipant.phone,
-              senderName: conv.lastMessage.isFromMe ? 'Bạn' : (userInfo?.name || otherParticipant.phone)
-            };
+            try {
+              const otherParticipant = conv.participant.isCurrentUser
+                ? conv.otherParticipant
+                : conv.participant;
+    
+              const userInfo = await fetchUserInfo(otherParticipant.phone);
+              console.log("User info for", otherParticipant.phone, ":", userInfo);
+    
+              return {
+                id: conv.conversationId,
+                title: userInfo?.name || otherParticipant.phone,
+                message: conv.lastMessage?.content || "",
+                time: conv.lastMessage?.timestamp ? formatTime(conv.lastMessage.timestamp) : "",
+                avatar: userInfo?.avatar,
+                isFromMe: conv.lastMessage?.isFromMe || false,
+                unreadCount: conv.unreadCount || 0,
+                otherParticipantPhone: otherParticipant.phone,
+                senderName: conv.lastMessage?.isFromMe ? 'Bạn' : (userInfo?.name || otherParticipant.phone)
+              };
+            } catch (error) {
+              console.error("Error processing conversation:", error);
+              return null;
+            }
           })
         );
   
+        // Filter out any null conversations
+        const validChats = newChats.filter(chat => chat !== null);
+  
         // 🔍 So sánh dữ liệu mới với dữ liệu cũ
-        const isEqual = JSON.stringify(newChats) === JSON.stringify(chats);
+        const isEqual = JSON.stringify(validChats) === JSON.stringify(chats);
         if (!isEqual) {
-          setChats(newChats);
+          setChats(validChats);
         }
   
         setError(null);
+      } else {
+        console.error("Invalid response format:", response.data);
+        setError("Invalid response format from server");
       }
     } catch (err) {
       console.error("Error in fetchConversations:", err);
@@ -103,7 +130,9 @@ function MainApp({ setIsAuthenticated }) {
       setLoading(false);
     }
   };
-  
+
+  // Create debounced version of fetchConversations with shorter delay
+  const debouncedFetchConversations = debounce(fetchConversations, 300);
 
   // Initial fetch and user setup
   useEffect(() => {
@@ -124,46 +153,95 @@ function MainApp({ setIsAuthenticated }) {
     if (!socket) return;
   
     const handleNewMessage = async (data) => {
-      console.log("New message received:", data)
-      await fetchConversations()
-    }
+      console.log("New message received:", data);
+      
+      // Immediately update the chat list for the specific conversation
+      if (data.conversationId) {
+        setChats(prevChats => {
+          // Find the conversation to update
+          const chatToUpdate = prevChats.find(chat => chat.id === data.conversationId);
+          if (!chatToUpdate) {
+            // If conversation not found, fetch all conversations
+            fetchConversations();
+            return prevChats;
+          }
+
+          // Move the updated chat to the top and update its content
+          const otherChats = prevChats.filter(chat => chat.id !== data.conversationId);
+          const updatedChat = {
+            ...chatToUpdate,
+            message: data.content || data.message || "", // Handle both content and message fields
+            time: formatTime(data.timestamp || new Date().getTime()),
+            unreadCount: !data.isFromMe ? (chatToUpdate.unreadCount || 0) + 1 : chatToUpdate.unreadCount,
+            isFromMe: data.isFromMe || false,
+            lastMessageId: data.messageId // Store message ID if available
+          };
+
+          // Log the update for debugging
+          console.log("Updating chat:", {
+            before: chatToUpdate,
+            after: updatedChat,
+            messageData: data
+          });
+
+          // Always move updated chat to top of list
+          return [updatedChat, ...otherChats];
+        });
+      } else {
+        console.warn("Received message without conversationId:", data);
+        // Fetch all conversations if we can't update specifically
+        fetchConversations();
+      }
+    };
   
     const handleMessageRead = async (data) => {
-      console.log("Message read status updated:", data)
-      await fetchConversations()
-    }
+      console.log("Message read status updated:", data);
+      
+      if (data.conversationId) {
+        setChats(prevChats => {
+          const updatedChats = prevChats.map(chat => {
+            if (chat.id === data.conversationId) {
+              return {
+                ...chat,
+                unreadCount: 0,
+                lastReadMessageId: data.messageId // Store last read message ID if available
+              };
+            }
+            return chat;
+          });
+
+          // Keep the same order
+          return updatedChats;
+        });
+      }
+    };
   
     const handleNewConversation = async (data) => {
-      console.log("New conversation created:", data)
-      await fetchConversations()
-    }
+      console.log("New conversation created:", data);
+      // For new conversations, we need to fetch to get complete data
+      await fetchConversations();
+    };
   
     // Socket listeners
-    socket.on("new_message", handleNewMessage)
-    socket.on("message_read", handleMessageRead)
-    socket.on("new_conversation", handleNewConversation)
-  
-    // 🔄 Polling ẩn mỗi 3s để làm mới trong trường hợp socket miss
-    const pollingInterval = setInterval(() => {
-      fetchConversations()
-    }, 3000)
+    socket.on("new_message", handleNewMessage);
+    socket.on("message_read", handleMessageRead);
+    socket.on("new_conversation", handleNewConversation);
   
     // ✅ Dùng Page Visibility API để load lại khi user quay lại tab
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        fetchConversations()
+        fetchConversations();
       }
-    }
-    document.addEventListener("visibilitychange", handleVisibilityChange)
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
   
     return () => {
-      socket.off("new_message", handleNewMessage)
-      socket.off("message_read", handleMessageRead)
-      socket.off("new_conversation", handleNewConversation)
-      clearInterval(pollingInterval)
-      document.removeEventListener("visibilitychange", handleVisibilityChange)
-    }
-  }, [socket])
+      socket.off("new_message", handleNewMessage);
+      socket.off("message_read", handleMessageRead);
+      socket.off("new_conversation", handleNewConversation);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [socket, fetchConversations]); // Add fetchConversations to dependencies
   
 
   const formatTime = (timestamp) => {
@@ -439,37 +517,58 @@ function MainApp({ setIsAuthenticated }) {
 }
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [socket, setSocket] = useState(null)
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [socket, setSocket] = useState(null);
+  const [socketConnected, setSocketConnected] = useState(false);
+
+  // Khởi tạo socket connection
+  const initializeSocket = useCallback(() => {
+    const token = localStorage.getItem("accessToken");
+    if (!token) return null;
+
+    const newSocket = io(getBaseUrl(), {
+      auth: { token },
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      transports: ["websocket"],
+      withCredentials: true,
+    });
+
+    newSocket.on("connect", () => {
+      console.log("Socket connected!");
+      setSocketConnected(true);
+    });
+
+    newSocket.on("connect_error", (error) => {
+      console.error("Socket connection error:", error);
+      setSocketConnected(false);
+    });
+
+    newSocket.on("disconnect", (reason) => {
+      console.log("Socket disconnected:", reason);
+      setSocketConnected(false);
+    });
+
+    return newSocket;
+  }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem("accessToken")
+    const token = localStorage.getItem("accessToken");
     if (token) {
-      setIsAuthenticated(true)
-      const newSocket = io("http://localhost:3000", {
-        auth: {
-          token
-        }
-      })
-
-      newSocket.on("connect", () => {
-        console.log("Socket connected!")
-      })
-
-      newSocket.on("disconnect", () => {
-        console.log("Socket disconnected!")
-      })
-
-      setSocket(newSocket)
-
-      return () => {
-        newSocket.close()
+      setIsAuthenticated(true);
+      const newSocket = initializeSocket();
+      if (newSocket) {
+        setSocket(newSocket);
+        return () => {
+          newSocket.close();
+        };
       }
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, initializeSocket]);
 
   return (
-    <SocketContext.Provider value={socket}>
+    <SocketContext.Provider value={{ socket, socketConnected }}>
       <Routes>
         <Route
           path="/login"
@@ -494,7 +593,7 @@ function App() {
         <Route path="/" element={<Navigate to="/app" replace />} />
       </Routes>
     </SocketContext.Provider>
-  )
+  );
 }
 
 function ChatItem({ avatars, name, message, time, count, hasMore }) {

@@ -1,5 +1,16 @@
 import api from "../../config/api";
 import { getAccessToken } from "../../services/storage";
+// // Hàm khởi tạo API
+// export const initApi = async () => {
+//   try {
+//     const url = await getApiUrlAsync();
+//     api.defaults.baseURL = url;
+//     console.log('✅ API initialized with URL:', url);
+//   } catch (error) {
+//     console.log('Failed to initialize API:', error);
+//     throw error;
+//   }
+// };
 
 export const getConversations = async () => {
   try {
@@ -11,12 +22,17 @@ export const getConversations = async () => {
   }
 };
 
-export const getChatHistory = async (phone) => {
+export const getChatHistory = async (otherParticipantPhone, page = 1, limit = 20) => {
   try {
-    const response = await api.get(`/chat/history/${phone}`);
+    const response = await api.get(`/chat/history/${otherParticipantPhone}`, {
+      params: {
+        page,
+        limit
+      }
+    });
     return response.data;
   } catch (error) {
-    console.error("❌ Error in getChatHistory:", error);
+    console.error('Get chat history error:', error);
     throw error;
   }
 };

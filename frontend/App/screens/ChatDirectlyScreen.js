@@ -33,6 +33,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import ForwardMessageModal from "./ForwardMessageModal";
+import { getApiUrl, getBaseUrl,api } from "../config/api";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -60,9 +61,19 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   const { title, otherParticipantPhone, avatar } = route.params;
 
   useEffect(() => {
+    // Hide bottom tab when entering this screen
+    navigation.getParent()?.setOptions({
+      tabBarStyle: { display: 'none' }
+    });
+
     initializeSocket();
     loadChatHistory();
+    
+    // Show bottom tab when leaving this screen
     return () => {
+      navigation.getParent()?.setOptions({
+        tabBarStyle: { display: 'flex' }
+      });
       if (socket) socket.disconnect();
     };
   }, []);
@@ -70,7 +81,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   const initializeSocket = async () => {
     try {
       const token = await getAccessToken();
-      const newSocket = io("http://192.168.148.43:3000", {
+      const newSocket = io(getBaseUrl(), {
         auth: { token },
         transports: ["websocket", "polling"],
         forceNew: true,
@@ -211,7 +222,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       });
 
       const token = await getAccessToken();
-      const response = await fetch("http://192.168.148.43:3000/api/chat/upload", {
+      const response = await fetch(getApiUrl() + "/chat/upload", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -642,56 +653,60 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         <Text style={styles.headerTitle}>{title}</Text>
       </View>
       <KeyboardAvoidingView
-        style={styles.chatContainer}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={(item) => item.messageId}
-          onContentSizeChange={scrollToBottom}
-        />
-        {isTyping && <Text style={styles.typingText}>Đang soạn tin nhắn...</Text>}
-      </KeyboardAvoidingView>
-      <View style={styles.inputContainer}>
-        <TouchableOpacity style={styles.attachButton} onPress={handleEmojiPress}>
-          <Ionicons name="happy-outline" size={24} color="#666" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.attachButton}
-          onPress={() => {
-            Alert.alert("Chọn loại file", "Bạn muốn gửi loại file nào?", [
-              { text: "Ảnh", onPress: pickImage },
-              { text: "Video", onPress: pickVideo },
-              { text: "Tài liệu", onPress: pickDocument },
-              { text: "Hủy", style: "cancel" },
-            ]);
-          }}
-        >
-          <Ionicons name="image" size={24} color="#666" />
-        </TouchableOpacity>
-        <TextInput
-          style={styles.input}
-          placeholder="Tin nhắn"
-          value={message}
-          onChangeText={setMessage}
-          onFocus={handleTyping}
-          onBlur={handleStopTyping}
-          multiline
-        />
-        <TouchableOpacity
-          style={styles.sendIconButton}
-          onPress={handleSendMessage}
-          disabled={!message.trim() && selectedFiles.length === 0}
-        >
-          <Ionicons
-            name="send"
-            size={24}
-            color={message.trim() || selectedFiles.length > 0 ? "#1877f2" : "#666"}
+        <View style={styles.chatContainer}>
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={(item) => item.messageId}
+            onContentSizeChange={scrollToBottom}
+            contentContainerStyle={styles.flatListContent}
           />
-        </TouchableOpacity>
-      </View>
+          {isTyping && <Text style={styles.typingText}>Đang soạn tin nhắn...</Text>}
+        </View>
+        <View style={styles.inputContainer}>
+          <TouchableOpacity style={styles.attachButton} onPress={handleEmojiPress}>
+            <Ionicons name="happy-outline" size={24} color="#666" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.attachButton}
+            onPress={() => {
+              Alert.alert("Chọn loại file", "Bạn muốn gửi loại file nào?", [
+                { text: "Ảnh", onPress: pickImage },
+                { text: "Video", onPress: pickVideo },
+                { text: "Tài liệu", onPress: pickDocument },
+                { text: "Hủy", style: "cancel" },
+              ]);
+            }}
+          >
+            <Ionicons name="image" size={24} color="#666" />
+          </TouchableOpacity>
+          <TextInput
+            style={styles.input}
+            placeholder="Tin nhắn"
+            value={message}
+            onChangeText={setMessage}
+            onFocus={handleTyping}
+            onBlur={handleStopTyping}
+            multiline
+          />
+          <TouchableOpacity
+            style={styles.sendIconButton}
+            onPress={handleSendMessage}
+            disabled={!message.trim() && selectedFiles.length === 0}
+          >
+            <Ionicons
+              name="send"
+              size={24}
+              color={message.trim() || selectedFiles.length > 0 ? "#1877f2" : "#666"}
+            />
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
       <Modal visible={showFilePreview} transparent={true} animationType="slide">
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
@@ -820,9 +835,15 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginLeft: 10,
   },
+  keyboardAvoidingView: {
+    flex: 1,
+  },
   chatContainer: {
     flex: 1,
     padding: 10,
+  },
+  flatListContent: {
+    flexGrow: 1,
   },
   messageContainer: {
     maxWidth: "80%",
@@ -935,10 +956,6 @@ const styles = StyleSheet.create({
   fileInfo: {
     flex: 1,
     marginLeft: 10,
-  },
-  fileName: {
-    fontSize: 14,
-    color: "#333",
   },
   fileSize: {
     fontSize: 12,
