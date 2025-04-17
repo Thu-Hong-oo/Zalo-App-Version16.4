@@ -91,7 +91,7 @@ const NewGroupScreen = () => {
 
       let finalGroupName = groupName.trim();
       if (!finalGroupName) {
-        const memberNames = selectedContacts.slice(0, 3).map(c => c.name.split(' ')[0]);
+        const memberNames = [userData.name, ...selectedContacts.slice(0, 2).map(c => c.name.split(' ')[0])];
         finalGroupName = memberNames.join(', ');
         console.log('Auto-generated group name:', finalGroupName);
       }
