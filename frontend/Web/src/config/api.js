@@ -7,7 +7,7 @@
 import axios from "axios";
 
 // Cấu hình API
-const COMPUTER_IP = "172.20.77.189";
+const COMPUTER_IP = "192.168.2.118";
 const BASE_URL = `http://${COMPUTER_IP}:3000`;
 const API_URL = `${BASE_URL}/api`;
 
@@ -68,7 +68,8 @@ api.interceptors.response.use(
       // The request was made but no response was received
       console.error("API Error:", {
         url: error.config.url,
-        message: "Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.",
+        message:
+          "Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.",
         response: undefined,
         status: undefined,
       });
@@ -87,13 +88,13 @@ api.interceptors.response.use(
 
 // Thêm hàm kiểm tra kết nối
 export const checkServerConnection = async () => {
-    try {
-        const response = await axios.get(`${BASE_URL}/health`, { timeout: 5000 });
-        return response.status === 200;
-    } catch (error) {
-        console.error('Server connection check failed:', error);
-        return false;
-    }
+  try {
+    const response = await axios.get(`${BASE_URL}/health`, { timeout: 5000 });
+    return response.status === 200;
+  } catch (error) {
+    console.error("Server connection check failed:", error);
+    return false;
+  }
 };
 
 export default api;
