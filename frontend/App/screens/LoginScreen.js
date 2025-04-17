@@ -67,10 +67,15 @@ const LoginScreen = ({ navigation }) => {
       setLoading(true);
       const response = await login(phoneNumber, password);
       
-      if (response.accessToken && response.refreshToken) {
-        // Lưu tokens
-        AsyncStorage.setItem('accessToken', response.accessToken);
-        AsyncStorage.setItem('refreshToken', response.refreshToken);
+      if (response.accessToken && response.refreshToken && response.user) {
+        // Lưu tokens và user info
+        await Promise.all([
+          saveAccessToken(response.accessToken),
+          saveRefreshToken(response.refreshToken),
+          saveUserInfo(response.user)
+        ]);
+        
+        console.log('Saved user info:', response.user);
         
         // Cập nhật context
         setToken(response.accessToken);
@@ -79,7 +84,7 @@ const LoginScreen = ({ navigation }) => {
         setIsLoggedIn(true);
 
       } else {
-        throw new Error('Không nhận được token từ server');
+        throw new Error('Không nhận được thông tin đăng nhập từ server');
       }
     } catch (error) {
       console.error('Login error:', error);

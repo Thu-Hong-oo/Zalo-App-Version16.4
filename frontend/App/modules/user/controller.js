@@ -1,6 +1,7 @@
 import api from '../../config/api';
 import { getApiUrlAsync } from '../../config/api';
 import { getAccessToken } from '../../services/storage';
+import { getApiUrl } from '../../config/api';
 
 // Hàm khởi tạo API
 export const initUserApi = async () => {
@@ -151,118 +152,75 @@ export const searchUsers = async (query) => {
   }
 };
 
-export const updateAvatar = async (file) => {
+export const updateAvatar = async (phone, avatar) => {
   try {
-    console.log('Starting avatar update with file:', file);
-
-    if (!file || !file.uri) {
-      throw new Error('No file selected');
-    }
-
-    // Get the access token
     const token = await getAccessToken();
     if (!token) {
-      throw new Error('No token provided');
+      throw new Error('Không tìm thấy token xác thực');
     }
+
+    if (!avatar || !avatar.uri) {
+      throw new Error('Không tìm thấy file ảnh');
+    }
+
+    console.log('Updating avatar with data:', {
+      uri: avatar.uri,
+      type: avatar.type,
+      name: avatar.fileName
+    });
 
     const formData = new FormData();
     
-    // Xử lý file theo cách đơn giản hơn cho thiết bị di động
-    formData.append('avatar', {
-      uri: file.uri,
-      type: file.type || 'image/jpeg',
-      name: file.name || 'avatar.jpg'
-    });
-
-    console.log('FormData prepared:', {
-      uri: file.uri,
-      type: file.type,
-      name: file.name,
-      size: file.size
-    });
-
-    // Sử dụng fetch thay vì axios để upload file trên thiết bị di động
-    // const apiUrl = await getApiUrlAsync();
-    //console.log('Uploading to URL:', `${apiUrl}/users/avatar`);
+    // Thêm phone number vào form data
+    formData.append('phone', phone);
     
-    // Thêm timeout dài hơn cho upload file
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 giây timeout
+    // Xử lý file ảnh
+    const fileType = avatar.type || 'image/jpeg';
+    const fileName = avatar.fileName || 'avatar.jpg';
     
-    const response = await fetch(getApiUrl()+"/users/avatar", {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json',
-        // Không set Content-Type, để browser tự set với boundary
-      },
-      body: formData,
-      signal: controller.signal
-    });
-    
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('Server error response:', {
-        status: response.status,
-        statusText: response.statusText,
-        data: errorData
+    // Nếu uri là base64
+    if (avatar.uri.startsWith('data:')) {
+      // Convert base64 to blob
+      const response = await fetch(avatar.uri);
+      const blob = await response.blob();
+      formData.append('avatar', blob, fileName);
+    } else {
+      // Nếu là file từ thư viện
+      formData.append('avatar', {
+        uri: avatar.uri,
+        type: fileType,
+        name: fileName
       });
-      throw new Error(errorData.message || `Server error: ${response.status}`);
     }
 
-    const data = await response.json();
-    console.log('Avatar update response:', data);
+    console.log('Sending form data with file name:', fileName);
 
-    if (!data || !data.avatarUrl) {
-      throw new Error('Invalid response from server');
+    const response = await api.post('/users/avatar', formData, {
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'multipart/form-data',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    console.log('Update avatar response:', response.data);
+    
+    if (!response.data || !response.data.avatarUrl) {
+      throw new Error('Không nhận được URL ảnh từ server');
     }
-
-    return data.avatarUrl;
+    
+    return response.data.avatarUrl;
   } catch (error) {
     console.error('Avatar update error:', error);
-    
-    // Xử lý lỗi AbortError (timeout)
-    if (error.name === 'AbortError') {
-      throw new Error('Upload timeout. Please try again with a smaller image.');
-    }
-    
-    // Xử lý lỗi network
-    if (error.message === 'Network request failed') {
-      console.error('Network error details:', {
-        message: error.message,
-        name: error.name,
-        stack: error.stack
+    if (error.response) {
+      console.error('Server error details:', {
+        status: error.response.status,
+        data: error.response.data,
+        headers: error.response.headers
       });
-      
-      // Thử lại với axios nếu fetch thất bại
-      try {
-        // console.log('Retrying with axios...');
-        // const apiUrl = await getApiUrlAsync();
-        
-        const response = await api.post('/users/avatar', formData, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-          },
-          timeout: 60000,
-          transformRequest: (data, headers) => {
-            // Remove Content-Type header to let the browser set it with the boundary
-            delete headers['Content-Type'];
-            return data;
-          }
-        });
-        
-        console.log('Axios retry successful:', response.data);
-        return response.data.avatarUrl;
-      } catch (retryError) {
-        console.error('Axios retry failed:', retryError);
-        throw new Error('Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.');
-      }
+      throw new Error(error.response.data.message || 'Không thể cập nhật ảnh đại diện');
     }
-    
-    throw new Error(error.message || 'Failed to update avatar');
+    throw error;
   }
 };
 

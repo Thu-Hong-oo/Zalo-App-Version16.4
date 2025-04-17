@@ -15,7 +15,8 @@ const PORT = process.env.PORT || 3030;
 const authRoutes = require("./modules/auth/routes");
 const userRoutes = require("./modules/user/routes");
 // const gatewayRoutes = require("./modules/gateway/routes");
-
+const groupRoutes = require("./modules/group/group.route");
+const friendRoutes = require("./modules/friend/routes");
 const {
   routes: chatRoutes,
   socket: initializeSocket,
@@ -36,24 +37,6 @@ const io = new Server(httpServer, {
   pingTimeout: 60000, // Tăng thời gian timeout
   pingInterval: 25000, // Tăng khoảng thời gian ping
 });
-
-// // Configure logger
-// const logger = winston.createLogger({
-//   level: "info",
-//   format: winston.format.json(),
-//   transports: [
-//     new winston.transports.File({ filename: "error.log", level: "error" }),
-//     new winston.transports.File({ filename: "combined.log" }),
-//   ],
-// });
-
-// if (process.env.NODE_ENV !== "production") {
-//   logger.add(
-//     new winston.transports.Console({
-//       format: winston.format.simple(),
-//     })
-//   );
-// }
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -112,9 +95,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 // app.use("/api", gatewayRoutes);
 app.use("/api/chat", chatRoutes);
-
-// Error handling middleware
-// app.use(errorHandler);
+app.use("/api/groups", groupRoutes);
+app.use("/api/friends", friendRoutes);
 
 // Initialize socket
 initializeSocket(io);

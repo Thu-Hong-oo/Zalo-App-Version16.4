@@ -22,8 +22,8 @@ POST http://localhost:3000/api/auth/register/complete
 Content-Type: application/json
 
 {
-    "phone": "0376963658",
-    "name": "Trầm",
+    "phone": "0987654321",
+    "name": "Tôi chỉ là người test Group API",
     "password": "123456"
 }
 

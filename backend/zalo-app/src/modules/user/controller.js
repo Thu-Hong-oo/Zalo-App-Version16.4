@@ -6,7 +6,16 @@ require('dotenv').config();
 const winston = require('winston');
 const path = require('path');
 const fs = require('fs');
-const AWS = require('aws-sdk');
+const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
+const { 
+    DynamoDBDocumentClient, 
+    QueryCommand,
+    GetCommand,
+    ScanCommand
+} = require("@aws-sdk/lib-dynamodb");
+
+const client = new DynamoDBClient({});
+const dynamodb = DynamoDBDocumentClient.from(client);
 
 // // Create logger instance
 // const logger = winston.createLogger({
@@ -40,6 +49,14 @@ const updateAvatar = async (req, res) => {
             });
         }
 
+        const { phone } = req.user;
+        
+        // Get current user
+        const currentUser = await User.getByPhone(phone);
+        if (!currentUser) {
+            return res.status(404).json({ message: 'Không tìm thấy người dùng' });
+        }
+
         // Lấy thông tin file
         const file = req.file;
         console.log('Received file:', {
@@ -49,19 +66,18 @@ const updateAvatar = async (req, res) => {
         });
 
         // Upload to S3
-        const filepath = `avatars/${req.user.phone}_${Date.now()}${path.extname(file.originalname)}`;
+        const filepath = `avatars/${phone}_${Date.now()}${path.extname(file.originalname)}`;
         const s3Response = await s3.upload({
             Bucket: process.env.S3_BUCKET_NAME,
             Key: filepath,
             Body: file.buffer,
             ContentType: file.mimetype,
-       
         }).promise();
 
         console.log('S3 upload result:', s3Response);
 
         // Cập nhật avatar mới trong database
-        const updatedUser = await User.update(req.user.phone, { 
+        const updatedUser = await User.update(currentUser.userId, { 
             avatar: s3Response.Location 
         });
 
@@ -106,7 +122,7 @@ const getProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
     try {
         const { phone } = req.user;
-        const { name, status, gender, dateOfBirth } = req.body;
+        const updateData = { ...req.body };
 
         // Get current user
         const currentUser = await User.getByPhone(phone);
@@ -114,25 +130,35 @@ const updateProfile = async (req, res) => {
             return res.status(404).json({ message: 'Không tìm thấy người dùng' });
         }
 
-        // Prepare update data
-        const updateData = {
-            ...(name && { name }),
-            ...(status && { status }),
-            ...(gender && { gender }),
-            ...(dateOfBirth && { dateOfBirth }),
-            updatedAt: new Date().toISOString()
-        };
+        // Convert phoneNumber to phone if exists
+        if (updateData.phoneNumber) {
+            updateData.phone = updateData.phoneNumber;
+            delete updateData.phoneNumber;
+        }
+
+        // Remove fields that shouldn't be updated
+        delete updateData.userId;
+        delete updateData.createdAt;
+        delete updateData.updatedAt;
 
         console.log('Updating user with data:', updateData);
 
-        const updatedUser = await User.update(phone, updateData);
+        // Use userId for update
+        const updatedUser = await User.update(currentUser.userId, updateData);
 
         if (!updatedUser) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        const { password, ...userWithoutPassword } = updatedUser;
-        res.json(userWithoutPassword);
+        // Convert phone to phoneNumber in response
+        const userResponse = {
+            ...updatedUser,
+            phoneNumber: updatedUser.phone
+        };
+        delete userResponse.password;
+        delete userResponse.phone;
+
+        res.json(userResponse);
     } catch (error) {
         console.error('Error updating profile:', error);
         res.status(500).json({ message: error.message });
@@ -176,6 +202,50 @@ const getUserByPhone = async (req, res) => {
     }
 };
 
+const getUserByUserId = async (req, res) => {
+    try {
+        const userId = req.params?.userId;
+        
+        if (!userId) {
+            return res.status(400).json({ message: 'User ID is required' });
+        }
+
+        // Query using phone-index since that's our primary way to find users
+        const params = {
+            TableName: "users-zalolite",
+            Key: {
+                userId: userId
+            }
+        };
+
+        const { Item: user } = await dynamodb.send(new GetCommand(params));
+
+        if (!user) {
+            if (typeof res.json === 'function') {
+                return res.status(404).json({ message: 'User not found' });
+            }
+            return null;
+        }
+
+        // Remove sensitive information
+        const { password, ...userWithoutPassword } = user;
+        
+        // Check if this is an internal call (from other services)
+        if (!res || typeof res.json !== 'function') {
+            return userWithoutPassword;
+        }
+        
+        // If it's a regular API call
+        res.json(userWithoutPassword);
+    } catch (error) {
+        console.error('Error getting user by ID:', error);
+        if (!res || typeof res.json !== 'function') {
+            return null;
+        }
+        res.status(500).json({ message: error.message });
+    }
+};
+
 const updateStatus = async (req, res) => {
     try {
         const { phone } = req.user;
@@ -188,8 +258,17 @@ const updateStatus = async (req, res) => {
             });
         }
 
-        // Update user status
-        const updatedUser = await User.update(phone, { status });
+        // Get current user first
+        const currentUser = await User.getByPhone(phone);
+        if (!currentUser) {
+            return res.status(404).json({ 
+                status: 'error',
+                message: 'User not found' 
+            });
+        }
+
+        // Update user status using userId
+        const updatedUser = await User.update(currentUser.userId, { status });
 
         if (!updatedUser) {
             return res.status(404).json({ 
@@ -248,8 +327,8 @@ const changePassword = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-        // Update password
-        const updatedUser = await User.update(phone, { password: hashedPassword });
+        // Update password using userId
+        const updatedUser = await User.update(user.userId, { password: hashedPassword });
         if (!updatedUser) {
             return res.status(500).json({
                 status: 'error',
@@ -271,6 +350,145 @@ const changePassword = async (req, res) => {
     }
 };
 
+const getUserGroups = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        // Query group members table to get all groups for this user
+        const params = {
+            TableName: 'group_members-zalolite',
+            IndexName: 'userId-index',
+            KeyConditionExpression: 'userId = :userId',
+            FilterExpression: 'isActive = :isActive',
+            ExpressionAttributeValues: {
+                ':userId': userId,
+                ':isActive': true
+            }
+        };
+
+        const result = await dynamodb.send(new QueryCommand(params));
+        
+        if (!result.Items || result.Items.length === 0) {
+            return res.json({ groups: [] });
+        }
+
+        // Get group details for each group
+        const groupPromises = result.Items.map(async (member) => {
+            const groupParams = {
+                TableName: 'groups-zalolite',
+                KeyConditionExpression: 'groupId = :groupId',
+                ExpressionAttributeValues: {
+                    ':groupId': member.groupId
+                }
+            };
+
+            const groupResult = await dynamodb.send(new QueryCommand(groupParams));
+            const group = groupResult.Items?.[0];
+
+            if (group) {
+                return {
+                    ...group,
+                    memberRole: member.role || 'member'
+                };
+            }
+            return null;
+        });
+
+        const groups = (await Promise.all(groupPromises)).filter(group => group !== null);
+        
+        // Sort groups by lastMessageTime if available
+        groups.sort((a, b) => {
+            const timeA = a.lastMessageTime || a.createdAt;
+            const timeB = b.lastMessageTime || b.createdAt;
+            return new Date(timeB) - new Date(timeA);
+        });
+
+        res.json({ groups });
+    } catch (error) {
+        console.error('Error getting user groups:', error);
+        res.status(500).json({ message: 'Error getting user groups', error: error.message });
+    }
+};
+
+const getRecentContacts = async (req, res) => {
+    try {
+        const { userId, phone } = req.user;
+
+        // Get conversations where user is either participant or otherParticipant
+        const params = {
+            TableName: 'conversations-zalolite',
+            FilterExpression: 'participantId = :phone OR otherParticipantId = :phone',
+            ExpressionAttributeValues: {
+                ':phone': phone
+            }
+        };
+
+        const result = await dynamodb.send(new ScanCommand(params));
+
+        // Combine and deduplicate conversations
+        const contactPhones = new Set();
+        const conversations = result.Items || [];
+
+        conversations.forEach(conv => {
+            if (conv.participantId !== phone) {
+                contactPhones.add(conv.participantId);
+            }
+            if (conv.otherParticipantId !== phone) {
+                contactPhones.add(conv.otherParticipantId);
+            }
+        });
+
+        // Get user details for each contact
+        const contactPromises = Array.from(contactPhones).map(async (contactPhone) => {
+            const userParams = {
+                TableName: 'users-zalolite',
+                IndexName: 'phone-index',
+                KeyConditionExpression: 'phone = :phone',
+                ExpressionAttributeValues: {
+                    ':phone': contactPhone
+                }
+            };
+
+            const userResult = await dynamodb.send(new QueryCommand(userParams));
+            const user = userResult.Items?.[0];
+
+            if (user) {
+                // Remove sensitive information
+                const { password, ...safeUser } = user;
+                return {
+                    userId: safeUser.userId,
+                    name: safeUser.name,
+                    avatar: safeUser.avatar,
+                    phone: safeUser.phone,
+                    lastActive: safeUser.lastActive || 'Hoạt động gần đây'
+                };
+            }
+            return null;
+        });
+
+        const contacts = (await Promise.all(contactPromises))
+            .filter(contact => contact !== null)
+            // Sort by lastActive time if available
+            .sort((a, b) => {
+                const timeA = new Date(a.lastActive);
+                const timeB = new Date(b.lastActive);
+                return timeB - timeA;
+            });
+
+        res.json({ 
+            success: true,
+            contacts 
+        });
+    } catch (error) {
+        console.error('Error getting recent contacts:', error);
+        res.status(500).json({ 
+            success: false,
+            message: 'Error getting recent contacts',
+            error: error.message 
+        });
+    }
+};
+
 // Export individual controller methods
 const userController = {
     getProfile,
@@ -278,8 +496,11 @@ const userController = {
     updateAvatar,
     searchUsers,
     getUserByPhone,
+    getUserByUserId,
     updateStatus,
-    changePassword
+    changePassword,
+    getUserGroups,
+    getRecentContacts
 };
 
 // Debug log

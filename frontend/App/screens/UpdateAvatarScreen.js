@@ -38,11 +38,15 @@ const UpdateAvatarScreen = () => {
       const data = await AsyncStorage.getItem('userData');
       if (data) {
         const parsedData = JSON.parse(data);
+        console.log('Loaded user data:', parsedData);
         setUserData(parsedData);
-        console.log('User data loaded:', parsedData);
+      } else {
+        console.error('No user data found in AsyncStorage');
+        Alert.alert('Lỗi', 'Không tìm thấy thông tin người dùng');
       }
     } catch (error) {
       console.error('Error loading user data:', error);
+      Alert.alert('Lỗi', 'Không thể tải thông tin người dùng');
     }
   };
 
@@ -108,20 +112,29 @@ const UpdateAvatarScreen = () => {
         return;
       }
 
+      // Reload user data to ensure we have the latest
+      await loadUserData();
+
+      if (!userData || !userData.phoneNumber) {
+        Alert.alert('Lỗi', 'Không tìm thấy thông tin người dùng');
+        return;
+      }
+
       // Format file object for multer
       const file = {
         uri: image.uri,
         type: image.mimeType || 'image/jpeg',
-        name: image.fileName || 'avatar.jpg',
+        name: 'avatar.jpg',
         width: image.width,
         height: image.height
       };
 
       console.log('Selected image:', image);
       console.log('Formatted file:', file);
+      console.log('User phone:', userData.phoneNumber);
 
       setLoading(true);
-      const avatarUrl = await updateAvatar(file);
+      const avatarUrl = await updateAvatar(userData.phoneNumber, file);
       console.log('Avatar URL:', avatarUrl);
       
       // Update user in context and set login status
@@ -131,6 +144,9 @@ const UpdateAvatarScreen = () => {
       };
       setUser(updatedUser);
       setIsLoggedIn(true);
+      
+      // Save to AsyncStorage
+      await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
       
       Alert.alert('Thành công', 'Cập nhật ảnh đại diện thành công');
       navigation.navigate('ChatTab');

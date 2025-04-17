@@ -129,8 +129,9 @@ const PersonalDetailScreen = ({ navigation }) => {
 
       console.log('Selected image:', imageAsset);
       console.log('Formatted file:', file);
+      console.log('User data:', userData);
 
-      const avatarUrl = await updateAvatar(file);
+      const avatarUrl = await updateAvatar(userData.phone, file);
       console.log('Avatar URL:', avatarUrl);
       
       // Update user in context and local state

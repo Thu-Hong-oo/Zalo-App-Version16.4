@@ -831,6 +831,7 @@ const ChatDirectly = () => {
   if (loading) return <div className="loading">Đang tải...</div>;
   if (error) return <div className="error">{error}</div>;
 
+  //layout
   return (
     <div className="chat-directly">
       <div className="chat-header">

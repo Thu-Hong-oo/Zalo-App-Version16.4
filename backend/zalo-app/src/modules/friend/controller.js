@@ -5,49 +5,45 @@ const {
   UpdateCommand,
   DeleteCommand,
   QueryCommand,
+  GetCommand,
 } = require("@aws-sdk/lib-dynamodb");
-const dynamodb = require("../../config/aws");
+const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBDocumentClient } = require("@aws-sdk/lib-dynamodb");
 const axios = require("axios");
+
+const client = new DynamoDBClient({});
+const dynamodb = DynamoDBDocumentClient.from(client);
 
 const TABLE_NAME = "friendRequests";
 const USERS_TABLE = "users-zalolite";
-const FRIENDS_TABLE = "friends";
+const FRIENDS_TABLE = "friends-zalolite";
 
-function normalizePhone(phone) {
-  if (!phone) return "";
-  let result = phone;
-  if (result.startsWith("+84")) result = result.replace("+84", "84");
-  else if (result.startsWith("0")) result = result.replace(/^0/, "84");
-  if (!/^\d{10,12}$/.test(result)) return "";
-  return result;
-}
-
-async function getUserProfile(phone) {
-  const result = await dynamodb.send(
-    new QueryCommand({
+async function getUserProfile(userId) {
+  try {
+    const params = {
       TableName: USERS_TABLE,
-      KeyConditionExpression: "phone = :p",
-      ExpressionAttributeValues: { ":p": phone },
-    })
-  );
-  return result.Items?.[0] || null;
+      Key: { userId: userId },
+    };
+    const result = await dynamodb.send(new GetCommand(params));
+    return result.Item || null;
+  } catch (error) {
+    console.error(`Error fetching profile for userId ${userId}:`, error);
+    return null; // Trả về null nếu có lỗi để không làm crash toàn bộ request
+  }
 }
 
 // Gửi lời mời kết bạn
 exports.sendFriendRequest = async (req, res) => {
   const { from, to } = req.body;
-  const fromPhone = normalizePhone(from);
-  const toPhone = normalizePhone(to);
-
-  if (!fromPhone || !toPhone || fromPhone === toPhone) {
+  if (!from || !to || from === to) {
     return res.status(400).json({ success: false, message: "Thiếu thông tin hoặc không thể gửi cho chính mình" });
   }
 
   const requestId = uuidv4();
   const item = {
     requestId,
-    from: fromPhone,
-    to: toPhone,
+    from,
+    to,
     status: "pending",
     createdAt: new Date().toISOString(),
   };
@@ -63,34 +59,43 @@ exports.sendFriendRequest = async (req, res) => {
 
 // Lấy danh sách lời mời đã gửi
 exports.getSentRequests = async (req, res) => {
-  let { phone } = req.params;
-  phone = normalizePhone(phone);
-  if (!phone || phone.length < 9) {
-    return res.status(400).json({ success: false, message: "Số điện thoại không hợp lệ" });
+  const { userId } = req.params;
+  if (!userId) {
+    return res.status(400).json({ success: false, message: "Thiếu userId" });
   }
 
   try {
-    const result = await dynamodb.send(
-      new ScanCommand({
-        TableName: TABLE_NAME,
-        FilterExpression: "#from = :from",
-        ExpressionAttributeNames: { "#from": "from" },
-        ExpressionAttributeValues: { ":from": phone },
-      })
-    );
+    // Sử dụng QueryCommand với from-index
+    const params = {
+      TableName: TABLE_NAME,
+      IndexName: 'from-index',
+      KeyConditionExpression: '#from = :fromVal',
+      ExpressionAttributeNames: { '#from': 'from' },
+      ExpressionAttributeValues: { ':fromVal': userId },
+      // Optional: Thêm sắp xếp theo thời gian nếu cần
+      // ScanIndexForward: false // false để sắp xếp mới nhất trước
+    };
+
+    const result = await dynamodb.send(new QueryCommand(params));
 
     const enriched = await Promise.all(
-      result.Items.map(async (req) => {
+      (result.Items || []).map(async (requestItem) => {
         try {
-          const userRes = await axios.get(`http://localhost:3000/api/users/${req.to}`);
-          const user = userRes.data.user;
+          // Sử dụng hàm nội bộ thay vì gọi API
+          const user = await getUserProfile(requestItem.to);
           return {
-            ...req,
-            name: user?.name || "Không rõ",
-            avatar: user?.avatar || "/default-avatar.png",
+            ...requestItem,
+            toUser: {
+              name: user?.name || "Không rõ",
+              avatar: user?.avatar || "/default-avatar.png",
+            }
           };
         } catch (e) {
-          return { ...req, name: "Không rõ", avatar: "/default-avatar.png" };
+          console.error(`Error fetching profile for user ${requestItem.to}:`, e);
+          return { 
+            ...requestItem, 
+            toUser: { name: "Không rõ", avatar: "/default-avatar.png" } 
+          };
         }
       })
     );
@@ -104,9 +109,8 @@ exports.getSentRequests = async (req, res) => {
 
 // Lấy danh sách lời mời đã nhận
 exports.getReceivedRequests = async (req, res) => {
-  let { phone } = req.params;
-  const toPhone = normalizePhone(phone);
-  if (!toPhone) return res.status(400).json({ success: false, message: "Thiếu số điện thoại" });
+  const { userId } = req.params;
+  if (!userId) return res.status(400).json({ success: false, message: "Thiếu userId" });
 
   try {
     const result = await dynamodb.send(
@@ -118,7 +122,7 @@ exports.getReceivedRequests = async (req, res) => {
           "#status": "status"
         },
         ExpressionAttributeValues: {
-          ":toVal": toPhone,
+          ":toVal": userId,
           ":statusVal": "pending"
         }
       })
@@ -130,7 +134,7 @@ exports.getReceivedRequests = async (req, res) => {
         return {
           ...item,
           fromUser: {
-            name: user?.name || item.from,
+            name: user?.name || "Không rõ",
             avatar: user?.avatar || "/default-avatar.png"
           }
         };
@@ -162,6 +166,7 @@ exports.acceptFriendRequest = async (req, res) => {
     if (!friendRequest) return res.status(404).json({ success: false, message: "Không tìm thấy lời mời" });
 
     const { from, to } = friendRequest;
+    const createdAt = new Date().toISOString();
 
     await Promise.all([
       dynamodb.send(new UpdateCommand({
@@ -173,11 +178,11 @@ exports.acceptFriendRequest = async (req, res) => {
       })),
       dynamodb.send(new PutCommand({
         TableName: FRIENDS_TABLE,
-        Item: { userPhone: from, friendPhone: to, createdAt: new Date().toISOString() },
+        Item: { userId: from, friendId: to, createdAt },
       })),
       dynamodb.send(new PutCommand({
         TableName: FRIENDS_TABLE,
-        Item: { userPhone: to, friendPhone: from, createdAt: new Date().toISOString() },
+        Item: { userId: to, friendId: from, createdAt },
       })),
     ]);
 
@@ -224,25 +229,24 @@ exports.cancelFriendRequest = async (req, res) => {
 
 // Lấy danh sách bạn bè
 exports.getFriendsList = async (req, res) => {
-  const { phone } = req.params;
-  const normalizedPhone = normalizePhone(phone);
-  if (!normalizedPhone) return res.status(400).json({ success: false, message: "Thiếu số điện thoại" });
+  const { userId } = req.params;
+  if (!userId) return res.status(400).json({ success: false, message: "Thiếu userId" });
 
   try {
     const result = await dynamodb.send(
       new QueryCommand({
         TableName: FRIENDS_TABLE,
-        KeyConditionExpression: "userPhone = :u",
-        ExpressionAttributeValues: { ":u": normalizedPhone },
+        KeyConditionExpression: "userId = :u",
+        ExpressionAttributeValues: { ":u": userId },
       })
     );
 
     const friends = await Promise.all(
       (result.Items || []).map(async (item) => {
-        const user = await getUserProfile(item.friendPhone);
+        const user = await getUserProfile(item.friendId);
         return {
-          phone: item.friendPhone,
-          name: user?.name || item.friendPhone,
+          userId: item.friendId,
+          name: user?.name || "Không rõ",
           avatar: user?.avatar || "/default-avatar.png",
         };
       })
