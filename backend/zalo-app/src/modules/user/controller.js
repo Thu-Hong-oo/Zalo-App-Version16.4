@@ -10,7 +10,8 @@ const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const { 
     DynamoDBDocumentClient, 
     QueryCommand,
-    GetCommand 
+    GetCommand,
+    ScanCommand
 } = require("@aws-sdk/lib-dynamodb");
 
 const client = new DynamoDBClient({});
@@ -203,16 +204,44 @@ const getUserByPhone = async (req, res) => {
 
 const getUserByUserId = async (req, res) => {
     try {
-        const { userId } = req.params;
-        const user = await User.getById(userId);
-
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
+        const userId = req.params?.userId;
+        
+        if (!userId) {
+            return res.status(400).json({ message: 'User ID is required' });
         }
 
+        // Query using phone-index since that's our primary way to find users
+        const params = {
+            TableName: "users-zalolite",
+            Key: {
+                userId: userId
+            }
+        };
+
+        const { Item: user } = await dynamodb.send(new GetCommand(params));
+
+        if (!user) {
+            if (typeof res.json === 'function') {
+                return res.status(404).json({ message: 'User not found' });
+            }
+            return null;
+        }
+
+        // Remove sensitive information
         const { password, ...userWithoutPassword } = user;
+        
+        // Check if this is an internal call (from other services)
+        if (!res || typeof res.json !== 'function') {
+            return userWithoutPassword;
+        }
+        
+        // If it's a regular API call
         res.json(userWithoutPassword);
     } catch (error) {
+        console.error('Error getting user by ID:', error);
+        if (!res || typeof res.json !== 'function') {
+            return null;
+        }
         res.status(500).json({ message: error.message });
     }
 };
@@ -381,6 +410,85 @@ const getUserGroups = async (req, res) => {
     }
 };
 
+const getRecentContacts = async (req, res) => {
+    try {
+        const { userId, phone } = req.user;
+
+        // Get conversations where user is either participant or otherParticipant
+        const params = {
+            TableName: 'conversations-zalolite',
+            FilterExpression: 'participantId = :phone OR otherParticipantId = :phone',
+            ExpressionAttributeValues: {
+                ':phone': phone
+            }
+        };
+
+        const result = await dynamodb.send(new ScanCommand(params));
+
+        // Combine and deduplicate conversations
+        const contactPhones = new Set();
+        const conversations = result.Items || [];
+
+        conversations.forEach(conv => {
+            if (conv.participantId !== phone) {
+                contactPhones.add(conv.participantId);
+            }
+            if (conv.otherParticipantId !== phone) {
+                contactPhones.add(conv.otherParticipantId);
+            }
+        });
+
+        // Get user details for each contact
+        const contactPromises = Array.from(contactPhones).map(async (contactPhone) => {
+            const userParams = {
+                TableName: 'users-zalolite',
+                IndexName: 'phone-index',
+                KeyConditionExpression: 'phone = :phone',
+                ExpressionAttributeValues: {
+                    ':phone': contactPhone
+                }
+            };
+
+            const userResult = await dynamodb.send(new QueryCommand(userParams));
+            const user = userResult.Items?.[0];
+
+            if (user) {
+                // Remove sensitive information
+                const { password, ...safeUser } = user;
+                return {
+                    userId: safeUser.userId,
+                    name: safeUser.name,
+                    avatar: safeUser.avatar,
+                    phone: safeUser.phone,
+                    lastActive: safeUser.lastActive || 'Hoạt động gần đây'
+                };
+            }
+            return null;
+        });
+
+        const contacts = (await Promise.all(contactPromises))
+            .filter(contact => contact !== null)
+            // Sort by lastActive time if available
+            .sort((a, b) => {
+                const timeA = new Date(a.lastActive);
+                const timeB = new Date(b.lastActive);
+                return timeB - timeA;
+            });
+
+        res.json({ 
+            success: true,
+            contacts 
+        });
+    } catch (error) {
+        console.error('Error getting recent contacts:', error);
+        res.status(500).json({ 
+            success: false,
+            message: 'Error getting recent contacts',
+            error: error.message 
+        });
+    }
+};
+
 // Export individual controller methods
 const userController = {
     getProfile,
@@ -391,7 +499,8 @@ const userController = {
     getUserByUserId,
     updateStatus,
     changePassword,
-    getUserGroups
+    getUserGroups,
+    getRecentContacts
 };
 
 // Debug log

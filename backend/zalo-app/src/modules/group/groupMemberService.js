@@ -1,5 +1,17 @@
-const { dynamoDB, TABLES } = require('../../config/aws');
+const { TABLES } = require('../../config/aws');
 const groupService = require('./groupService');
+const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
+const { 
+    DynamoDBDocumentClient, 
+    PutCommand,
+    GetCommand,
+    QueryCommand,
+    UpdateCommand,
+    DeleteCommand
+} = require("@aws-sdk/lib-dynamodb");
+
+const client = new DynamoDBClient({});
+const dynamodb = DynamoDBDocumentClient.from(client);
 
 const MEMBER_ROLES = {
   ADMIN: 'ADMIN',     // Trưởng nhóm
@@ -22,25 +34,67 @@ class GroupMemberService {
    * @returns {Promise<Object>} Group member information
    */
   async addMember(groupId, userId, role = 'MEMBER') {
-    const timestamp = new Date().toISOString();
+    try {
+        console.log('Adding member:', { groupId, userId, role });
+        const timestamp = new Date().toISOString();
 
-    const params = {
-      TableName: TABLES.GROUP_MEMBERS,
-      Item: {
-        groupId,
-        userId,
-        role,
-        joinedAt: timestamp,
-        updatedAt: timestamp,
-        isActive: true,
-        lastReadAt: timestamp
-      },
-      ConditionExpression: 'attribute_not_exists(groupId) AND attribute_not_exists(userId)'
-    };
+        // First check if member already exists
+        const existingMember = await this.getMember(groupId, userId);
+        console.log('Existing member:', existingMember);
 
-    await dynamoDB.put(params).promise();
-    await groupService.updateMemberCount(groupId, 1);
-    return params.Item;
+        if (existingMember) {
+            if (existingMember.isActive) {
+                console.log('Member already exists and is active');
+                return existingMember;
+            }
+
+            // If member exists but is inactive, reactivate them
+            console.log('Reactivating inactive member');
+            const updateParams = {
+                TableName: TABLES.GROUP_MEMBERS,
+                Key: {
+                    groupId,
+                    userId
+                },
+                UpdateExpression: 'set isActive = :isActive, role = :role, updatedAt = :updatedAt',
+                ExpressionAttributeValues: {
+                    ':isActive': true,
+                    ':role': role,
+                    ':updatedAt': timestamp
+                },
+                ReturnValues: 'ALL_NEW'
+            };
+
+            const { Attributes } = await dynamodb.send(new UpdateCommand(updateParams));
+            console.log('Member reactivated:', Attributes);
+            return Attributes;
+        }
+
+        // Add new member
+        const params = {
+            TableName: TABLES.GROUP_MEMBERS,
+            Item: {
+                groupId,
+                userId,
+                role,
+                joinedAt: timestamp,
+                updatedAt: timestamp,
+                isActive: true,
+                lastReadAt: timestamp
+            }
+        };
+
+        await dynamodb.send(new PutCommand(params));
+        console.log('New member added');
+        
+        // Update group member count
+        await groupService.updateMemberCount(groupId, 1);
+        
+        return params.Item;
+    } catch (error) {
+        console.error('Error adding member:', error);
+        throw error;
+    }
   }
 
   /**
@@ -50,25 +104,35 @@ class GroupMemberService {
    * @returns {Promise<void>}
    */
   async removeMember(groupId, userId) {
-    // First check if member exists and is active
-    const currentMember = await this.getMember(groupId, userId);
-    if (!currentMember || !currentMember.isActive) {
-      throw new Error('Member not found or already removed');
+    try {
+        // First check if member exists and is active
+        const currentMember = await this.getMember(groupId, userId);
+        if (!currentMember || !currentMember.isActive) {
+            throw new Error('Member not found or already removed');
+        }
+
+        // Set member as inactive instead of deleting
+        const params = {
+            TableName: TABLES.GROUP_MEMBERS,
+            Key: {
+                groupId,
+                userId
+            },
+            UpdateExpression: 'set isActive = :isActive, updatedAt = :updatedAt',
+            ExpressionAttributeValues: {
+                ':isActive': false,
+                ':updatedAt': new Date().toISOString()
+            }
+        };
+
+        await dynamodb.send(new UpdateCommand(params));
+
+        // Update group's member count
+        await groupService.updateMemberCount(groupId, -1);
+    } catch (error) {
+        console.error('Error removing member:', error);
+        throw error;
     }
-
-    // Delete member from GROUP_MEMBERS table
-    const deleteParams = {
-      TableName: TABLES.GROUP_MEMBERS,
-      Key: {
-        groupId,
-        userId
-      }
-    };
-
-    await dynamoDB.delete(deleteParams).promise();
-
-    // Update group's member count
-    await groupService.updateMemberCount(groupId, -1);
   }
 
   /**
@@ -77,18 +141,23 @@ class GroupMemberService {
    * @returns {Promise<Array>} List of group members
    */
   async getGroupMembers(groupId) {
-    const params = {
-      TableName: TABLES.GROUP_MEMBERS,
-      KeyConditionExpression: 'groupId = :groupId',
-      FilterExpression: 'isActive = :isActive',
-      ExpressionAttributeValues: {
-        ':groupId': groupId,
-        ':isActive': true
-      }
-    };
+    try {
+        const params = {
+            TableName: TABLES.GROUP_MEMBERS,
+            KeyConditionExpression: 'groupId = :groupId',
+            FilterExpression: 'isActive = :isActive',
+            ExpressionAttributeValues: {
+                ':groupId': groupId,
+                ':isActive': true
+            }
+        };
 
-    const result = await dynamoDB.query(params).promise();
-    return result.Items;
+        const { Items } = await dynamodb.send(new QueryCommand(params));
+        return Items;
+    } catch (error) {
+        console.error('Error getting group members:', error);
+        throw error;
+    }
   }
 
   /**
@@ -106,7 +175,7 @@ class GroupMemberService {
       }
     };
 
-    const result = await dynamoDB.get(params).promise();
+    const result = await dynamodb.send(new GetCommand(params));
     return result.Item && result.Item.isActive === true;
   }
 
@@ -135,7 +204,7 @@ class GroupMemberService {
       ReturnValues: 'ALL_NEW'
     };
 
-    const result = await dynamoDB.update(params).promise();
+    const result = await dynamodb.send(new UpdateCommand(params));
     return result.Attributes;
   }
 
@@ -160,7 +229,7 @@ class GroupMemberService {
       ReturnValues: 'ALL_NEW'
     };
 
-    const result = await dynamoDB.update(params).promise();
+    const result = await dynamodb.send(new UpdateCommand(params));
     return result.Attributes;
   }
 
@@ -171,16 +240,21 @@ class GroupMemberService {
    * @returns {Promise<Object>} Member information
    */
   async getMember(groupId, userId) {
-    const params = {
-      TableName: TABLES.GROUP_MEMBERS,
-      Key: {
-        groupId,
-        userId
-      }
-    };
+    try {
+        const params = {
+            TableName: TABLES.GROUP_MEMBERS,
+            Key: {
+                groupId,
+                userId
+            }
+        };
 
-    const result = await dynamoDB.get(params).promise();
-    return result.Item;
+        const { Item } = await dynamodb.send(new GetCommand(params));
+        return Item;
+    } catch (error) {
+        console.error('Error getting member:', error);
+        throw error;
+    }
   }
 
   /**
@@ -217,7 +291,7 @@ class GroupMemberService {
       ReturnValues: 'ALL_NEW'
     };
 
-    const result = await dynamoDB.update(params).promise();
+    const result = await dynamodb.send(new UpdateCommand(params));
     return result.Attributes;
   }
 
@@ -238,7 +312,7 @@ class GroupMemberService {
       }
     };
 
-    const result = await dynamoDB.query(params).promise();
+    const result = await dynamodb.send(new QueryCommand(params));
     return result.Items;
   }
 
@@ -261,7 +335,7 @@ class GroupMemberService {
       ReturnValues: 'ALL_NEW'
     };
 
-    const result = await dynamoDB.update(params).promise();
+    const result = await dynamodb.send(new UpdateCommand(params));
     return result.Attributes;
   }
 }
