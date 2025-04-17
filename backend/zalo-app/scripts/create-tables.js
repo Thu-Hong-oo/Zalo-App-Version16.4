@@ -295,6 +295,88 @@ const conversationsTableParams = {
     }
 };
 
+// Định nghĩa cấu trúc bảng friends
+const friendsTableParams = {
+  TableName: 'friends-zalolite',
+  KeySchema: [
+    { AttributeName: 'userId', KeyType: 'HASH' },
+    { AttributeName: 'friendId', KeyType: 'RANGE' }
+  ],
+  AttributeDefinitions: [
+    { AttributeName: 'userId', AttributeType: 'S' },
+    { AttributeName: 'friendId', AttributeType: 'S' },
+    { AttributeName: 'createdAt', AttributeType: 'S' }
+  ],
+  GlobalSecondaryIndexes: [
+    {
+      IndexName: 'friendId-index',
+      KeySchema: [
+        { AttributeName: 'friendId', KeyType: 'HASH' },
+        { AttributeName: 'createdAt', KeyType: 'RANGE' }
+      ],
+      Projection: {
+        ProjectionType: 'ALL'
+      },
+      ProvisionedThroughput: {
+        ReadCapacityUnits: 5,
+        WriteCapacityUnits: 5
+      }
+    }
+  ],
+  ProvisionedThroughput: {
+    ReadCapacityUnits: 5,
+    WriteCapacityUnits: 5
+  }
+};
+
+// Định nghĩa cấu trúc bảng friend requests
+const friendRequestsTableParams = {
+  TableName: 'friendRequests',
+  KeySchema: [
+    { AttributeName: 'requestId', KeyType: 'HASH' }
+  ],
+  AttributeDefinitions: [
+    { AttributeName: 'requestId', AttributeType: 'S' },
+    { AttributeName: 'from', AttributeType: 'S' },
+    { AttributeName: 'to', AttributeType: 'S' },
+    { AttributeName: 'createdAt', AttributeType: 'S' }
+  ],
+  GlobalSecondaryIndexes: [
+    {
+      IndexName: 'from-index',
+      KeySchema: [
+        { AttributeName: 'from', KeyType: 'HASH' },
+        { AttributeName: 'createdAt', KeyType: 'RANGE' }
+      ],
+      Projection: {
+        ProjectionType: 'ALL'
+      },
+      ProvisionedThroughput: {
+        ReadCapacityUnits: 5,
+        WriteCapacityUnits: 5
+      }
+    },
+    {
+      IndexName: 'to-index',
+      KeySchema: [
+        { AttributeName: 'to', KeyType: 'HASH' },
+        { AttributeName: 'createdAt', KeyType: 'RANGE' }
+      ],
+      Projection: {
+        ProjectionType: 'ALL'
+      },
+      ProvisionedThroughput: {
+        ReadCapacityUnits: 5,
+        WriteCapacityUnits: 5
+      }
+    }
+  ],
+  ProvisionedThroughput: {
+    ReadCapacityUnits: 5,
+    WriteCapacityUnits: 5
+  }
+};
+
 // Hàm tạo bảng
 async function createTable(params) {
   try {
@@ -318,6 +400,8 @@ async function createTables() {
   await createTable(groupMembersTableParams);
   await createTable(messagesTableParams);
   await createTable(conversationsTableParams);
+  await createTable(friendsTableParams);
+  await createTable(friendRequestsTableParams);
   
   console.log('✅ Hoàn thành tạo bảng!');
 }

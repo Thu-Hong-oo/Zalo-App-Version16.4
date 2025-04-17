@@ -1,0 +1,51 @@
+@baseUrl = http://localhost:3000/api
+@authToken = your_auth_token_here
+
+### Gửi lời mời kết bạn
+POST {{baseUrl}}/friends/request
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+    "from": "346f45cb-af42-4f2d-8d1b-850c9ae0e37f",
+    "to": "463850a1-75ba-4f09-bf7e-c0ca62b0ea18"
+}
+
+### Lấy danh sách lời mời đã gửi
+GET {{baseUrl}}/friends/request/sent/346f45cb-af42-4f2d-8d1b-850c9ae0e37f
+Authorization: Bearer {{authToken}}
+
+### Lấy danh sách lời mời đã nhận
+GET {{baseUrl}}/friends/request/received/463850a1-75ba-4f09-bf7e-c0ca62b0ea18
+Authorization: Bearer {{authToken}}
+
+### Chấp nhận lời mời kết bạn
+POST {{baseUrl}}/friends/request/accept
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+    "requestId": "request_id_here"
+}
+
+### Từ chối lời mời kết bạn
+POST {{baseUrl}}/friends/request/reject
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+    "requestId": "request_id_here"
+}
+
+### Hủy lời mời kết bạn đã gửi
+POST {{baseUrl}}/friends/request/cancel
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+    "requestId": "request_id_here"
+}
+
+### Lấy danh sách bạn bè
+GET {{baseUrl}}/friends/list/346f45cb-af42-4f2d-8d1b-850c9ae0e37f
+Authorization: Bearer {{authToken}} 

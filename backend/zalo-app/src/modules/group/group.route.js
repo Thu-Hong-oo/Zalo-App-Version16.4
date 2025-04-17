@@ -12,7 +12,7 @@ router.delete('/:groupId', auth, groupController.deleteGroup);
 // Member routes
 router.post('/:groupId/members', auth, groupController.addMember);
 router.get('/:groupId/members', auth, groupController.getMembers);
-router.put('/:groupId/members/:memberId', auth, groupController.updateMember);
+router.put('/:groupId/members/:memberId/role', auth, groupController.updateMember);
 router.delete('/:groupId/members/:memberId', auth, groupController.removeMember);
 
 // User groups

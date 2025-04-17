@@ -6,7 +6,15 @@ require('dotenv').config();
 const winston = require('winston');
 const path = require('path');
 const fs = require('fs');
-const AWS = require('aws-sdk');
+const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
+const { 
+    DynamoDBDocumentClient, 
+    QueryCommand,
+    GetCommand 
+} = require("@aws-sdk/lib-dynamodb");
+
+const client = new DynamoDBClient({});
+const dynamodb = DynamoDBDocumentClient.from(client);
 
 // // Create logger instance
 // const logger = winston.createLogger({
@@ -193,6 +201,22 @@ const getUserByPhone = async (req, res) => {
     }
 };
 
+const getUserByUserId = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const user = await User.getById(userId);
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const { password, ...userWithoutPassword } = user;
+        res.json(userWithoutPassword);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 const updateStatus = async (req, res) => {
     try {
         const { phone } = req.user;
@@ -297,6 +321,66 @@ const changePassword = async (req, res) => {
     }
 };
 
+const getUserGroups = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        // Query group members table to get all groups for this user
+        const params = {
+            TableName: 'group_members-zalolite',
+            IndexName: 'userId-index',
+            KeyConditionExpression: 'userId = :userId',
+            FilterExpression: 'isActive = :isActive',
+            ExpressionAttributeValues: {
+                ':userId': userId,
+                ':isActive': true
+            }
+        };
+
+        const result = await dynamodb.send(new QueryCommand(params));
+        
+        if (!result.Items || result.Items.length === 0) {
+            return res.json({ groups: [] });
+        }
+
+        // Get group details for each group
+        const groupPromises = result.Items.map(async (member) => {
+            const groupParams = {
+                TableName: 'groups-zalolite',
+                KeyConditionExpression: 'groupId = :groupId',
+                ExpressionAttributeValues: {
+                    ':groupId': member.groupId
+                }
+            };
+
+            const groupResult = await dynamodb.send(new QueryCommand(groupParams));
+            const group = groupResult.Items?.[0];
+
+            if (group) {
+                return {
+                    ...group,
+                    memberRole: member.role || 'member'
+                };
+            }
+            return null;
+        });
+
+        const groups = (await Promise.all(groupPromises)).filter(group => group !== null);
+        
+        // Sort groups by lastMessageTime if available
+        groups.sort((a, b) => {
+            const timeA = a.lastMessageTime || a.createdAt;
+            const timeB = b.lastMessageTime || b.createdAt;
+            return new Date(timeB) - new Date(timeA);
+        });
+
+        res.json({ groups });
+    } catch (error) {
+        console.error('Error getting user groups:', error);
+        res.status(500).json({ message: 'Error getting user groups', error: error.message });
+    }
+};
+
 // Export individual controller methods
 const userController = {
     getProfile,
@@ -304,8 +388,10 @@ const userController = {
     updateAvatar,
     searchUsers,
     getUserByPhone,
+    getUserByUserId,
     updateStatus,
-    changePassword
+    changePassword,
+    getUserGroups
 };
 
 // Debug log

@@ -1,31 +1,24 @@
 const Joi = require('joi');
-const { MEMBER_ROLES } = require('./groupMemberService');
 
 const createGroupSchema = Joi.object({
-  name: Joi.string().required().min(1).max(100),
-  description: Joi.string().allow('').max(500),
+  members: Joi.array().items(Joi.string()).min(2).required(),
   createdBy: Joi.string().required()
 });
 
 const updateGroupSchema = Joi.object({
-  name: Joi.string().min(1).max(100),
-  description: Joi.string().allow('').max(500),
-  avatar: Joi.string().uri().allow(''),
-  // Cho phép các field khác
-}).unknown(true).min(1);
+  name: Joi.string(),
+  description: Joi.string().allow(''),
+  avatar: Joi.string().allow(''),
+}).min(1);
 
 const addMemberSchema = Joi.object({
-  groupId: Joi.string().required(),
   userId: Joi.string().required(),
-  role: Joi.string().valid(...Object.values(MEMBER_ROLES)),
-  addedBy: Joi.string().required(),
-  nickname: Joi.string().allow('').max(50)
+  role: Joi.string().valid('ADMIN', 'DEPUTY', 'MEMBER').default('MEMBER')
 });
 
 const updateMemberSchema = Joi.object({
-  role: Joi.string().valid(...Object.values(MEMBER_ROLES)),
-  nickname: Joi.string().allow('').max(50)
-}).min(1);
+  role: Joi.string().valid('ADMIN', 'DEPUTY', 'MEMBER').required()
+});
 
 module.exports = {
   createGroupSchema,

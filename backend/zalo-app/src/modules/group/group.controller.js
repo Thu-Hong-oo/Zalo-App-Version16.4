@@ -14,17 +14,16 @@ class GroupController {
         return res.status(400).json({ error: error.details[0].message });
       }
 
-      const group = await groupService.createGroup(req.body);
-      await GroupMemberService.addMember({
-        groupId: group.groupId,
-        userId: req.body.createdBy,
-        role: MEMBER_ROLES.ADMIN,
-        addedBy: req.body.createdBy
+      // Create group with members
+      const group = await groupService.createGroup({
+        members: req.body.members,
+        createdBy: req.body.createdBy
       });
 
       emitEvent(GROUP_EVENTS.CREATED, group);
       res.status(201).json(group);
     } catch (error) {
+      console.error('Create group error:', error);
       res.status(500).json({ error: error.message });
     }
   }
@@ -85,10 +84,11 @@ class GroupController {
         return res.status(400).json({ error: error.details[0].message });
       }
 
-      const member = await GroupMemberService.addMember({
-        ...req.body,
-        groupId: req.params.groupId
-      });
+      const member = await GroupMemberService.addMember(
+        req.params.groupId,
+        req.body.userId,
+        req.body.role
+      );
 
       emitEvent(GROUP_EVENTS.MEMBER_ADDED, member);
       res.status(201).json(member);

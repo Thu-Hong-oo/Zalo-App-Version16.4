@@ -60,5 +60,6 @@ router.put('/password', auth, userController.changePassword);
 
 router.get('/search', auth, userController.searchUsers);
 router.get('/:phone', auth, userController.getUserByPhone);
+router.get('/:userId/groups', auth, userController.getUserGroups);
 
 module.exports = router; 
