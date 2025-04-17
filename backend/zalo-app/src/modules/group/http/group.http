@@ -1,0 +1,75 @@
+### Create a new group
+@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwaG9uZSI6Ijg0Mzc2OTYzNjUzIiwiaWF0IjoxNzQ0ODEyOTY3LCJleHAiOjE3NDQ4OTkzNjd9.9Q9y4a8Xj6yUW2cPrKqtr1bnYbFzK29KHSJEazjq1GU
+@group_id = 6607af82-ff59-4fa5-a1c3-34c5b4412b94 
+@user_id = 84376963653
+@member_id = 123
+
+POST http://localhost:3000/api/groups
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "name": "Test Group",
+  "description": "This is a test group",
+  "createdBy": "84376963653"
+}
+
+### Get group by ID
+GET http://localhost:3000/api/groups/{{group_id}}
+Authorization: Bearer {{authToken}}
+
+### Update group
+PUT http://localhost:3000/api/groups/{{group_id}}
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "name": "Updated Group Name",
+  "description": "Updated group description"
+}
+
+### Delete group (soft delete)
+DELETE http://localhost:3000/api/groups/{{group_id}}
+Authorization: Bearer {{authToken}}
+
+### Add member to group
+POST http://localhost:3000/api/groups/{{group_id}}/members
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "userId": "user456",
+  "role": "MEMBER",
+  "nickname": "New Member"
+}
+
+### Get group members
+GET http://localhost:3000/api/groups/{{group_id}}/members
+Authorization: Bearer {{authToken}}
+
+### Update member role
+PUT http://localhost:3000/api/groups/{{group_id}}/members/{{member_id}}
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "role": "MODERATOR",
+  "nickname": "Updated Nickname"
+}
+
+### Remove member from group
+DELETE http://localhost:3000/api/groups/{{group_id}}/members/{{member_id}}
+Authorization: Bearer {{authToken}}
+
+### Get user's groups
+GET http://localhost:3000/api/users/{{user_id}}/groups
+Authorization: Bearer {{authToken}}
+
+### Update last read timestamp
+PUT http://localhost:3000/api/groups/{{group_id}}/members/{{member_id}}/last-read
+Content-Type: application/json
+Authorization: Bearer {{authToken}}
+
+{
+  "timestamp": "2024-04-16T12:00:00Z"
+} 

@@ -80,10 +80,11 @@ const PersonalScreen = () => {
       
       // Close modal and navigate
       setLogoutModalVisible(false);
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Welcome' }],
-      });
+      // navigation.reset({
+      //   index: 0,
+      //   routes: [{ name: 'Welcome' }],
+      // });
+     // navigation.navigate('Welcome');
     } catch (error) {
       console.error('Logout error:', error);
       Alert.alert('Lỗi', 'Không thể đăng xuất. Vui lòng thử lại.');

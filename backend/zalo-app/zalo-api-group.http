@@ -4,27 +4,27 @@ POST http://localhost:3000/api/auth/login
 Content-Type: application/json
 
 {
-    "phone": "0374374329",
+    "phone": "0376963653",
     "password": "123456"
 }
 
 ### Save the token from login response
-@authToken = {{login.response.body.data.accessToken}}
+@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwaG9uZSI6Ijg0Mzc2OTYzNjUzIiwiaWF0IjoxNzQ0ODEyOTY3LCJleHAiOjE3NDQ4OTkzNjd9.9Q9y4a8Xj6yUW2cPrKqtr1bnYbFzK29KHSJEazjq1GU
 
 ### Get conversations
 GET http://localhost:3000/api/chat/conversations
 Authorization: Bearer {{authToken}}
 
 ### Get chat history with a specific user
-GET http://localhost:3000/api/chat/history/0987654321
+GET http://localhost:3000/api/chat/history/84123456789
 Authorization: Bearer {{authToken}}
 
 ### Get chat history with pagination
-GET http://localhost:3000/api/chat/history/0987654321?limit=20
+GET http://localhost:3000/api/chat/history/84123456789?limit=1
 Authorization: Bearer {{authToken}}
 
 ### Get chat history with last evaluated key
-GET http://localhost:3000/api/chat/history/0987654321?lastEvaluatedKey={"messageId":"some-id","timestamp":123456789}
+GET http://localhost:3000/api/chat/history/84123456789?lastEvaluatedKey={"messageId":"some-id","timestamp":123456789}
 Authorization: Bearer {{authToken}}
 
 ### Get conversations with pagination
