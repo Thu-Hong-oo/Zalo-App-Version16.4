@@ -30,34 +30,60 @@ AWS.config.update(awsConfig);
 const dynamodb = new AWS.DynamoDB();
 
 // Định nghĩa cấu trúc bảng users
-const usersTableParams = {
-  TableName: 'users-zalolite',
-  KeySchema: [
-    { AttributeName: 'phone', KeyType: 'HASH' },
-    { AttributeName: 'name', KeyType: 'RANGE' }
-  ],
-  AttributeDefinitions: [
-    { AttributeName: 'phone', AttributeType: 'S' },
-    { AttributeName: 'name', AttributeType: 'S' }
-  ],
-  GlobalSecondaryIndexes: [
-    {
-      IndexName: 'name-index',
-      KeySchema: [
-        { AttributeName: 'name', KeyType: 'HASH' }
-      ],
-      Projection: {
-        ProjectionType: 'ALL'
+const createUsersTable = async () => {
+  const params = {
+    TableName: 'users-zalolite',
+    KeySchema: [
+      { AttributeName: 'userId', KeyType: 'HASH' }
+    ],
+    AttributeDefinitions: [
+      { AttributeName: 'userId', AttributeType: 'S' },
+      { AttributeName: 'phone', AttributeType: 'S' },
+      { AttributeName: 'name', AttributeType: 'S' }
+    ],
+    GlobalSecondaryIndexes: [
+      {
+        IndexName: 'phone-index',
+        KeySchema: [
+          { AttributeName: 'phone', KeyType: 'HASH' }
+        ],
+        Projection: {
+          ProjectionType: 'ALL'
+        },
+        ProvisionedThroughput: {
+          ReadCapacityUnits: 5,
+          WriteCapacityUnits: 5
+        }
       },
-      ProvisionedThroughput: {
-        ReadCapacityUnits: 5,
-        WriteCapacityUnits: 5
+      {
+        IndexName: 'name-index',
+        KeySchema: [
+          { AttributeName: 'name', KeyType: 'HASH' }
+        ],
+        Projection: {
+          ProjectionType: 'ALL'
+        },
+        ProvisionedThroughput: {
+          ReadCapacityUnits: 5,
+          WriteCapacityUnits: 5
+        }
       }
+    ],
+    ProvisionedThroughput: {
+      ReadCapacityUnits: 5,
+      WriteCapacityUnits: 5
     }
-  ],
-  ProvisionedThroughput: {
-    ReadCapacityUnits: 5,
-    WriteCapacityUnits: 5
+  };
+
+  try {
+    await dynamodb.createTable(params).promise();
+    console.log('Users table created successfully');
+  } catch (error) {
+    if (error.code === 'ResourceInUseException') {
+      console.log('Users table already exists');
+    } else {
+      throw error;
+    }
   }
 };
 
@@ -287,7 +313,7 @@ async function createTable(params) {
 async function createTables() {
   console.log('🚀 Bắt đầu tạo bảng...');
   
-  await createTable(usersTableParams);
+  await createUsersTable();
   await createTable(groupsTableParams);
   await createTable(groupMembersTableParams);
   await createTable(messagesTableParams);

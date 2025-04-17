@@ -9,8 +9,10 @@ const createGroupSchema = Joi.object({
 
 const updateGroupSchema = Joi.object({
   name: Joi.string().min(1).max(100),
-  description: Joi.string().allow('').max(500)
-}).min(1);
+  description: Joi.string().allow('').max(500),
+  avatar: Joi.string().uri().allow(''),
+  // Cho phép các field khác
+}).unknown(true).min(1);
 
 const addMemberSchema = Joi.object({
   groupId: Joi.string().required(),

@@ -40,6 +40,14 @@ const updateAvatar = async (req, res) => {
             });
         }
 
+        const { phone } = req.user;
+        
+        // Get current user
+        const currentUser = await User.getByPhone(phone);
+        if (!currentUser) {
+            return res.status(404).json({ message: 'Không tìm thấy người dùng' });
+        }
+
         // Lấy thông tin file
         const file = req.file;
         console.log('Received file:', {
@@ -49,19 +57,18 @@ const updateAvatar = async (req, res) => {
         });
 
         // Upload to S3
-        const filepath = `avatars/${req.user.phone}_${Date.now()}${path.extname(file.originalname)}`;
+        const filepath = `avatars/${phone}_${Date.now()}${path.extname(file.originalname)}`;
         const s3Response = await s3.upload({
             Bucket: process.env.S3_BUCKET_NAME,
             Key: filepath,
             Body: file.buffer,
             ContentType: file.mimetype,
-       
         }).promise();
 
         console.log('S3 upload result:', s3Response);
 
         // Cập nhật avatar mới trong database
-        const updatedUser = await User.update(req.user.phone, { 
+        const updatedUser = await User.update(currentUser.userId, { 
             avatar: s3Response.Location 
         });
 
@@ -106,7 +113,7 @@ const getProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
     try {
         const { phone } = req.user;
-        const { name, status, gender, dateOfBirth } = req.body;
+        const updateData = { ...req.body };
 
         // Get current user
         const currentUser = await User.getByPhone(phone);
@@ -114,25 +121,35 @@ const updateProfile = async (req, res) => {
             return res.status(404).json({ message: 'Không tìm thấy người dùng' });
         }
 
-        // Prepare update data
-        const updateData = {
-            ...(name && { name }),
-            ...(status && { status }),
-            ...(gender && { gender }),
-            ...(dateOfBirth && { dateOfBirth }),
-            updatedAt: new Date().toISOString()
-        };
+        // Convert phoneNumber to phone if exists
+        if (updateData.phoneNumber) {
+            updateData.phone = updateData.phoneNumber;
+            delete updateData.phoneNumber;
+        }
+
+        // Remove fields that shouldn't be updated
+        delete updateData.userId;
+        delete updateData.createdAt;
+        delete updateData.updatedAt;
 
         console.log('Updating user with data:', updateData);
 
-        const updatedUser = await User.update(phone, updateData);
+        // Use userId for update
+        const updatedUser = await User.update(currentUser.userId, updateData);
 
         if (!updatedUser) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        const { password, ...userWithoutPassword } = updatedUser;
-        res.json(userWithoutPassword);
+        // Convert phone to phoneNumber in response
+        const userResponse = {
+            ...updatedUser,
+            phoneNumber: updatedUser.phone
+        };
+        delete userResponse.password;
+        delete userResponse.phone;
+
+        res.json(userResponse);
     } catch (error) {
         console.error('Error updating profile:', error);
         res.status(500).json({ message: error.message });
@@ -188,8 +205,17 @@ const updateStatus = async (req, res) => {
             });
         }
 
-        // Update user status
-        const updatedUser = await User.update(phone, { status });
+        // Get current user first
+        const currentUser = await User.getByPhone(phone);
+        if (!currentUser) {
+            return res.status(404).json({ 
+                status: 'error',
+                message: 'User not found' 
+            });
+        }
+
+        // Update user status using userId
+        const updatedUser = await User.update(currentUser.userId, { status });
 
         if (!updatedUser) {
             return res.status(404).json({ 
@@ -248,8 +274,8 @@ const changePassword = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-        // Update password
-        const updatedUser = await User.update(phone, { password: hashedPassword });
+        // Update password using userId
+        const updatedUser = await User.update(user.userId, { password: hashedPassword });
         if (!updatedUser) {
             return res.status(500).json({
                 status: 'error',

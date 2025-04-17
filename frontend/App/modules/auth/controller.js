@@ -1,29 +1,6 @@
 import api from '../../config/api';
 import { getApiUrlAsync } from '../../config/api';
 
-// // Thêm interceptor để xử lý lỗi
-// api.interceptors.response.use(
-//   (response) => response,
-//   (error) => {
-//     console.log('API Error:', error);
-//     if (error.code === 'ECONNABORTED') {
-//       throw new Error('Kết nối quá thời gian. Vui lòng thử lại.');
-//     }
-//     if (!error.response) {
-//       console.log('Network error details:', {
-//         message: error.message,
-//         code: error.code,
-//         config: {
-//           url: error.config?.url,
-//           method: error.config?.method,
-//           baseURL: error.config?.baseURL,
-//         }
-//       });
-//       throw new Error('Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng.');
-//     }
-//     throw error.response?.data || error;
-//   }
-// );
 
 // Hàm khởi tạo API
 export const initApi = async () => {

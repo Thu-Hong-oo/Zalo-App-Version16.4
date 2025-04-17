@@ -1,6 +1,9 @@
 const AWS = require('aws-sdk');
 const config = require('../../config/aws');
 require('dotenv').config();
+const { dynamoDB, TABLES } = require('../../config/aws');
+const { v4: uuidv4 } = require('uuid');
+
 // Configure AWS
 AWS.config.update({
     accessKeyId: config.awsAccessKeyId,
@@ -8,155 +11,129 @@ AWS.config.update({
     region: config.awsRegion
 });
 
-const dynamoDB = new AWS.DynamoDB.DocumentClient();
+const dynamoDBClient = new AWS.DynamoDB.DocumentClient();
 const TABLE_NAME = process.env.DYNAMODB_TABLE_NAME;
 
 class User {
     static async create(userData) {
-        try {
-            // Check if phone number already exists
-            const existingUser = await this.getByPhone(userData.phone);
-            if (existingUser) {
-                throw new Error('Số điện thoại đã được đăng ký');
-            }
-
-            // Prepare item for DynamoDB
-            const item = {
-                phone: userData.phone, // Partition key
-                name: userData.name,   // Sort key
-                password: userData.password,
-                isPhoneVerified: userData.isPhoneVerified || false,
-                status: userData.status || 'online',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            };
-
-            const params = {
-                TableName: TABLE_NAME,
-                Item: item,
-                ConditionExpression: 'attribute_not_exists(phone) AND attribute_not_exists(#name)',
-                ExpressionAttributeNames: {
-                    '#name': 'name'
-                }
-            };
-
-            await dynamoDB.put(params).promise();
-            return item;
-        } catch (error) {
-            console.error('Lỗi khi tạo người dùng:', error);
-            throw error;
+        const { phone, password, name } = userData;
+        
+        // Check if user already exists
+        const existingUser = await this.getByPhone(phone);
+        if (existingUser) {
+            throw new Error('Số điện thoại đã được đăng ký');
         }
+
+        const timestamp = new Date().toISOString();
+        const userId = uuidv4();
+
+        const params = {
+            TableName: TABLES.USERS,
+            Item: {
+                userId,
+                phone,
+                password,
+                name,
+                isPhoneVerified: false,
+                status: 'ACTIVE',
+                createdAt: timestamp,
+                updatedAt: timestamp
+            }
+        };
+
+        await dynamoDBClient.put(params).promise();
+        return params.Item;
     }
 
     static async getByPhone(phone) {
-        try {
-            const params = {
-                TableName: TABLE_NAME,
-                KeyConditionExpression: 'phone = :phone',
-                ExpressionAttributeValues: {
-                    ':phone': phone
-                }
-            };
+        const params = {
+            TableName: TABLES.USERS,
+            IndexName: 'phone-index',
+            KeyConditionExpression: 'phone = :phone',
+            ExpressionAttributeValues: {
+                ':phone': phone
+            }
+        };
 
-            const result = await dynamoDB.query(params).promise();
-            return result.Items && result.Items.length > 0 ? result.Items[0] : null;
-        } catch (error) {
-            console.error('Lỗi khi lấy thông tin người dùng:', error);
-            throw error;
-        }
+        const result = await dynamoDBClient.query(params).promise();
+        return result.Items[0];
     }
 
-    static async update(phone, updateData) {
-        try {
-            // Get current user data
-            const currentUser = await this.getByPhone(phone);
-            if (!currentUser) {
-                throw new Error('Không tìm thấy người dùng');
+    static async getById(userId) {
+        const params = {
+            TableName: TABLES.USERS,
+            Key: { userId }
+        };
+
+        const result = await dynamoDBClient.get(params).promise();
+        return result.Item;
+    }
+
+    static async update(userId, updateData) {
+        const timestamp = new Date().toISOString();
+        
+        const updateExpressions = [];
+        const expressionAttributeNames = {};
+        const expressionAttributeValues = {};
+        
+        Object.entries(updateData).forEach(([key, value]) => {
+            if (key !== 'userId' && key !== 'phone') { // Prevent updating userId and phone
+                updateExpressions.push(`#${key} = :${key}`);
+                expressionAttributeNames[`#${key}`] = key;
+                expressionAttributeValues[`:${key}`] = value;
             }
+        });
+        
+        // Add updatedAt
+        updateExpressions.push('#updatedAt = :updatedAt');
+        expressionAttributeNames['#updatedAt'] = 'updatedAt';
+        expressionAttributeValues[':updatedAt'] = timestamp;
 
-            // If name is being updated, we need to delete old record and create new one
-            if (updateData.name && updateData.name !== currentUser.name) {
-                // Delete old record
-                await this.delete(phone, currentUser.name);
+        const params = {
+            TableName: TABLES.USERS,
+            Key: { userId },
+            UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+            ExpressionAttributeNames: expressionAttributeNames,
+            ExpressionAttributeValues: expressionAttributeValues,
+            ReturnValues: 'ALL_NEW'
+        };
 
-                // Create new record with updated data
-                const newUser = {
-                    ...currentUser,
-                    ...updateData,
-                    updatedAt: new Date().toISOString()
-                };
+        const result = await dynamoDBClient.update(params).promise();
+        return result.Attributes;
+    }
 
-                const createParams = {
-                    TableName: TABLE_NAME,
-                    Item: newUser
-                };
-
-                await dynamoDB.put(createParams).promise();
-                return newUser;
+    static async searchUsers(query) {
+        const params = {
+            TableName: TABLES.USERS,
+            IndexName: 'name-index',
+            KeyConditionExpression: 'begins_with(#name, :query)',
+            ExpressionAttributeNames: {
+                '#name': 'name'
+            },
+            ExpressionAttributeValues: {
+                ':query': query
             }
+        };
 
-            // If name is not being updated, proceed with normal update
-            const updateParts = [];
-            const expressionAttributeValues = {
-                ':updatedAt': new Date().toISOString()
-            };
-            const expressionAttributeNames = {};
-            let hasNamedAttributes = false;
+        const result = await dynamoDBClient.query(params).promise();
+        return result.Items;
+    }
 
-            // Add fields to update
-            updateParts.push('updatedAt = :updatedAt');
+    static async updateLastSeen(userId) {
+        const timestamp = new Date().toISOString();
+        
+        const params = {
+            TableName: TABLES.USERS,
+            Key: { userId },
+            UpdateExpression: 'SET lastSeen = :lastSeen',
+            ExpressionAttributeValues: {
+                ':lastSeen': timestamp
+            },
+            ReturnValues: 'ALL_NEW'
+        };
 
-            if (updateData.status !== undefined) {
-                updateParts.push('#userStatus = :userStatus');
-                expressionAttributeValues[':userStatus'] = updateData.status;
-                expressionAttributeNames['#userStatus'] = 'status';
-                hasNamedAttributes = true;
-            }
-            if (updateData.password !== undefined) {
-                updateParts.push('password = :password');
-                expressionAttributeValues[':password'] = updateData.password;
-            }
-            if (updateData.isPhoneVerified !== undefined) {
-                updateParts.push('isPhoneVerified = :isPhoneVerified');
-                expressionAttributeValues[':isPhoneVerified'] = updateData.isPhoneVerified;
-            }
-            if (updateData.gender !== undefined) {
-                updateParts.push('gender = :gender');
-                expressionAttributeValues[':gender'] = updateData.gender;
-            }
-            if (updateData.dateOfBirth !== undefined) {
-                updateParts.push('dateOfBirth = :dateOfBirth');
-                expressionAttributeValues[':dateOfBirth'] = updateData.dateOfBirth;
-            }
-            if (updateData.avatar !== undefined) {
-                updateParts.push('avatar = :avatar');
-                expressionAttributeValues[':avatar'] = updateData.avatar;
-            }
-
-            const params = {
-                TableName: TABLE_NAME,
-                Key: {
-                    phone: phone,
-                    name: currentUser.name
-                },
-                UpdateExpression: 'set ' + updateParts.join(', '),
-                ExpressionAttributeValues: expressionAttributeValues,
-                ReturnValues: 'ALL_NEW'
-            };
-
-            // Only add ExpressionAttributeNames if we have named attributes
-            if (hasNamedAttributes) {
-                params.ExpressionAttributeNames = expressionAttributeNames;
-            }
-
-            console.log('DynamoDB update params:', JSON.stringify(params, null, 2));
-
-            const result = await dynamoDB.update(params).promise();
-            return result.Attributes;
-        } catch (error) {
-            console.error('Lỗi khi cập nhật thông tin người dùng:', error);
-            throw error;
-        }
+        const result = await dynamoDBClient.update(params).promise();
+        return result.Attributes;
     }
 
     static async delete(phone, name) {
@@ -169,7 +146,7 @@ class User {
                 }
             };
 
-            await dynamoDB.delete(params).promise();
+            await dynamoDBClient.delete(params).promise();
             return true;
         } catch (error) {
             console.error('Lỗi khi xóa người dùng:', error);
@@ -193,28 +170,8 @@ class User {
         };
 
         try {
-            const result = await dynamoDB.update(params).promise();
+            const result = await dynamoDBClient.update(params).promise();
             return result.Attributes;
-        } catch (error) {
-            throw error;
-        }
-    }
-
-    static async searchUsers(searchTerm) {
-        const params = {
-            TableName: TABLE_NAME,
-            FilterExpression: 'contains(#name, :searchTerm) OR contains(phone, :searchTerm)',
-            ExpressionAttributeNames: {
-                '#name': 'name'
-            },
-            ExpressionAttributeValues: {
-                ':searchTerm': searchTerm
-            }
-        };
-
-        try {
-            const result = await dynamoDB.scan(params).promise();
-            return result.Items;
         } catch (error) {
             throw error;
         }
