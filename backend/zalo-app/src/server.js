@@ -16,6 +16,7 @@ const authRoutes = require("./modules/auth/routes");
 const userRoutes = require("./modules/user/routes");
 // const gatewayRoutes = require("./modules/gateway/routes");
 const groupRoutes = require("./modules/group/group.route");
+const friendRoutes = require("./modules/friend/routes");
 const {
   routes: chatRoutes,
   socket: initializeSocket,
@@ -95,8 +96,7 @@ app.use("/api/users", userRoutes);
 // app.use("/api", gatewayRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/groups", groupRoutes);
-
-
+app.use("/api/friends", friendRoutes);
 
 // Initialize socket
 initializeSocket(io);

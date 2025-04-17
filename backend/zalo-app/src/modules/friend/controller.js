@@ -5,24 +5,31 @@ const {
   UpdateCommand,
   DeleteCommand,
   QueryCommand,
+  GetCommand,
 } = require("@aws-sdk/lib-dynamodb");
-const dynamodb = require("../../config/aws");
+const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
+const { DynamoDBDocumentClient } = require("@aws-sdk/lib-dynamodb");
 const axios = require("axios");
+
+const client = new DynamoDBClient({});
+const dynamodb = DynamoDBDocumentClient.from(client);
 
 const TABLE_NAME = "friendRequests";
 const USERS_TABLE = "users-zalolite";
 const FRIENDS_TABLE = "friends-zalolite";
 
 async function getUserProfile(userId) {
-  const result = await dynamodb.send(
-    new QueryCommand({
+  try {
+    const params = {
       TableName: USERS_TABLE,
-      IndexName: "userId-index",
-      KeyConditionExpression: "userId = :u",
-      ExpressionAttributeValues: { ":u": userId },
-    })
-  );
-  return result.Items?.[0] || null;
+      Key: { userId: userId },
+    };
+    const result = await dynamodb.send(new GetCommand(params));
+    return result.Item || null;
+  } catch (error) {
+    console.error(`Error fetching profile for userId ${userId}:`, error);
+    return null; // Trả về null nếu có lỗi để không làm crash toàn bộ request
+  }
 }
 
 // Gửi lời mời kết bạn
@@ -58,27 +65,37 @@ exports.getSentRequests = async (req, res) => {
   }
 
   try {
-    const result = await dynamodb.send(
-      new ScanCommand({
-        TableName: TABLE_NAME,
-        FilterExpression: "#from = :from",
-        ExpressionAttributeNames: { "#from": "from" },
-        ExpressionAttributeValues: { ":from": userId },
-      })
-    );
+    // Sử dụng QueryCommand với from-index
+    const params = {
+      TableName: TABLE_NAME,
+      IndexName: 'from-index',
+      KeyConditionExpression: '#from = :fromVal',
+      ExpressionAttributeNames: { '#from': 'from' },
+      ExpressionAttributeValues: { ':fromVal': userId },
+      // Optional: Thêm sắp xếp theo thời gian nếu cần
+      // ScanIndexForward: false // false để sắp xếp mới nhất trước
+    };
+
+    const result = await dynamodb.send(new QueryCommand(params));
 
     const enriched = await Promise.all(
-      result.Items.map(async (req) => {
+      (result.Items || []).map(async (requestItem) => {
         try {
-          const userRes = await axios.get(`http://localhost:3000/api/users/${req.to}`);
-          const user = userRes.data.user;
+          // Sử dụng hàm nội bộ thay vì gọi API
+          const user = await getUserProfile(requestItem.to);
           return {
-            ...req,
-            name: user?.name || "Không rõ",
-            avatar: user?.avatar || "/default-avatar.png",
+            ...requestItem,
+            toUser: {
+              name: user?.name || "Không rõ",
+              avatar: user?.avatar || "/default-avatar.png",
+            }
           };
         } catch (e) {
-          return { ...req, name: "Không rõ", avatar: "/default-avatar.png" };
+          console.error(`Error fetching profile for user ${requestItem.to}:`, e);
+          return { 
+            ...requestItem, 
+            toUser: { name: "Không rõ", avatar: "/default-avatar.png" } 
+          };
         }
       })
     );
