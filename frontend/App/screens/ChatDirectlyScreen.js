@@ -16,6 +16,7 @@ import {
   Dimensions,
   Linking,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { io } from "socket.io-client";
@@ -33,7 +34,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import ForwardMessageModal from "./ForwardMessageModal";
-import { getApiUrl, getBaseUrl,api } from "../config/api";
+import { getApiUrl, getBaseUrl, api } from "../config/api";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -57,12 +58,204 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   const [previewVideo, setPreviewVideo] = useState(null);
   const [showVideoPreview, setShowVideoPreview] = useState(false);
   const [forwardModalVisible, setForwardModalVisible] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [oldestMessageDate, setOldestMessageDate] = useState(null);
+  const [visibleDates, setVisibleDates] = useState([]);
+  const [initialLoad, setInitialLoad] = useState(true);
+  const [isLoadingDate, setIsLoadingDate] = useState(false);
   const flatListRef = useRef(null);
   const { title, otherParticipantPhone, avatar } = route.params;
 
+  const formatDate = (timestamp) => {
+    try {
+      if (!timestamp) return "";
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return "";
+      return date.toLocaleDateString("vi-VN");
+    } catch (error) {
+      console.warn("Date formatting error:", error);
+      return "";
+    }
+  };
+
+  const formatTime = (timestamp) => {
+    try {
+      if (!timestamp) return "";
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return "";
+      return date.toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch (error) {
+      console.warn("Time formatting error:", error);
+      return "";
+    }
+  };
+
+  const loadChatHistory = async (loadMore = false) => {
+    try {
+      if (loadMore && !hasMoreMessages) return;
+
+      setIsLoadingMore(loadMore);
+      const options = {
+        limit: 50,
+      };
+
+      if (loadMore && oldestMessageDate) {
+        options.date = oldestMessageDate;
+        options.before = true;
+      }
+
+      const response = await getChatHistory(otherParticipantPhone, options);
+
+      if (response.status === "success" && response.data.messages) {
+        const messageArray = Object.values(response.data.messages)
+          .flat()
+          .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+        setMessages((prev) => {
+          if (loadMore) {
+            const combined = [...messageArray, ...prev];
+            const unique = Array.from(
+              new Map(combined.map((msg) => [msg.messageId, msg])).values()
+            );
+            return unique.sort(
+              (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+            );
+          }
+          return messageArray;
+        });
+
+        // Update pagination state
+        setHasMoreMessages(response.data.pagination.hasMore);
+        if (response.data.pagination.oldestTimestamp) {
+          setOldestMessageDate(response.data.pagination.oldestTimestamp);
+        }
+
+        // Update visible dates
+        if (!loadMore) {
+          // On initial load, show current date
+          const today = formatDate(Date.now());
+          setVisibleDates([today]);
+        }
+      }
+    } catch (error) {
+      console.error("Error loading chat history:", error);
+      Alert.alert("Lỗi", "Đã xảy ra lỗi khi tải lịch sử trò chuyện");
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  // Update socket initialization
   useEffect(() => {
-    initializeSocket();
+    const initSocket = async () => {
+      try {
+        const token = await getAccessToken();
+        const newSocket = io(getBaseUrl(), {
+          auth: { token },
+          transports: ["websocket", "polling"],
+          forceNew: true,
+          reconnection: true,
+          reconnectionAttempts: 5,
+        });
+
+        newSocket.on("connect", () => {
+          console.log("Connected to socket server");
+        });
+
+        newSocket.on("connect_error", (error) => {
+          console.error("Socket connection error:", error);
+        });
+
+        // Handle new messages from others
+        newSocket.on("new-message", (newMsg) => {
+          console.log("Received new message:", newMsg);
+          if (newMsg.senderPhone === otherParticipantPhone) {
+            setMessages((prev) => {
+              const newMessages = [...prev];
+              const existingIndex = newMessages.findIndex(
+                (msg) => msg.messageId === newMsg.messageId
+              );
+              if (existingIndex === -1) {
+                newMessages.push(newMsg);
+              }
+              return newMessages.sort(
+                (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+              );
+            });
+            scrollToBottom();
+          }
+        });
+
+        // Handle message sent confirmation
+        newSocket.on("message-sent", (response) => {
+          console.log("Message sent response received:", response);
+          if (response) {
+            setMessages((prev) => {
+              console.log("Current messages:", prev);
+              console.log("Looking for message with tempId:", response.tempId);
+
+              const updatedMessages = prev.map((msg) => {
+                // Check both messageId and tempId for backward compatibility
+                if (
+                  msg.tempId === response.tempId ||
+                  msg.messageId === response.tempId
+                ) {
+                  console.log("Found message to update:", msg);
+                  console.log("Updating with response:", response);
+
+                  return {
+                    ...msg,
+                    messageId: response.messageId || msg.messageId,
+                    status: "sent",
+                    isTempId: false,
+                    timestamp: response.timestamp || msg.timestamp,
+                  };
+                }
+                return msg;
+              });
+
+              console.log("Updated messages:", updatedMessages);
+              return updatedMessages;
+            });
+          }
+        });
+
+        // Handle message send error
+        newSocket.on("error", (error) => {
+          console.log("Socket error received:", error);
+          if (error && error.tempId) {
+            setMessages((prev) => {
+              return prev.map((msg) => {
+                if (msg.tempId === error.tempId) {
+                  return { ...msg, status: "error" };
+                }
+                return msg;
+              });
+            });
+          }
+        });
+
+        newSocket.on("typing", ({ senderPhone }) => {
+          if (senderPhone === otherParticipantPhone) setIsTyping(true);
+        });
+
+        newSocket.on("stop-typing", ({ senderPhone }) => {
+          if (senderPhone === otherParticipantPhone) setIsTyping(false);
+        });
+
+        setSocket(newSocket);
+      } catch (error) {
+        console.error("Socket initialization error:", error);
+      }
+    };
+
+    initSocket();
     loadChatHistory();
+
     return () => {
       if (socket) socket.disconnect();
     };
@@ -75,17 +268,17 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   }, [navigation]);
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
+    const unsubscribe = navigation.addListener("focus", () => {
       navigation.getParent()?.setOptions({
-        tabBarStyle: { display: 'none' },
-        tabBarVisible: false
+        tabBarStyle: { display: "none" },
+        tabBarVisible: false,
       });
     });
 
-    const unsubscribeBlur = navigation.addListener('blur', () => {
+    const unsubscribeBlur = navigation.addListener("blur", () => {
       navigation.getParent()?.setOptions({
         tabBarStyle: undefined,
-        tabBarVisible: true
+        tabBarVisible: true,
       });
     });
 
@@ -94,77 +287,27 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       unsubscribeBlur();
       navigation.getParent()?.setOptions({
         tabBarStyle: undefined,
-        tabBarVisible: true
+        tabBarVisible: true,
       });
     };
   }, [navigation]);
 
-  const initializeSocket = async () => {
-    try {
-      const token = await getAccessToken();
-      const newSocket = io(getBaseUrl(), {
-        auth: { token },
-        transports: ["websocket", "polling"],
-        forceNew: true,
-        reconnection: true,
-        reconnectionAttempts: 5,
-      });
-
-      newSocket.on("connect", () => console.log("Connected to socket server"));
-      newSocket.on("connect_error", (error) => console.error("Socket connection error:", error));
-      newSocket.on("new-message", (message) => {
-        setMessages((prev) => [...prev, message]);
-        scrollToBottom();
-      });
-      newSocket.on("typing", ({ senderPhone }) => {
-        if (senderPhone === otherParticipantPhone) setIsTyping(true);
-      });
-      newSocket.on("stop-typing", ({ senderPhone }) => {
-        if (senderPhone === otherParticipantPhone) setIsTyping(false);
-      });
-      newSocket.on("message-recalled", ({ messageId, conversationId, content, type, fileType }) => {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.messageId === messageId
-              ? { ...msg, content, status: "recalled", type, fileType }
-              : msg
-          )
-        );
-      });
-      newSocket.on("message-deleted", ({ messageId, conversationId, type, fileType }) => {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.messageId === messageId
-              ? { ...msg, status: "deleted", type, fileType }
-              : msg
-          )
-        );
-      });
-      setSocket(newSocket);
-    } catch (error) {
-      console.error("Socket initialization error:", error);
-      Alert.alert("Lỗi", "Không thể kết nối tới server");
-    }
-  };
-
-  const loadChatHistory = async () => {
-    try {
-      const response = await getChatHistory(otherParticipantPhone);
-      if (response.status === "success" && response.data.messages) {
-        setMessages(response.data.messages);
-        scrollToBottom();
-      } else {
-        Alert.alert("Lỗi", "Không thể tải lịch sử trò chuyện");
+  useEffect(() => {
+    if (messages.length > 0) {
+      if (initialLoad) {
+        const today = formatDate(Date.now());
+        setVisibleDates([today]);
+        setInitialLoad(false);
       }
-    } catch (error) {
-      console.error("Error loading chat history:", error);
-      Alert.alert("Lỗi", "Đã xảy ra lỗi khi tải lịch sử trò chuyện");
     }
-  };
+  }, [messages]);
 
   const scrollToBottom = () => {
     if (flatListRef.current) {
-      setTimeout(() => flatListRef.current.scrollToEnd({ animated: true }), 100);
+      setTimeout(
+        () => flatListRef.current.scrollToEnd({ animated: true }),
+        100
+      );
     }
   };
 
@@ -173,9 +316,14 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
 
     try {
       if (message.trim()) {
-        const tempId = `temp-${Date.now()}`;
+        const tempId = `temp-${Date.now()}-${Math.random()
+          .toString(36)
+          .substr(2, 9)}`;
+        console.log("Sending message with tempId:", tempId);
+
         const newMessage = {
           messageId: tempId,
+          tempId: tempId,
           senderPhone: "me",
           content: message.trim(),
           type: "text",
@@ -184,36 +332,29 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
           isTempId: true,
         };
 
-        setMessages((prev) => [...prev, newMessage]);
+        console.log("Adding new message to state:", newMessage);
+
+        setMessages((prev) => {
+          const updatedMessages = [...prev, newMessage].sort(
+            (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+          );
+          console.log("Updated messages state:", updatedMessages);
+          return updatedMessages;
+        });
+
         setMessage("");
         scrollToBottom();
 
-        socket.emit("send-message", {
+        console.log("Emitting send-message event:", {
           tempId,
           receiverPhone: otherParticipantPhone,
           content: message.trim(),
         });
 
-        socket.once("message-sent", (response) => {
-          if (response && response.messageId) {
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.messageId === tempId
-                  ? { ...msg, messageId: response.messageId, status: "sent", isTempId: false }
-                  : msg
-              )
-            );
-          }
-        });
-
-        socket.once("error", (error) => {
-          console.error("Error sending message:", error);
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.messageId === tempId ? { ...msg, status: "error" } : msg
-            )
-          );
-          Alert.alert("Lỗi", "Không thể gửi tin nhắn");
+        socket.emit("send-message", {
+          tempId,
+          receiverPhone: otherParticipantPhone,
+          content: message.trim(),
         });
       }
 
@@ -221,7 +362,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         await handleUpload(selectedFiles);
       }
     } catch (error) {
-      console.error("Error sending message:", error);
+      console.error("Error in handleSendMessage:", error);
       Alert.alert("Lỗi", "Không thể gửi tin nhắn");
     }
   };
@@ -262,9 +403,12 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
 
       result.data.urls.forEach((url, index) => {
         const file = files[index];
-        const tempId = `temp-${Date.now()}-${index}`;
+        const tempId = `temp-${Date.now()}-${index}-${Math.random()
+          .toString(36)
+          .substr(2, 9)}`;
         const newMessage = {
           messageId: tempId,
+          tempId: tempId,
           senderPhone: "me",
           content: url,
           type: "file",
@@ -274,35 +418,18 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
           isTempId: true,
         };
 
-        setMessages((prev) => [...prev, newMessage]);
+        setMessages((prev) => {
+          const updatedMessages = [...prev, newMessage].sort(
+            (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+          );
+          return updatedMessages;
+        });
 
         socket.emit("send-message", {
           tempId,
           receiverPhone: otherParticipantPhone,
           fileUrl: url,
           fileType: file.type,
-        });
-
-        socket.once("message-sent", (response) => {
-          if (response && response.messageId) {
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.messageId === tempId
-                  ? { ...msg, messageId: response.messageId, status: "sent", isTempId: false }
-                  : msg
-              )
-            );
-          }
-        });
-
-        socket.once("error", (error) => {
-          console.error("Error sending file message:", error);
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.messageId === tempId ? { ...msg, status: "error" } : msg
-            )
-          );
-          Alert.alert("Lỗi", "Không thể gửi file");
         });
       });
 
@@ -332,15 +459,19 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
 
       const response = await recallMessage(messageId, otherParticipantPhone);
       if (response.status === "success") {
-        const recallContent = targetMessage.type === "file"
-          ? `[File] ${targetMessage.fileType || "file"} đã bị thu hồi`
-          : "Tin nhắn đã bị thu hồi";
+        const recallContent =
+          targetMessage.type === "file"
+            ? `[File] ${targetMessage.fileType || "file"} đã bị thu hồi`
+            : "Tin nhắn đã bị thu hồi";
         setMessages((prev) =>
-          prev.map((msg) =>
-            msg.messageId === messageId
-              ? { ...msg, content: recallContent, status: "recalled" }
-              : msg
-          )
+          [
+            ...prev,
+            {
+              ...targetMessage,
+              content: recallContent,
+              status: "recalled",
+            },
+          ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
         );
         socket?.emit("message-recalled", {
           messageId,
@@ -375,7 +506,13 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       const response = await deleteMessage(messageId);
       if (response.status === "success") {
         setMessages((prev) =>
-          prev.filter((msg) => msg.messageId !== messageId) // Remove deleted message from UI
+          [
+            ...prev,
+            {
+              ...targetMessage,
+              status: "deleted",
+            },
+          ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
         );
         socket?.emit("message-deleted", {
           messageId,
@@ -404,7 +541,9 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         forwardMessage(
           selectedMessage.messageId,
           receiverPhone,
-          selectedMessage.type === "file" ? selectedMessage.content : selectedMessage.content
+          selectedMessage.type === "file"
+            ? selectedMessage.content
+            : selectedMessage.content
         )
       );
       const results = await Promise.all(promises);
@@ -523,11 +662,19 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   };
 
   const renderMessage = ({ item }) => {
-    const isMyMessage = item.senderPhone !== otherParticipantPhone || item.senderPhone === "me";
+    const isMyMessage =
+      item.senderPhone !== otherParticipantPhone || item.senderPhone === "me";
     if (isMyMessage && item.status === "deleted") return null;
 
+    // console.log("Rendering message:", {
+    //   id: item.messageId,
+    //   tempId: item.tempId,
+    //   status: item.status,
+    //   content: item.content,
+    // });
+
     const handleFilePress = async () => {
-      if (item.status === "recalled") return; // Prevent interaction with recalled messages
+      if (item.status === "recalled") return;
       if (item.fileType?.startsWith("image/")) {
         setPreviewImage(item.content);
         setShowImagePreview(true);
@@ -547,8 +694,13 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
 
     return (
       <TouchableOpacity
-        onLongPress={() => isMyMessage && item.status !== "recalled" && showMessageOptions(item)}
-        style={[styles.messageContainer, isMyMessage ? styles.myMessage : styles.otherMessage]}
+        onLongPress={() =>
+          isMyMessage && item.status !== "recalled" && showMessageOptions(item)
+        }
+        style={[
+          styles.messageContainer,
+          isMyMessage ? styles.myMessage : styles.otherMessage,
+        ]}
         disabled={item.status === "recalled"}
       >
         {item.status === "recalled" ? (
@@ -573,7 +725,11 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         ) : item.type === "file" ? (
           <TouchableOpacity onPress={handleFilePress}>
             {item.fileType?.startsWith("image/") ? (
-              <Image source={{ uri: item.content }} style={styles.imgPreview} resizeMode="contain" />
+              <Image
+                source={{ uri: item.content }}
+                style={styles.imgPreview}
+                resizeMode="contain"
+              />
             ) : item.fileType?.startsWith("video/") ? (
               <Video
                 source={{ uri: item.content }}
@@ -583,8 +739,14 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
               />
             ) : (
               <View style={styles.fileContainer}>
-                <Ionicons name="document" size={24} color={isMyMessage ? "white" : "black"} />
-                <Text style={[styles.fileName, isMyMessage && styles.myMessageText]}>
+                <Ionicons
+                  name="document"
+                  size={24}
+                  color={isMyMessage ? "white" : "black"}
+                />
+                <Text
+                  style={[styles.fileName, isMyMessage && styles.myMessageText]}
+                >
                   {item.content.split("/").pop()}
                 </Text>
               </View>
@@ -592,11 +754,18 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         ) : null}
         <View style={styles.messageFooter}>
-          <Text style={[styles.messageTime, isMyMessage && styles.myMessageTime]}>
-            {new Date(item.timestamp).toLocaleTimeString()}
+          <Text
+            style={[styles.messageTime, isMyMessage && styles.myMessageTime]}
+          >
+            {formatTime(item.timestamp)}
           </Text>
           {isMyMessage && (
-            <Text style={styles.messageStatus}>
+            <Text
+              style={[
+                styles.messageStatus,
+                isMyMessage && styles.myMessageStatus,
+              ]}
+            >
               {item.status === "sending"
                 ? "Đang gửi..."
                 : item.status === "sent"
@@ -664,6 +833,72 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
+  const loadMoreMessages = () => {
+    if (isLoadingDate) return; // Prevent multiple loads
+
+    const dates = Object.keys(groupMessagesByDate(messages)).sort(
+      (a, b) => new Date(a) - new Date(b)
+    );
+
+    // Find the oldest visible date
+    const oldestVisibleDate = visibleDates[visibleDates.length - 1];
+    const oldestVisibleIndex = dates.indexOf(oldestVisibleDate);
+
+    // Load just one previous date
+    if (oldestVisibleIndex > 0) {
+      // Get the date immediately before the oldest visible date
+      const previousDate = dates[oldestVisibleIndex - 1];
+      setIsLoadingDate(true); // Set loading flag
+      setVisibleDates((prev) => [...prev, previousDate]);
+
+      // Reset loading flag after a short delay
+      setTimeout(() => {
+        setIsLoadingDate(false);
+      }, 500); // Add small delay to prevent rapid scrolling
+      return;
+    }
+
+    // If we've shown all local dates and there might be more on server
+    if (oldestVisibleIndex === 0 && hasMoreMessages && !isLoadingMore) {
+      loadChatHistory(true);
+    }
+  };
+
+  const groupMessagesByDate = (messages) => {
+    const groups = {};
+    messages.forEach((msg) => {
+      const date = formatDate(msg.timestamp);
+      if (!groups[date]) {
+        groups[date] = [];
+      }
+      groups[date].push(msg);
+    });
+    return groups;
+  };
+
+  const renderDateGroup = ({ item: date }) => {
+    if (!visibleDates.includes(date)) {
+      return null;
+    }
+
+    const messagesForDate = groupMessagesByDate(messages)[date] || [];
+
+    return (
+      <View style={styles.dateGroup}>
+        <View style={styles.dateHeaderContainer}>
+          <View style={styles.dateHeaderLine} />
+          <Text style={styles.dateHeader}>{date}</Text>
+          <View style={styles.dateHeaderLine} />
+        </View>
+        {messagesForDate.map((msg) => (
+          <View key={`${msg.messageId}-${msg.timestamp}`}>
+            {renderMessage({ item: msg })}
+          </View>
+        ))}
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1877f2" />
@@ -674,24 +909,53 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         <Text style={styles.headerTitle}>{title}</Text>
       </View>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.keyboardAvoidingView}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-   
       >
         <View style={styles.chatContainer}>
           <FlatList
             ref={flatListRef}
-            data={messages}
-            renderItem={renderMessage}
-            keyExtractor={(item) => item.messageId}
-            onContentSizeChange={scrollToBottom}
-            contentContainerStyle={{ flexGrow: 1 }}
+            data={Object.keys(groupMessagesByDate(messages)).sort(
+              (a, b) => new Date(a) - new Date(b)
+            )}
+            renderItem={renderDateGroup}
+            keyExtractor={(date) => date}
+            onEndReached={loadMoreMessages}
+            onEndReachedThreshold={0.5}
+            onMomentumScrollEnd={({ nativeEvent }) => {
+              if (nativeEvent.contentOffset.y < 100) {
+                loadMoreMessages();
+              }
+            }}
+            onScrollBeginDrag={() => {}}
+            onScrollEndDrag={({ nativeEvent }) => {
+              if (nativeEvent.contentOffset.y < 100) {
+                loadMoreMessages();
+              }
+            }}
+            ListFooterComponent={
+              isLoadingMore && (
+                <View style={styles.loadingMore}>
+                  <ActivityIndicator size="small" color="#1877f2" />
+                  <Text style={styles.loadingText}>
+                    Đang tải tin nhắn cũ...
+                  </Text>
+                </View>
+              )
+            }
+            contentContainerStyle={styles.flatListContent}
+            inverted={false}
           />
-          {isTyping && <Text style={styles.typingText}>Đang soạn tin nhắn...</Text>}
+          {isTyping && (
+            <Text style={styles.typingText}>Đang soạn tin nhắn...</Text>
+          )}
         </View>
         <View style={styles.inputContainer}>
-          <TouchableOpacity style={styles.attachButton} onPress={handleEmojiPress}>
+          <TouchableOpacity
+            style={styles.attachButton}
+            onPress={handleEmojiPress}
+          >
             <Ionicons name="happy-outline" size={24} color="#666" />
           </TouchableOpacity>
           <TouchableOpacity
@@ -724,7 +988,9 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
             <Ionicons
               name="send"
               size={24}
-              color={message.trim() || selectedFiles.length > 0 ? "#1877f2" : "#666"}
+              color={
+                message.trim() || selectedFiles.length > 0 ? "#1877f2" : "#666"
+              }
             />
           </TouchableOpacity>
         </View>
@@ -732,16 +998,24 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       <Modal visible={showFilePreview} transparent={true} animationType="slide">
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Đã chọn {selectedFiles.length} file</Text>
+            <Text style={styles.modalTitle}>
+              Đã chọn {selectedFiles.length} file
+            </Text>
             <ScrollView style={styles.fileList}>
               {selectedFiles.map((file, index) => (
                 <View key={index} style={styles.fileItem}>
-                  <Ionicons name={getFileIcon(file.type)} size={24} color="#1877f2" />
+                  <Ionicons
+                    name={getFileIcon(file.type)}
+                    size={24}
+                    color="#1877f2"
+                  />
                   <View style={styles.fileInfo}>
                     <Text style={styles.fileName} numberOfLines={1}>
                       {file.name}
                     </Text>
-                    <Text style={styles.fileSize}>{formatFileSize(file.size)}</Text>
+                    <Text style={styles.fileSize}>
+                      {formatFileSize(file.size)}
+                    </Text>
                   </View>
                   <TouchableOpacity
                     style={styles.removeFileButton}
@@ -800,7 +1074,11 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
               <Ionicons name="download" size={30} color="white" />
             </TouchableOpacity>
           </View>
-          <Image source={{ uri: previewImage }} style={styles.fullscreenImage} resizeMode="contain" />
+          <Image
+            source={{ uri: previewImage }}
+            style={styles.fullscreenImage}
+            resizeMode="contain"
+          />
         </View>
       </Modal>
       <Modal visible={showVideoPreview} transparent={true} animationType="fade">
@@ -845,6 +1123,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F0F2F5",
   },
+  keyboardAvoidingView: {
+    flex: 1,
+  },
   header: {
     backgroundColor: "#1877f2",
     padding: 10,
@@ -859,12 +1140,16 @@ const styles = StyleSheet.create({
   },
   chatContainer: {
     flex: 1,
-    paddingHorizontal: 10,
+    backgroundColor: "#FFFFFF",
+  },
+  flatListContent: {
+    padding: 10,
+    flexGrow: 1,
   },
   messageContainer: {
     maxWidth: "80%",
     padding: 10,
-    borderRadius: 10,
+    borderRadius: 20,
     marginVertical: 5,
   },
   myMessage: {
@@ -873,7 +1158,7 @@ const styles = StyleSheet.create({
   },
   otherMessage: {
     alignSelf: "flex-start",
-    backgroundColor: "#fff",
+    backgroundColor: "#E4E6EB",
   },
   messageText: {
     fontSize: 16,
@@ -897,13 +1182,18 @@ const styles = StyleSheet.create({
     color: "white",
   },
   messageStatus: {
-    color: "#666",
     fontSize: 12,
+    marginLeft: 5,
+    color: "#666",
+  },
+  myMessageStatus: {
+    color: "#fff",
   },
   typingText: {
-    color: "#666",
-    fontStyle: "italic",
-    marginLeft: 10,
+    color: "#65676B",
+    fontSize: 12,
+    padding: 5,
+    textAlign: "center",
   },
   inputContainer: {
     flexDirection: "row",
@@ -911,15 +1201,18 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: "#FFFFFF",
     borderTopWidth: 1,
-    borderTopColor: "#E5E5E5",
+    borderTopColor: "#E4E6EB",
   },
   input: {
     flex: 1,
     minHeight: 40,
+    maxHeight: 100,
     backgroundColor: "#F0F2F5",
     borderRadius: 20,
     paddingHorizontal: 15,
     paddingVertical: 10,
+    marginHorizontal: 10,
+    fontSize: 16,
   },
   imgPreview: {
     width: SCREEN_WIDTH * 0.6,
@@ -1035,16 +1328,49 @@ const styles = StyleSheet.create({
     backgroundColor: "black",
   },
   attachButton: {
-    padding: 10,
-    marginRight: 5,
+    padding: 8,
   },
   sendIconButton: {
-    padding: 10,
+    padding: 8,
   },
   messageFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+  },
+  dateGroup: {
+    marginVertical: 15,
+  },
+  dateHeaderContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: 10,
+    paddingHorizontal: 15,
+  },
+  dateHeaderLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#E4E6EB",
+  },
+  dateHeader: {
+    backgroundColor: "#fff",
+    color: "#65676B",
+    fontSize: 12,
+    fontWeight: "500",
+    paddingHorizontal: 10,
+    marginHorizontal: 5,
+  },
+  loadingMore: {
+    padding: 10,
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+  },
+  loadingText: {
+    marginLeft: 10,
+    color: "#65676B",
+    fontSize: 12,
   },
 });
 

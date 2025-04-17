@@ -1,5 +1,11 @@
-import { useState, useEffect, createContext, useContext, useCallback } from "react"
-import { Routes, Route, Navigate, useNavigate } from "react-router-dom"
+import {
+  useState,
+  useEffect,
+  createContext,
+  useContext,
+  useCallback,
+} from "react";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import {
   Search,
   MessageCircle,
@@ -15,18 +21,19 @@ import {
   Users,
   User,
   ImageIcon,
-  LogOut
-} from "lucide-react"
-import "bootstrap/dist/css/bootstrap.min.css"
-import "./App.css"
+  LogOut,
+} from "lucide-react";
+import "bootstrap/dist/css/bootstrap.min.css";
+import "./App.css";
 
-import { io } from "socket.io-client"
-import Login from "./components/Login"
-import ChatDirectly from "./components/ChatDirectly"
-import api, { getBaseUrl ,getApiUrl} from "./config/api"
+import { io } from "socket.io-client";
+import Login from "./components/Login";
+import ChatDirectly from "./components/ChatDirectly";
+import ChatGroup from "./components/ChatGroup";
+import api, { getBaseUrl, getApiUrl } from "./config/api";
 
 // Create socket context
-export const SocketContext = createContext(null)
+export const SocketContext = createContext(null);
 
 // Add debounce function
 const debounce = (func, wait) => {
@@ -42,66 +49,103 @@ const debounce = (func, wait) => {
 };
 
 function MainApp({ setIsAuthenticated }) {
-  const { socket, socketConnected } = useContext(SocketContext)
-  const [activeTab, setActiveTab] = useState("Ưu tiên")
-  const [currentSlide, setCurrentSlide] = useState(0)
-  const [user, setUser] = useState(null)
-  const [showProfileMenu, setShowProfileMenu] = useState(false)
-  const [chats, setChats] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [userCache, setUserCache] = useState({})
-  const [selectedChat, setSelectedChat] = useState(null)
-  const [lastUpdate, setLastUpdate] = useState(Date.now())
-  const navigate = useNavigate()
+  const { socket, socketConnected } = useContext(SocketContext);
+  const [activeTab, setActiveTab] = useState("Ưu tiên");
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [user, setUser] = useState(null);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [chats, setChats] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [userCache, setUserCache] = useState({});
+  const [selectedChat, setSelectedChat] = useState(null);
+  const [lastUpdate, setLastUpdate] = useState(Date.now());
+  const navigate = useNavigate();
 
-  const fetchUserInfo = async (phone) => {
-    try {
-      if (userCache[phone]) {
-        return userCache[phone]
-      }
+  const formatTime = (timestamp) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now - date;
 
-      const response = await api.get(`/users/${phone}`)
-      if (response.data) {
-        setUserCache(prev => ({
-          ...prev,
-          [phone]: response.data
-        }))
-        return response.data
-      }
-    } catch (error) {
-      console.error("Get user info error:", error)
-      return null
+    if (diff < 24 * 60 * 60 * 1000) {
+      return date.toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
     }
-  }
+    if (diff < 7 * 24 * 60 * 60 * 1000) {
+      const days = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+      return days[date.getDay()];
+    }
+    return date.toLocaleDateString("vi-VN", {
+      day: "2-digit",
+      month: "2-digit",
+    });
+  };
 
-  const fetchConversations = async () => {
+  const fetchUserInfo = useCallback(
+    async (phone) => {
+      try {
+        if (userCache[phone]) {
+          return userCache[phone];
+        }
+
+        const response = await api.get(`/users/${phone}`);
+        if (response.data) {
+          setUserCache((prev) => ({
+            ...prev,
+            [phone]: response.data,
+          }));
+          return response.data;
+        }
+      } catch (error) {
+        console.error("Get user info error:", error);
+        return null;
+      }
+    },
+    [userCache]
+  );
+
+  const fetchConversations = useCallback(async () => {
     try {
       console.log("Fetching conversations...");
-      const response = await api.get('/chat/conversations');
+      const response = await api.get("/chat/conversations");
       console.log("Conversations response:", response.data);
-      
-      if (response.data.status === 'success' && response.data.data?.conversations) {
+
+      if (
+        response.data.status === "success" &&
+        response.data.data?.conversations
+      ) {
         const newChats = await Promise.all(
           response.data.data.conversations.map(async (conv) => {
             try {
               const otherParticipant = conv.participant.isCurrentUser
                 ? conv.otherParticipant
                 : conv.participant;
-    
+
               const userInfo = await fetchUserInfo(otherParticipant.phone);
-              console.log("User info for", otherParticipant.phone, ":", userInfo);
-    
+              console.log(
+                "User info for",
+                otherParticipant.phone,
+                ":",
+                userInfo
+              );
+
               return {
                 id: conv.conversationId,
                 title: userInfo?.name || otherParticipant.phone,
                 message: conv.lastMessage?.content || "",
-                time: conv.lastMessage?.timestamp ? formatTime(conv.lastMessage.timestamp) : "",
+                time: conv.lastMessage?.timestamp
+                  ? formatTime(conv.lastMessage.timestamp)
+                  : "",
                 avatar: userInfo?.avatar,
                 isFromMe: conv.lastMessage?.isFromMe || false,
                 unreadCount: conv.unreadCount || 0,
                 otherParticipantPhone: otherParticipant.phone,
-                senderName: conv.lastMessage?.isFromMe ? 'Bạn' : (userInfo?.name || otherParticipant.phone)
+                senderName: conv.lastMessage?.isFromMe
+                  ? "Bạn"
+                  : userInfo?.name || otherParticipant.phone,
               };
             } catch (error) {
               console.error("Error processing conversation:", error);
@@ -109,16 +153,13 @@ function MainApp({ setIsAuthenticated }) {
             }
           })
         );
-  
-        // Filter out any null conversations
-        const validChats = newChats.filter(chat => chat !== null);
-  
-        // 🔍 So sánh dữ liệu mới với dữ liệu cũ
+
+        const validChats = newChats.filter((chat) => chat !== null);
         const isEqual = JSON.stringify(validChats) === JSON.stringify(chats);
         if (!isEqual) {
           setChats(validChats);
         }
-  
+
         setError(null);
       } else {
         console.error("Invalid response format:", response.data);
@@ -130,37 +171,92 @@ function MainApp({ setIsAuthenticated }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [chats, fetchUserInfo, formatTime]);
+
+  const fetchGroups = useCallback(async () => {
+    try {
+      console.log("Fetching groups...");
+      const response = await api.get(
+        "/groups/users/" + user?.userId + "/groups"
+      );
+      console.log("Groups response:", response.data);
+
+      if (response.data) {
+        const newGroups = await Promise.all(
+          response.data.map(async (group) => {
+            try {
+              return {
+                id: group.groupId,
+                title: group.name,
+                message: group.lastMessage?.content || "",
+                time: group.lastMessage?.timestamp
+                  ? formatTime(group.lastMessage.timestamp)
+                  : "",
+                avatar: group.avatar,
+                unreadCount: group.unreadCount || 0,
+                memberCount: group.memberCount,
+                memberRole: group.memberRole,
+                lastReadAt: group.lastReadAt,
+              };
+            } catch (error) {
+              console.error("Error processing group:", error);
+              return null;
+            }
+          })
+        );
+
+        const validGroups = newGroups.filter((group) => group !== null);
+        const isEqual = JSON.stringify(validGroups) === JSON.stringify(groups);
+        if (!isEqual) {
+          setGroups(validGroups);
+        }
+
+        setError(null);
+      } else {
+        console.error("Invalid response format:", response.data);
+        setError("Invalid response format from server");
+      }
+    } catch (err) {
+      console.error("Error in fetchGroups:", err);
+      setError(err.message || "Failed to load groups");
+    }
+  }, [groups, formatTime, user?.userId]);
 
   // Create debounced version of fetchConversations with shorter delay
   const debouncedFetchConversations = debounce(fetchConversations, 300);
 
+  // Create debounced version of fetchGroups
+  const debouncedFetchGroups = debounce(fetchGroups, 300);
+
   // Initial fetch and user setup
   useEffect(() => {
-    const userStr = localStorage.getItem("user")
+    const userStr = localStorage.getItem("user");
     if (userStr) {
       try {
-        const userData = JSON.parse(userStr)
-        setUser(userData)
+        const userData = JSON.parse(userStr);
+        setUser(userData);
       } catch (err) {
-        console.error("Error parsing user data:", err)
+        console.error("Error parsing user data:", err);
       }
     }
-    fetchConversations()
-  }, []) // Run only once on mount
+    fetchConversations();
+    fetchGroups();
+  }, []); // Run only once on mount
 
   // Socket event handlers
   useEffect(() => {
     if (!socket) return;
-  
+
     const handleNewMessage = async (data) => {
       console.log("New message received:", data);
-      
+
       // Immediately update the chat list for the specific conversation
       if (data.conversationId) {
-        setChats(prevChats => {
+        setChats((prevChats) => {
           // Find the conversation to update
-          const chatToUpdate = prevChats.find(chat => chat.id === data.conversationId);
+          const chatToUpdate = prevChats.find(
+            (chat) => chat.id === data.conversationId
+          );
           if (!chatToUpdate) {
             // If conversation not found, fetch all conversations
             fetchConversations();
@@ -168,22 +264,26 @@ function MainApp({ setIsAuthenticated }) {
           }
 
           // Move the updated chat to the top and update its content
-          const otherChats = prevChats.filter(chat => chat.id !== data.conversationId);
+          const otherChats = prevChats.filter(
+            (chat) => chat.id !== data.conversationId
+          );
           const updatedChat = {
             ...chatToUpdate,
             message: data.content || data.message || "", // Handle both content and message fields
             time: formatTime(data.timestamp || new Date().getTime()),
-            unreadCount: !data.isFromMe ? (chatToUpdate.unreadCount || 0) + 1 : chatToUpdate.unreadCount,
+            unreadCount: !data.isFromMe
+              ? (chatToUpdate.unreadCount || 0) + 1
+              : chatToUpdate.unreadCount,
             isFromMe: data.isFromMe || false,
             lastMessageId: data.messageId, // Store message ID if available
-            lastUpdate: new Date().getTime() // Add timestamp to force re-render
+            lastUpdate: new Date().getTime(), // Add timestamp to force re-render
           };
 
           // Log the update for debugging
           console.log("Updating chat:", {
             before: chatToUpdate,
             after: updatedChat,
-            messageData: data
+            messageData: data,
           });
 
           // Always move updated chat to top of list
@@ -195,18 +295,18 @@ function MainApp({ setIsAuthenticated }) {
         fetchConversations();
       }
     };
-  
+
     const handleMessageRead = async (data) => {
       console.log("Message read status updated:", data);
-      
+
       if (data.conversationId) {
-        setChats(prevChats => {
-          const updatedChats = prevChats.map(chat => {
+        setChats((prevChats) => {
+          const updatedChats = prevChats.map((chat) => {
             if (chat.id === data.conversationId) {
               return {
                 ...chat,
                 unreadCount: 0,
-                lastReadMessageId: data.messageId // Store last read message ID if available
+                lastReadMessageId: data.messageId, // Store last read message ID if available
               };
             }
             return chat;
@@ -217,18 +317,18 @@ function MainApp({ setIsAuthenticated }) {
         });
       }
     };
-  
+
     const handleNewConversation = async (data) => {
       console.log("New conversation created:", data);
       // For new conversations, we need to fetch to get complete data
       await fetchConversations();
     };
-  
+
     // Socket listeners
     socket.on("new_message", handleNewMessage);
     socket.on("message_read", handleMessageRead);
     socket.on("new_conversation", handleNewConversation);
-  
+
     // ✅ Dùng Page Visibility API để load lại khi user quay lại tab
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -236,7 +336,7 @@ function MainApp({ setIsAuthenticated }) {
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
-  
+
     return () => {
       socket.off("new_message", handleNewMessage);
       socket.off("message_read", handleMessageRead);
@@ -244,90 +344,153 @@ function MainApp({ setIsAuthenticated }) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [socket, fetchConversations]); // Add fetchConversations to dependencies
-  
 
-  const formatTime = (timestamp) => {
-    const date = new Date(timestamp)
-    const now = new Date()
-    const diff = now - date
+  // Socket event handlers for groups
+  useEffect(() => {
+    if (!socket) return;
 
-    if (diff < 24 * 60 * 60 * 1000) {
-      return date.toLocaleTimeString("vi-VN", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    }
-    if (diff < 7 * 24 * 60 * 60 * 1000) {
-      const days = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"]
-      return days[date.getDay()]
-    }
-    return date.toLocaleDateString("vi-VN", {
-      day: "2-digit",
-      month: "2-digit",
-    })
-  }
+    const handleNewGroupMessage = async (data) => {
+      console.log("New group message received:", data);
+
+      if (data.groupId) {
+        setGroups((prevGroups) => {
+          const groupToUpdate = prevGroups.find(
+            (group) => group.id === data.groupId
+          );
+          if (!groupToUpdate) {
+            fetchGroups();
+            return prevGroups;
+          }
+
+          const otherGroups = prevGroups.filter(
+            (group) => group.id !== data.groupId
+          );
+          const updatedGroup = {
+            ...groupToUpdate,
+            message: data.content || data.message || "",
+            time: formatTime(data.timestamp || new Date().getTime()),
+            unreadCount: !data.isFromMe
+              ? (groupToUpdate.unreadCount || 0) + 1
+              : groupToUpdate.unreadCount,
+            lastMessageId: data.messageId,
+            lastUpdate: new Date().getTime(),
+          };
+
+          return [updatedGroup, ...otherGroups];
+        });
+      } else {
+        console.warn("Received group message without groupId:", data);
+        fetchGroups();
+      }
+    };
+
+    const handleGroupMessageRead = async (data) => {
+      console.log("Group message read status updated:", data);
+
+      if (data.groupId) {
+        setGroups((prevGroups) => {
+          const updatedGroups = prevGroups.map((group) => {
+            if (group.id === data.groupId) {
+              return {
+                ...group,
+                unreadCount: 0,
+                lastReadMessageId: data.messageId,
+              };
+            }
+            return group;
+          });
+          return updatedGroups;
+        });
+      }
+    };
+
+    // Socket listeners for groups
+    socket.on("new_group_message", handleNewGroupMessage);
+    socket.on("group_message_read", handleGroupMessageRead);
+
+    return () => {
+      socket.off("new_group_message", handleNewGroupMessage);
+      socket.off("group_message_read", handleGroupMessageRead);
+    };
+  }, [socket, fetchGroups]);
 
   const handleLogout = () => {
-    localStorage.removeItem("accessToken")
-    localStorage.removeItem("refreshToken")
-    localStorage.removeItem("user")
-    setIsAuthenticated(false)
-    navigate("/login", { replace: true })
-  }
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("refreshToken");
+    localStorage.removeItem("user");
+    setIsAuthenticated(false);
+    navigate("/login", { replace: true });
+  };
 
   const handlePrevSlide = () => {
-    setCurrentSlide((prev) => (prev > 0 ? prev - 1 : 0))
-  }
+    setCurrentSlide((prev) => (prev > 0 ? prev - 1 : 0));
+  };
 
   const handleNextSlide = () => {
-    setCurrentSlide((prev) => (prev < 4 ? prev + 1 : 4))
-  }
+    setCurrentSlide((prev) => (prev < 4 ? prev + 1 : 4));
+  };
 
   const handleChatClick = (chat) => {
-    setSelectedChat(chat.otherParticipantPhone)
-    navigate(`/app/chat/${chat.otherParticipantPhone}`)
-  }
+    setSelectedChat(chat.otherParticipantPhone);
+    navigate(`/app/chat/${chat.otherParticipantPhone}`);
+  };
+
+  const handleGroupClick = (group) => {
+    setSelectedChat(group.id);
+    navigate(`/app/group/${group.id}`);
+  };
 
   const slides = [
     {
       id: 1,
       image: "/images/slide1.png",
       title: "Nhắn tin nhiều hơn, soạn thảo ít hơn",
-      description: "Sử dụng Tin Nhắn Nhanh để lưu sẵn các tin nhắn thường dùng và gửi nhanh trong hội thoại bất kỳ."
+      description:
+        "Sử dụng Tin Nhắn Nhanh để lưu sẵn các tin nhắn thường dùng và gửi nhanh trong hội thoại bất kỳ.",
     },
     {
       id: 2,
       image: "/images/slide2.png",
       title: "Trải nghiệm xuyên suốt",
-      description: "Kết nối và giải quyết công việc trên mọi thiết bị với dữ liệu luôn được đồng bộ."
+      description:
+        "Kết nối và giải quyết công việc trên mọi thiết bị với dữ liệu luôn được đồng bộ.",
     },
     {
       id: 3,
       image: "/images/slide3.png",
       title: "Gửi file không giới hạn",
-      description: "Chia sẻ hình ảnh, file văn bản, bảng tính... với dung lượng không giới hạn."
+      description:
+        "Chia sẻ hình ảnh, file văn bản, bảng tính... với dung lượng không giới hạn.",
     },
     {
       id: 4,
       image: "/images/slide4.png",
       title: "Chat nhóm với đồng nghiệp",
-      description: "Trao đổi công việc nhóm một cách hiệu quả trong không gian làm việc riêng."
-    }
-  ]
+      description:
+        "Trao đổi công việc nhóm một cách hiệu quả trong không gian làm việc riêng.",
+    },
+  ];
 
   // Add this useEffect to force re-render when chats change
   useEffect(() => {
     const checkForUpdates = async () => {
-      const response = await api.get('/chat/conversations');
-      if (response.data.status === 'success' && response.data.data?.conversations) {
+      const response = await api.get("/chat/conversations");
+      if (
+        response.data.status === "success" &&
+        response.data.data?.conversations
+      ) {
         const serverChats = response.data.data.conversations;
-        
+
         // Compare with current chats
         const hasNewMessages = serverChats.some((serverChat) => {
-          const currentChat = chats.find(chat => chat.id === serverChat.conversationId);
-          return !currentChat || 
-                 currentChat.message !== (serverChat.lastMessage?.content || "") ||
-                 currentChat.time !== formatTime(serverChat.lastMessage?.timestamp);
+          const currentChat = chats.find(
+            (chat) => chat.id === serverChat.conversationId
+          );
+          return (
+            !currentChat ||
+            currentChat.message !== (serverChat.lastMessage?.content || "") ||
+            currentChat.time !== formatTime(serverChat.lastMessage?.timestamp)
+          );
         });
 
         if (hasNewMessages) {
@@ -344,6 +507,39 @@ function MainApp({ setIsAuthenticated }) {
     return () => clearInterval(intervalId);
   }, [chats]);
 
+  // Add this useEffect to force re-render when groups change
+  useEffect(() => {
+    const checkForGroupUpdates = async () => {
+      const response = await api.get(
+        "/groups/users/" + user?.userId + "/groups"
+      );
+      if (response.data) {
+        const serverGroups = response.data;
+
+        const hasNewMessages = serverGroups.some((serverGroup) => {
+          const currentGroup = groups.find(
+            (group) => group.id === serverGroup.groupId
+          );
+          return (
+            !currentGroup ||
+            currentGroup.message !== (serverGroup.lastMessage?.content || "") ||
+            currentGroup.time !== formatTime(serverGroup.lastMessage?.timestamp)
+          );
+        });
+
+        if (hasNewMessages) {
+          console.log("New group messages detected, updating group list...");
+          fetchGroups();
+        }
+      }
+    };
+
+    // Check for updates every 5 seconds
+    const intervalId = setInterval(checkForGroupUpdates, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [groups, user?.userId]);
+
   return (
     <div className="d-flex vh-100" style={{ backgroundColor: "#f0f5ff" }}>
       {/* Sidebar */}
@@ -351,20 +547,22 @@ function MainApp({ setIsAuthenticated }) {
         <div className="sidebar-top">
           <div className="user-profile">
             <div>
-              <img 
-                src={user?.avatar} 
-                alt={user?.name || "User"} 
+              <img
+                src={user?.avatar}
+                alt={user?.name || "User"}
                 className="avatar"
                 title={user?.name || "User"}
                 onError={(e) => {
                   e.target.onerror = null;
-                  e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || "User")}&background=random`;
+                  e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                    user?.name || "User"
+                  )}&background=random`;
                 }}
                 style={{
                   width: "48px",
                   height: "48px",
                   borderRadius: "50%",
-                  objectFit: "cover"
+                  objectFit: "cover",
                 }}
               />
               {user?.status === "online" && (
@@ -397,7 +595,7 @@ function MainApp({ setIsAuthenticated }) {
           </div>
         </div>
         <div className="sidebar-bottom">
-          <button 
+          <button
             className="nav-item settings"
             onClick={() => setShowProfileMenu(!showProfileMenu)}
           >
@@ -425,9 +623,9 @@ function MainApp({ setIsAuthenticated }) {
           <div className="search-box">
             <div className="search-input-container">
               <Search size={20} className="search-icon" />
-              <input 
-                type="text" 
-                placeholder="Tìm kiếm bạn bè, nhóm chat" 
+              <input
+                type="text"
+                placeholder="Tìm kiếm bạn bè, nhóm chat"
                 className="search-input"
               />
             </div>
@@ -463,45 +661,121 @@ function MainApp({ setIsAuthenticated }) {
               <p>{error}</p>
               <button onClick={fetchConversations}>Thử lại</button>
             </div>
-          ) : chats.length === 0 ? (
-            <div className="empty-state">Không có cuộc trò chuyện nào</div>
-          ) : (
-            chats.map((chat) => (
-              <div
-                key={chat.id}
-                className={`chat-item ${selectedChat === chat.otherParticipantPhone ? 'active' : ''}`}
-                onClick={() => handleChatClick(chat)}
-              >
-                <div className="chat-avatar">
-                  {chat.avatar ? (
-                    <img 
-                      src={chat.avatar} 
-                      alt={chat.title} 
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(chat.title)}&background=random`;
-                      }}
-                    />
-                  ) : (
-                    <div className="avatar-placeholder">
-                      {chat.title.slice(0, 2).toUpperCase()}
-                    </div>
-                  )}
-                  {chat.unreadCount > 0 && (
-                    <span className="unread-badge">{chat.unreadCount}</span>
-                  )}
+          ) : activeTab === "Ưu tiên" ? (
+            <>
+              {/* Groups section */}
+              {groups.length > 0 && (
+                <div className="section-header">
+                  <h3>Nhóm chat</h3>
                 </div>
-                <div className="chat-info">
-                  <div className="chat-header">
-                    <h3 className="chat-title">{chat.title}</h3>
-                    <span className="chat-time">{chat.time}</span>
+              )}
+              {groups.map((group) => (
+                <div
+                  key={group.id}
+                  className={`chat-item ${
+                    selectedChat === group.id ? "active" : ""
+                  }`}
+                  onClick={() => handleGroupClick(group)}
+                >
+                  <div className="chat-avatar">
+                    {group.avatar ? (
+                      <img
+                        src={group.avatar}
+                        alt={group.title}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                            group.title
+                          )}&background=random`;
+                        }}
+                      />
+                    ) : (
+                      <div className="avatar-placeholder">
+                        {group.title.slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    {group.unreadCount > 0 && (
+                      <span className="unread-badge">{group.unreadCount}</span>
+                    )}
                   </div>
-                  <p className={`chat-message ${chat.unreadCount > 0 ? 'unread' : ''}`}>
-                    {chat.isFromMe ? 'Bạn: ' : ''}{chat.message}
-                  </p>
+                  <div className="chat-info">
+                    <div className="chat-header">
+                      <h3 className="chat-title">{group.title}</h3>
+                      <span className="chat-time">{group.time}</span>
+                    </div>
+                    <p
+                      className={`chat-message ${
+                        group.unreadCount > 0 ? "unread" : ""
+                      }`}
+                    >
+                      {group.message}
+                    </p>
+                    <div className="group-info">
+                      <span className="member-count">
+                        {group.memberCount} thành viên
+                      </span>
+                      {group.memberRole && (
+                        <span className="member-role">{group.memberRole}</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))
+              ))}
+
+              {/* Direct messages section */}
+              {chats.length > 0 && (
+                <div className="section-header">
+                  <h3>Tin nhắn trực tiếp</h3>
+                </div>
+              )}
+              {chats.map((chat) => (
+                <div
+                  key={chat.id}
+                  className={`chat-item ${
+                    selectedChat === chat.otherParticipantPhone ? "active" : ""
+                  }`}
+                  onClick={() => handleChatClick(chat)}
+                >
+                  <div className="chat-avatar">
+                    {chat.avatar ? (
+                      <img
+                        src={chat.avatar}
+                        alt={chat.title}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                            chat.title
+                          )}&background=random`;
+                        }}
+                      />
+                    ) : (
+                      <div className="avatar-placeholder">
+                        {chat.title.slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    {chat.unreadCount > 0 && (
+                      <span className="unread-badge">{chat.unreadCount}</span>
+                    )}
+                  </div>
+                  <div className="chat-info">
+                    <div className="chat-header">
+                      <h3 className="chat-title">{chat.title}</h3>
+                      <span className="chat-time">{chat.time}</span>
+                    </div>
+                    <p
+                      className={`chat-message ${
+                        chat.unreadCount > 0 ? "unread" : ""
+                      }`}
+                    >
+                      {chat.isFromMe ? "Bạn: " : ""}
+                      {chat.message}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </>
+          ) : (
+            <div className="empty-state">Không có cuộc trò chuyện nào</div>
           )}
         </div>
       </div>
@@ -510,47 +784,59 @@ function MainApp({ setIsAuthenticated }) {
       <div className="main-content">
         <Routes>
           <Route path="chat/:phone" element={<ChatDirectly />} />
-          <Route path="/" element={
-            <div className="welcome-screen">
-              <div className="carousel-container">
-                <button className="carousel-btn prev" onClick={handlePrevSlide}>
-                  <ChevronLeft size={24} />
-                </button>
-                <div className="carousel-content">
-                  {slides[currentSlide] && (
-                    <>
-                      <img
-                        src={slides[currentSlide].image}
-                        alt={slides[currentSlide].title}
-                        className="carousel-image"
-                      />
-                      <div className="welcome-text">
-                        <h2>{slides[currentSlide].title}</h2>
-                        <p>{slides[currentSlide].description}</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-                <button className="carousel-btn next" onClick={handleNextSlide}>
-                  <ChevronRight size={24} />
-                </button>
-              </div>
-              
-              <div className="carousel-indicators">
-                {slides.map((slide, index) => (
+          <Route path="group/:groupId" element={<ChatGroup />} />
+          <Route
+            path="/"
+            element={
+              <div className="welcome-screen">
+                <div className="carousel-container">
                   <button
-                    key={slide.id}
-                    className={`carousel-indicator ${currentSlide === index ? 'active' : ''}`}
-                    onClick={() => setCurrentSlide(index)}
-                  />
-                ))}
+                    className="carousel-btn prev"
+                    onClick={handlePrevSlide}
+                  >
+                    <ChevronLeft size={24} />
+                  </button>
+                  <div className="carousel-content">
+                    {slides[currentSlide] && (
+                      <>
+                        <img
+                          src={slides[currentSlide].image}
+                          alt={slides[currentSlide].title}
+                          className="carousel-image"
+                        />
+                        <div className="welcome-text">
+                          <h2>{slides[currentSlide].title}</h2>
+                          <p>{slides[currentSlide].description}</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <button
+                    className="carousel-btn next"
+                    onClick={handleNextSlide}
+                  >
+                    <ChevronRight size={24} />
+                  </button>
+                </div>
+
+                <div className="carousel-indicators">
+                  {slides.map((slide, index) => (
+                    <button
+                      key={slide.id}
+                      className={`carousel-indicator ${
+                        currentSlide === index ? "active" : ""
+                      }`}
+                      onClick={() => setCurrentSlide(index)}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          } />
+            }
+          />
         </Routes>
       </div>
     </div>
-  )
+  );
 }
 
 function App() {
@@ -635,77 +921,88 @@ function App() {
 
 function ChatItem({ avatars, name, message, time, count, hasMore }) {
   return (
-    <div className="chat-item" style={{ 
-      padding: '12px 16px',
-      display: 'flex',
-      alignItems: 'flex-start',
-      borderBottom: '1px solid #E6E8EB',
-      cursor: 'pointer',
-      ':hover': {
-        backgroundColor: '#f5f5f5'
-      }
-    }}>
-      <div style={{ position: 'relative', marginRight: '12px' }}>
+    <div
+      className="chat-item"
+      style={{
+        padding: "12px 16px",
+        display: "flex",
+        alignItems: "flex-start",
+        borderBottom: "1px solid #E6E8EB",
+        cursor: "pointer",
+        ":hover": {
+          backgroundColor: "#f5f5f5",
+        },
+      }}
+    >
+      <div style={{ position: "relative", marginRight: "12px" }}>
         {avatars.length === 1 ? (
-          <div style={{ 
-            width: '48px', 
-            height: '48px', 
-            borderRadius: '12px',
-            overflow: 'hidden'
-          }}>
-            <img 
-              src={avatars[0]} 
-              alt="" 
+          <div
+            style={{
+              width: "48px",
+              height: "48px",
+              borderRadius: "12px",
+              overflow: "hidden",
+            }}
+          >
+            <img
+              src={avatars[0]}
+              alt=""
               style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover'
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
               }}
             />
           </div>
         ) : (
-          <div style={{ 
-            position: 'relative',
-            width: '48px',
-            height: '48px'
-          }}>
-            <div style={{
-              position: 'absolute',
-              top: '0',
-              left: '0',
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              border: '2px solid white'
-            }}>
-              <img 
-                src={avatars[0]} 
+          <div
+            style={{
+              position: "relative",
+              width: "48px",
+              height: "48px",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                top: "0",
+                left: "0",
+                width: "32px",
+                height: "32px",
+                borderRadius: "8px",
+                overflow: "hidden",
+                border: "2px solid white",
+              }}
+            >
+              <img
+                src={avatars[0]}
                 alt=""
                 style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover'
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
                 }}
               />
             </div>
-            <div style={{
-              position: 'absolute',
-              bottom: '0',
-              right: '0',
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              border: '2px solid white'
-            }}>
-              <img 
-                src={avatars[1]} 
+            <div
+              style={{
+                position: "absolute",
+                bottom: "0",
+                right: "0",
+                width: "32px",
+                height: "32px",
+                borderRadius: "8px",
+                overflow: "hidden",
+                border: "2px solid white",
+              }}
+            >
+              <img
+                src={avatars[1]}
                 alt=""
                 style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover'
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
                 }}
               />
             </div>
@@ -714,77 +1011,93 @@ function ChatItem({ avatars, name, message, time, count, hasMore }) {
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          marginBottom: '4px'
-        }}>
-          <h3 style={{ 
-            margin: 0,
-            fontSize: '14px',
-            fontWeight: '500',
-            color: '#081C36',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
-          }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            marginBottom: "4px",
+          }}
+        >
+          <h3
+            style={{
+              margin: 0,
+              fontSize: "14px",
+              fontWeight: "500",
+              color: "#081C36",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
             {name}
           </h3>
-          <span style={{ 
-            fontSize: '12px',
-            color: '#7589A3',
-            whiteSpace: 'nowrap',
-            marginLeft: '8px'
-          }}>
+          <span
+            style={{
+              fontSize: "12px",
+              color: "#7589A3",
+              whiteSpace: "nowrap",
+              marginLeft: "8px",
+            }}
+          >
             {time}
           </span>
         </div>
 
-        <div style={{ 
-          display: 'flex',
-          alignItems: 'center'
-        }}>
-          <p style={{ 
-            margin: 0,
-            fontSize: '13px',
-            color: '#7589A3',
-            flex: 1,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
-          }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontSize: "13px",
+              color: "#7589A3",
+              flex: 1,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
             {message}
           </p>
 
-          <div style={{ 
-            display: 'flex',
-            alignItems: 'center',
-            marginLeft: '8px'
-          }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              marginLeft: "8px",
+            }}
+          >
             {count && (
-              <span style={{ 
-                backgroundColor: '#0068FF',
-                color: 'white',
-                padding: '2px 6px',
-                borderRadius: '12px',
-                fontSize: '12px',
-                fontWeight: '500',
-                minWidth: '20px',
-                textAlign: 'center'
-              }}>
+              <span
+                style={{
+                  backgroundColor: "#0068FF",
+                  color: "white",
+                  padding: "2px 6px",
+                  borderRadius: "12px",
+                  fontSize: "12px",
+                  fontWeight: "500",
+                  minWidth: "20px",
+                  textAlign: "center",
+                }}
+              >
                 {count}
               </span>
             )}
             {hasMore && (
-              <span style={{ 
-                backgroundColor: '#E6E8EB',
-                color: '#7589A3',
-                padding: '2px 6px',
-                borderRadius: '12px',
-                fontSize: '12px',
-                marginLeft: '4px'
-              }}>
+              <span
+                style={{
+                  backgroundColor: "#E6E8EB",
+                  color: "#7589A3",
+                  padding: "2px 6px",
+                  borderRadius: "12px",
+                  fontSize: "12px",
+                  marginLeft: "4px",
+                }}
+              >
                 +
               </span>
             )}
@@ -792,7 +1105,7 @@ function ChatItem({ avatars, name, message, time, count, hasMore }) {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
-export default App 
+export default App;
