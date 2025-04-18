@@ -261,6 +261,7 @@ const login = async (req, res) => {
             accessToken,
             refreshToken,
             user: {
+                userId: user.userId,
                 phone: user.phone,
                 name: user.name,
                 status: 'online'

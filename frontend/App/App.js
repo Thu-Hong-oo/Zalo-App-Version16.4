@@ -25,7 +25,7 @@ import PersonalInfoScreen from "./screens/PersonalInfoScreen";
 import UpdateAvatarScreen from "./screens/UpdateAvatarScreen";
 import PersonalDetailScreen from "./screens/PersonalDetailScreen";
 import ChatDirectlyScreen from "./screens/ChatDirectlyScreen";
-
+import FriendRequestsScreen from "./screens/FriendRequestsScreen";
 
 // Create Auth Context
 export const AuthContext = createContext(null);
@@ -83,7 +83,16 @@ function ContactsStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Contacts" component={Contacts} />
+      <Stack.Screen
+  name="FriendRequests"
+  component={FriendRequestsScreen}
+  options={{ title: "Lời mời kết bạn" }}
+  key={new Date().getTime()} // ép render lại screen mỗi lần vào
+/>
+
+      
     </Stack.Navigator>
+    
   );
 }
 

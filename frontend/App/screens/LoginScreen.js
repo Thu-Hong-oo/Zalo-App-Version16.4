@@ -62,22 +62,32 @@ const LoginScreen = ({ navigation }) => {
       Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ thông tin');
       return;
     }
-
+  
     try {
       setLoading(true);
       const response = await login(phoneNumber, password);
       
       if (response.accessToken && response.refreshToken) {
-        // Lưu tokens
-        AsyncStorage.setItem('accessToken', response.accessToken);
-        AsyncStorage.setItem('refreshToken', response.refreshToken);
-        
-        // Cập nhật context
+        /* luôn await để chắc chắn ghi xong trước khi navigate */
+        await AsyncStorage.multiSet([
+          ["accessToken",  response.accessToken],
+          ["refreshToken", response.refreshToken],
+          [
+            "user",
+            JSON.stringify({
+              userId : response.user.userId,   // ⚠️ bắt buộc
+              phone  : response.user.phone,    // tiện fallback
+              name   : response.user.name,
+              avatar : response.user.avatar,
+            }),
+          ],
+        ]);
+      
+        /* update context như cũ */
         setToken(response.accessToken);
         setRefreshToken(response.refreshToken);
         setUser(response.user);
         setIsLoggedIn(true);
-
       } else {
         throw new Error('Không nhận được token từ server');
       }
@@ -91,6 +101,7 @@ const LoginScreen = ({ navigation }) => {
       setLoading(false);
     }
   };
+  
 
   const handleForgotPassword = async () => {
     if (!forgotPasswordPhone) {
