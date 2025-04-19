@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -64,8 +64,21 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   const [visibleDates, setVisibleDates] = useState([]);
   const [initialLoad, setInitialLoad] = useState(true);
   const [isLoadingDate, setIsLoadingDate] = useState(false);
+  const [shouldRenderAll, setShouldRenderAll] = useState(false);
+  const [messageGroups, setMessageGroups] = useState([]);
+  const [viewableItems, setViewableItems] = useState([]);
+  const viewabilityConfig = {
+    itemVisiblePercentThreshold: 50,
+    minimumViewTime: 300,
+  };
   const flatListRef = useRef(null);
   const { title, otherParticipantPhone, avatar } = route.params;
+  const [currentDate, setCurrentDate] = useState(null);
+  const [showLoadMore, setShowLoadMore] = useState(false);
+  const [isLoadingPrevious, setIsLoadingPrevious] = useState(false);
+  const [loadedDates, setLoadedDates] = useState([]);
+  const [isNearTop, setIsNearTop] = useState(false);
+  const [scrollPosition, setScrollPosition] = useState(0);
 
   const formatDate = (timestamp) => {
     try {
@@ -111,13 +124,14 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       const response = await getChatHistory(otherParticipantPhone, options);
 
       if (response.status === "success" && response.data.messages) {
-        const messageArray = Object.values(response.data.messages)
-          .flat()
+        // Convert the date-grouped messages into a flat array
+        const messageArray = Object.entries(response.data.messages)
+          .flatMap(([date, messages]) => messages)
           .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
         setMessages((prev) => {
           if (loadMore) {
-            const combined = [...messageArray, ...prev];
+            const combined = [...prev, ...messageArray];
             const unique = Array.from(
               new Map(combined.map((msg) => [msg.messageId, msg])).values()
             );
@@ -296,11 +310,48 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
     if (messages.length > 0) {
       if (initialLoad) {
         const today = formatDate(Date.now());
+        console.log("Initial load - Setting visibleDates to:", [today]);
         setVisibleDates([today]);
         setInitialLoad(false);
       }
     }
   }, [messages]);
+
+  const groupMessagesByDate = React.useCallback((messages) => {
+    const groups = {};
+    messages.forEach((msg) => {
+      const date = formatDate(msg.timestamp);
+      if (!groups[date]) {
+        groups[date] = [];
+      }
+      groups[date].push(msg);
+    });
+    return groups;
+  }, []);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      // Nhóm tin nhắn theo ngày
+      const groups = groupMessagesByDate(messages);
+
+      // Chuyển đổi thành mảng và tính toán chiều cao
+      const groupArray = Object.entries(groups)
+        .map(([date, messages]) => {
+          const messageCount = messages.length;
+          const headerHeight = 40; // Chiều cao của header ngày
+          const messageHeight = 60; // Chiều cao trung bình của mỗi tin nhắn
+          const spacing = 10; // Khoảng cách giữa các tin nhắn
+          return {
+            date,
+            messages,
+            height: headerHeight + messageCount * (messageHeight + spacing),
+          };
+        })
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      setMessageGroups(groupArray);
+    }
+  }, [messages, groupMessagesByDate]);
 
   const scrollToBottom = () => {
     if (flatListRef.current) {
@@ -332,24 +383,22 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
           isTempId: true,
         };
 
-        console.log("Adding new message to state:", newMessage);
-
         setMessages((prev) => {
-          const updatedMessages = [...prev, newMessage].sort(
+          const updatedMessages = [...prev];
+          const today = formatDate(Date.now());
+
+          // Chỉ thêm tin nhắn mới vào ngày hôm nay
+          if (!visibleDates.includes(today)) {
+            setVisibleDates((prevDates) => [...prevDates, today]);
+          }
+
+          return [...updatedMessages, newMessage].sort(
             (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
           );
-          console.log("Updated messages state:", updatedMessages);
-          return updatedMessages;
         });
 
         setMessage("");
         scrollToBottom();
-
-        console.log("Emitting send-message event:", {
-          tempId,
-          receiverPhone: otherParticipantPhone,
-          content: message.trim(),
-        });
 
         socket.emit("send-message", {
           tempId,
@@ -833,71 +882,98 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const loadMoreMessages = () => {
-    if (isLoadingDate) return; // Prevent multiple loads
+  const getItemLayout = (data, index) => {
+    const group = data[index];
+    return {
+      length: group.height,
+      offset: data.slice(0, index).reduce((sum, item) => sum + item.height, 0),
+      index,
+    };
+  };
+
+  const onViewableItemsChanged = useCallback(({ viewableItems }) => {
+    setViewableItems(viewableItems.map((item) => item.index));
+  }, []);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      const dates = Object.keys(groupMessagesByDate(messages)).sort(
+        (a, b) => new Date(a) - new Date(b)
+      );
+
+      if (dates.length > 0) {
+        const latestDate = dates[dates.length - 1];
+        setCurrentDate(latestDate);
+        setLoadedDates([latestDate]);
+        setShowLoadMore(dates.length > 1);
+      }
+    }
+  }, [messages]);
+
+  const loadPreviousDay = () => {
+    if (isLoadingPrevious) return;
 
     const dates = Object.keys(groupMessagesByDate(messages)).sort(
       (a, b) => new Date(a) - new Date(b)
     );
 
-    // Find the oldest visible date
-    const oldestVisibleDate = visibleDates[visibleDates.length - 1];
-    const oldestVisibleIndex = dates.indexOf(oldestVisibleDate);
-
-    // Load just one previous date
-    if (oldestVisibleIndex > 0) {
-      // Get the date immediately before the oldest visible date
-      const previousDate = dates[oldestVisibleIndex - 1];
-      setIsLoadingDate(true); // Set loading flag
-      setVisibleDates((prev) => [...prev, previousDate]);
-
-      // Reset loading flag after a short delay
+    const currentIndex = dates.indexOf(currentDate);
+    if (currentIndex > 0) {
+      setIsLoadingPrevious(true);
+      const previousDate = dates[currentIndex - 1];
+      setCurrentDate(previousDate);
+      setLoadedDates((prev) => [previousDate, ...prev]); // Thêm ngày mới vào đầu mảng
+      setShowLoadMore(currentIndex > 1);
       setTimeout(() => {
-        setIsLoadingDate(false);
-      }, 500); // Add small delay to prevent rapid scrolling
-      return;
-    }
-
-    // If we've shown all local dates and there might be more on server
-    if (oldestVisibleIndex === 0 && hasMoreMessages && !isLoadingMore) {
-      loadChatHistory(true);
+        setIsLoadingPrevious(false);
+      }, 500);
     }
   };
 
-  const groupMessagesByDate = (messages) => {
-    const groups = {};
-    messages.forEach((msg) => {
-      const date = formatDate(msg.timestamp);
-      if (!groups[date]) {
-        groups[date] = [];
-      }
-      groups[date].push(msg);
-    });
-    return groups;
-  };
+  const renderDateGroup = () => {
+    if (!loadedDates.length) return null;
 
-  const renderDateGroup = ({ item: date }) => {
-    if (!visibleDates.includes(date)) {
-      return null;
-    }
+    return loadedDates.map((date) => {
+      const messagesForDate = groupMessagesByDate(messages)[date] || [];
+      console.log(`Rendering messages for date: ${date}`);
 
-    const messagesForDate = groupMessagesByDate(messages)[date] || [];
-
-    return (
-      <View style={styles.dateGroup}>
-        <View style={styles.dateHeaderContainer}>
-          <View style={styles.dateHeaderLine} />
-          <Text style={styles.dateHeader}>{date}</Text>
-          <View style={styles.dateHeaderLine} />
-        </View>
-        {messagesForDate.map((msg) => (
-          <View key={`${msg.messageId}-${msg.timestamp}`}>
-            {renderMessage({ item: msg })}
+      return (
+        <View key={date} style={styles.dateGroup}>
+          <View style={styles.dateHeaderContainer}>
+            <View style={styles.dateHeaderLine} />
+            <Text style={styles.dateHeader}>{date}</Text>
+            <View style={styles.dateHeaderLine} />
           </View>
-        ))}
-      </View>
-    );
+          {messagesForDate
+            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+            .map((msg) => (
+              <View key={`${msg.messageId}-${msg.timestamp}`}>
+                {renderMessage({ item: msg })}
+              </View>
+            ))}
+        </View>
+      );
+    });
   };
+
+  const handleScroll = (event) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const currentPosition = contentOffset.y;
+    setScrollPosition(currentPosition);
+
+    // Kiểm tra nếu scroll gần đến nút load more (cách 100px)
+    if (currentPosition > 100 && !isLoadingPrevious) {
+      setIsNearTop(true);
+    } else {
+      setIsNearTop(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isNearTop && !isLoadingPrevious) {
+      loadPreviousDay();
+    }
+  }, [isNearTop]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -914,39 +990,27 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
         <View style={styles.chatContainer}>
-          <FlatList
+          <ScrollView
             ref={flatListRef}
-            data={Object.keys(groupMessagesByDate(messages)).sort(
-              (a, b) => new Date(a) - new Date(b)
-            )}
-            renderItem={renderDateGroup}
-            keyExtractor={(date) => date}
-            onEndReached={loadMoreMessages}
-            onEndReachedThreshold={0.5}
-            onMomentumScrollEnd={({ nativeEvent }) => {
-              if (nativeEvent.contentOffset.y < 100) {
-                loadMoreMessages();
-              }
-            }}
-            onScrollBeginDrag={() => {}}
-            onScrollEndDrag={({ nativeEvent }) => {
-              if (nativeEvent.contentOffset.y < 100) {
-                loadMoreMessages();
-              }
-            }}
-            ListFooterComponent={
-              isLoadingMore && (
-                <View style={styles.loadingMore}>
+            contentContainerStyle={styles.scrollContent}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+          >
+            {showLoadMore && (
+              <TouchableOpacity
+                style={styles.loadMoreButton}
+                onPress={loadPreviousDay}
+                disabled={isLoadingPrevious}
+              >
+                {isLoadingPrevious ? (
                   <ActivityIndicator size="small" color="#1877f2" />
-                  <Text style={styles.loadingText}>
-                    Đang tải tin nhắn cũ...
-                  </Text>
-                </View>
-              )
-            }
-            contentContainerStyle={styles.flatListContent}
-            inverted={false}
-          />
+                ) : (
+                  <Text style={styles.loadMoreText}>Xem tin nhắn cũ hơn</Text>
+                )}
+              </TouchableOpacity>
+            )}
+            {renderDateGroup()}
+          </ScrollView>
           {isTyping && (
             <Text style={styles.typingText}>Đang soạn tin nhắn...</Text>
           )}
@@ -973,12 +1037,12 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
           </TouchableOpacity>
           <TextInput
             style={styles.input}
-            placeholder="Tin nhắn"
             value={message}
             onChangeText={setMessage}
-            onFocus={handleTyping}
-            onBlur={handleStopTyping}
+            placeholder="Nhập tin nhắn..."
             multiline
+            onFocus={() => setIsTyping(true)}
+            onBlur={() => setIsTyping(false)}
           />
           <TouchableOpacity
             style={styles.sendIconButton}
@@ -1371,6 +1435,21 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     color: "#65676B",
     fontSize: 12,
+  },
+  loadMoreButton: {
+    padding: 10,
+    alignItems: "center",
+    backgroundColor: "#f0f2f5",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e4e6eb",
+  },
+  loadMoreText: {
+    color: "#1877f2",
+    fontSize: 14,
+  },
+  scrollContent: {
+    padding: 10,
+    flexGrow: 1,
   },
 });
 
