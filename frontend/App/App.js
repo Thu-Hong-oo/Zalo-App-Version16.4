@@ -32,6 +32,16 @@ export const AuthContext = createContext(null);
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
+const RootStack = createNativeStackNavigator();
+
+function MainAppStack() {
+  return (
+    <RootStack.Navigator screenOptions={{ headerShown: false }}>
+      <RootStack.Screen name="MainTabs" component={BottomTabs} />
+      <RootStack.Screen name="ChatDirectly" component={ChatDirectlyScreen} />
+    </RootStack.Navigator>
+  );
+}
 
 // Auth stack
 function AuthStack() {
@@ -74,6 +84,7 @@ function ChatStack() {
    
       <Stack.Screen name="Chat" component={ChatScreen} />
       <Stack.Screen name="ChatDirectly" component={ChatDirectlyScreen} /> 
+      
     </Stack.Navigator>
   );
 }
@@ -270,7 +281,7 @@ export default function App() {
             {!isLoggedIn ? (
               <AuthStack />
             ) : (
-              <BottomTabs />
+              <MainAppStack />
             )}
           </NavigationContainer>
         </SafeAreaProvider>

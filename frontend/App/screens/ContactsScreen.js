@@ -15,6 +15,9 @@ import { Ionicons } from "@expo/vector-icons";
 import AddFriendModal from "../components/AddFriendModal";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import api from "../config/api";
+import { Pressable } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback } from "react";
 
 export default function ContactsScreen({ navigation }) {
   /* ✅ quickAccess thành state để có setQuickAccess  */
@@ -26,7 +29,36 @@ export default function ContactsScreen({ navigation }) {
 
   const [showModal,   setShowModal]   = useState(false);
   const [contacts,    setContacts]    = useState([]);
+  const [selectedFriend, setSelectedFriend] = useState(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
+  const handleDeleteFriendPress = (friend) => {
+    setSelectedFriend(friend);
+    setShowDeleteDialog(true);
+  };
+    
+  const handleConfirmDelete = async () => {
+    try {
+      const user = JSON.parse(await AsyncStorage.getItem("user"));
+      await api.post("/friends/delete", {
+        userId: user.userId,
+        friendId: selectedFriend.userId,
+      });
+  
+      setContacts((prev) =>
+        prev.filter((f) => f.userId !== selectedFriend.userId)
+      );
+  
+      Alert.alert("Thành công", `Đã xóa ${selectedFriend.name} khỏi danh sách bạn bè.`);
+    } catch (error) {
+      console.error("Lỗi khi xóa bạn bè:", error);
+      Alert.alert("Lỗi", "Không thể xóa bạn.");
+    } finally {
+      setShowDeleteDialog(false);
+      setSelectedFriend(null);
+    }
+  };
+  
   /* 🔸 đọc userId từ AsyncStorage */
   const getCurrentUserId = async () => {
     const stored = await AsyncStorage.getItem("user");
@@ -36,39 +68,69 @@ export default function ContactsScreen({ navigation }) {
   };
 
   /* ===== Lấy danh sách bạn bè ===== */
-  useEffect(() => {
-    (async () => {
-      const uid = await getCurrentUserId();
-      if (!uid) return;
-      try {
-        const res = await api.get(`/friends/${uid}`);
-        if (res.data.success) setContacts(res.data.friends);
-      } catch (err) {
-        console.error("Lỗi lấy danh sách bạn:", err);
-      }
-    })();
-  }, []);
-
+  useFocusEffect(
+    useCallback(() => {
+      const fetchFriends = async () => {
+        const uid = await getCurrentUserId();
+        if (!uid) return;
+        try {
+          const res = await api.get(`/friends/${uid}`);
+          if (res.data.success) setContacts(res.data.friends);
+        } catch (err) {
+          console.error("Lỗi lấy danh sách bạn (focus):", err);
+        }
+      };
+  
+      fetchFriends();
+    }, [])
+  );
+  
+  
   /* ===== Đếm lời mời kết bạn ===== */
+  useFocusEffect(
+    useCallback(() => {
+      const fetchRequestCount = async () => {
+        const uid = await getCurrentUserId();
+        if (!uid) return;
+        try {
+          const res = await api.get(`/friends/request/received/${uid}`);
+          const newCount = res.data?.received?.length || 0;
+          setQuickAccess((prev) =>
+            prev.map((item) =>
+              item.title === "Lời mời kết bạn"
+                ? { ...item, count: newCount }
+                : item
+            )
+          );
+        } catch (err) {
+          console.error("Lỗi đếm lời mời:", err);
+        }
+      };
+  
+      fetchRequestCount();
+    }, [])
+  );
   useEffect(() => {
-    (async () => {
-      const uid = await getCurrentUserId();
-      if (!uid) return;
-      try {
-        const res      = await api.get(`/friends/request/received/${uid}`);
-        const newCount = res.data?.received?.length || 0;
-
-        setQuickAccess((prev) =>
-          prev.map((item) =>
-            item.title === "Lời mời kết bạn" ? { ...item, count: newCount } : item
-          )
-        );
-      } catch (err) {
-        console.error("Lỗi đếm lời mời:", err);
-      }
-    })();
-  }, []);
-
+    if (showDeleteDialog && selectedFriend) {
+      Alert.alert(
+        "Xác nhận",
+        `Bạn có chắc muốn xóa ${selectedFriend.name} khỏi danh sách bạn bè?`,
+        [
+          {
+            text: "Hủy",
+            style: "cancel",
+            onPress: () => setShowDeleteDialog(false),
+          },
+          {
+            text: "Xóa",
+            style: "destructive",
+            onPress: handleConfirmDelete,
+          },
+        ]
+      );
+    }
+  }, [showDeleteDialog, selectedFriend]);
+  
   /* ===== CALLBACK sau khi gửi lời mời từ modal ===== */
   const handleAfterSend = () => {
     if (Platform.OS === "web") {
@@ -149,24 +211,57 @@ export default function ContactsScreen({ navigation }) {
 
         {/* Danh sách bạn */}
         {contacts.map((c, i) => (
-          <React.Fragment key={c.userId}>
-            {(i === 0 || contacts[i - 1].name[0] !== c.name[0]) && (
-              <Text style={styles.section}>{c.name[0]}</Text>
-            )}
-            <View style={styles.contactItem}>
-              <Image source={{ uri: c.avatar }} style={styles.avatar} />
-              <View style={styles.contactInfo}>
-                <Text style={styles.contactName}>{c.name}</Text>
-              </View>
-              <TouchableOpacity style={styles.actionButton}>
-                <Ionicons name="call-outline" size={24} color="#666" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.actionButton}>
-                <Ionicons name="videocam-outline" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-          </React.Fragment>
-        ))}
+  <React.Fragment key={c.userId}>
+  {(i === 0 || contacts[i - 1].name[0] !== c.name[0]) && (
+    <Text style={styles.section}>{c.name[0]}</Text>
+  )}
+ <Pressable
+  key={c.userId}
+  onPress={async () => {
+    try {
+      const stored = await AsyncStorage.getItem("user");
+      const currentUserPhone = JSON.parse(stored)?.phone;
+
+      const res = await api.post("/conversations", {
+        from: currentUserPhone,
+        to: c.phone,
+      });
+
+      const conversationId = res.data?.conversationId;
+      if (conversationId) {
+        navigation.navigate("ChatDirectly", {
+          conversationId,
+          friend: c,
+          title: c.name,
+          otherParticipantPhone: c.phone,
+          avatar: c.avatar,
+        });
+      }
+    } catch (err) {
+      console.error("❌ Lỗi khi tạo cuộc trò chuyện:", err);
+    }
+  }}
+  onLongPress={() => {
+    setSelectedFriend(c);
+    setShowDeleteDialog(true);
+  }}
+>
+  <View style={styles.contactItem}>
+    <Image source={{ uri: c.avatar }} style={styles.avatar} />
+    <View style={styles.contactInfo}>
+      <Text style={styles.contactName}>{c.name}</Text>
+    </View>
+    <TouchableOpacity style={styles.actionButton}>
+      <Ionicons name="call-outline" size={24} color="#666" />
+    </TouchableOpacity>
+    <TouchableOpacity style={styles.actionButton}>
+      <Ionicons name="videocam-outline" size={24} color="#666" />
+    </TouchableOpacity>
+  </View>
+</Pressable>
+
+</React.Fragment>
+))}
       </ScrollView>
     </SafeAreaView>
   );
