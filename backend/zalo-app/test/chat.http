@@ -23,7 +23,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwaG9uZSI6Ijg0MTIzN
 
 ### Lấy lịch sử chat với 1 người Vân ở đây to nguyenvan
 GET http://localhost:3000/api/chat/history/84123456789
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ0OTAxODgwLCJleHAiOjE3NDQ5ODgyODB9.paG33DVfqRW5A2x-aADspokByONDTubC602Z1EMt_EA
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MDQ3NjIyLCJleHAiOjE3NDUxMzQwMjJ9.U6jxKyAyX3kypJIBbT6L9S4Oc_HZsLF38l2eNK3aqJk
 
 ### Lấy lịch sử chat với 1 người nguyenvan to Vân ở đây
 GET http://localhost:3000/api/chat/history/84389804287
