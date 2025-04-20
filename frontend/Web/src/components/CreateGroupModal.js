@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { X, Search, Camera, Check, Users, UserPlus } from "lucide-react";
 import api from "../config/api";
-import './CreateGroupModal.css';
+import './css/CreateGroupModal.css';
 
 const CreateGroupModal = ({ isOpen, onClose }) => {
   const [groupName, setGroupName] = useState("");
