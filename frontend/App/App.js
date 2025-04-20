@@ -27,7 +27,9 @@ import PersonalDetailScreen from "./screens/PersonalDetailScreen";
 import ChatDirectlyScreen from "./screens/ChatDirectlyScreen";
 
 import FriendRequestsScreen from "./screens/FriendRequestsScreen";
-
+import GroupChatScreen from "./screens/GroupChatScreen";
+import GroupCreateScreen from "./screens/GroupCreationScreen";
+import GroupSettingScreen from "./screens/GroupSettingScreen";
 
 // Create Auth Context
 export const AuthContext = createContext(null);
@@ -86,9 +88,10 @@ function ChatStack() {
    
       <Stack.Screen name="Chat" component={ChatScreen} />
       <Stack.Screen name="ChatDirectly" component={ChatDirectlyScreen} /> 
-
-      
-
+      <Stack.Screen name="GroupChat" component={GroupChatScreen} />
+      <Stack.Screen name="GroupCreation" component={GroupCreateScreen} />
+      <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} />
+      <Stack.Screen name="GroupSetting" component={GroupSettingScreen} />
     </Stack.Navigator>
   );
 }

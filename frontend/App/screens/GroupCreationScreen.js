@@ -75,9 +75,19 @@ const NewGroupScreen = () => {
 
     try {
       setLoading(true);
-      const userInfoStr = await AsyncStorage.getItem('userInfo');
-      console.log('Retrieved userInfo string:', userInfoStr);
       
+      // Lấy token và userInfo từ AsyncStorage
+      const [token, userInfoStr] = await Promise.all([
+        AsyncStorage.getItem('accessToken'),
+        AsyncStorage.getItem('userInfo')
+      ]);
+      
+      console.log('Retrieved token and userInfo');
+      
+      if (!token) {
+        throw new Error('Vui lòng đăng nhập lại');
+      }
+
       if (!userInfoStr) {
         throw new Error('Vui lòng đăng nhập lại');
       }
@@ -128,12 +138,26 @@ const NewGroupScreen = () => {
         response: error.response?.data,
         status: error.response?.status
       });
-      Alert.alert(
-        'Lỗi',
-        error.message === 'Vui lòng đăng nhập lại'
-          ? error.message
-          : 'Không thể tạo nhóm. Vui lòng thử lại sau.'
-      );
+      
+      if (error.response?.status === 401) {
+        Alert.alert(
+          'Lỗi xác thực',
+          'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+          [
+            {
+              text: 'Đăng nhập lại',
+              onPress: () => navigation.replace('Login')
+            }
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Lỗi',
+          error.message === 'Vui lòng đăng nhập lại'
+            ? error.message
+            : 'Không thể tạo nhóm. Vui lòng thử lại sau.'
+        );
+      }
     } finally {
       setLoading(false);
     }

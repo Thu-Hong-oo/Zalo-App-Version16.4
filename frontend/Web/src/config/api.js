@@ -1,13 +1,7 @@
-// Xóa các import không cần thiết
-// import AsyncStorage from "@react-native-async-storage/async-storage";
-// import { Platform } from "react-native";
-// import Constants from "expo-constants";
-
-// Chỉ giữ lại import axios
 import axios from "axios";
 
 // Cấu hình API
-const COMPUTER_IP = "192.168.1.7";  // Địa chỉ IP máy tính
+const COMPUTER_IP = "192.168.1.16";  // Địa chỉ IP máy tính
 const BASE_URL = `http://${COMPUTER_IP}:3000`;  // API base URL
 const API_URL = `${BASE_URL}/api`;  // API URL chính
 

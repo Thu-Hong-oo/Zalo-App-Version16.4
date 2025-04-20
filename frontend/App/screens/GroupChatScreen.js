@@ -170,7 +170,7 @@ const GroupChatScreen = () => {
           <Ionicons name="search" size={24} color="#fff" />
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.headerButton}>
+        <TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate('GroupSetting', { groupId })}>
           <Ionicons name="menu" size={24} color="#fff" />
         </TouchableOpacity>
       </View>

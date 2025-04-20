@@ -469,7 +469,7 @@ export default function ChatListScreen({ navigation }) {
                 style={styles.modalOption}
                 onPress={() => {
                   setShowAddModal(false);
-                  navigation.navigate('AddFriend');
+                  navigation.navigate('FriendRequests');
                 }}
               >
                 <Ionicons name="person-add" size={24} color="#1877f2" />
