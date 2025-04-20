@@ -24,6 +24,10 @@ import { io } from "socket.io-client"
 import Login from "./components/Login"
 import ChatDirectly from "./components/ChatDirectly"
 import api, { getBaseUrl ,getApiUrl} from "./config/api"
+import FriendList from "./components/FriendList";
+import FriendPanel from "./components/FriendPanel";
+import FriendRequests from "./components/FriendRequests";
+import AddFriendModal from "./components/AddFriendModal";
 
 // Create socket context
 export const SocketContext = createContext(null)
@@ -53,6 +57,10 @@ function MainApp({ setIsAuthenticated }) {
   const [userCache, setUserCache] = useState({})
   const [selectedChat, setSelectedChat] = useState(null)
   const [lastUpdate, setLastUpdate] = useState(Date.now())
+  const [sidebarTab, setSidebarTab] = useState("chat"); // mặc định là chat
+  const [showAddFriendModal, setShowAddFriendModal] = useState(false);
+
+
   const navigate = useNavigate()
 
   const fetchUserInfo = async (phone) => {
@@ -112,7 +120,8 @@ function MainApp({ setIsAuthenticated }) {
   
         // Filter out any null conversations
         const validChats = newChats.filter(chat => chat !== null);
-  
+        
+        
         // 🔍 So sánh dữ liệu mới với dữ liệu cũ
         const isEqual = JSON.stringify(validChats) === JSON.stringify(chats);
         if (!isEqual) {
@@ -137,17 +146,18 @@ function MainApp({ setIsAuthenticated }) {
 
   // Initial fetch and user setup
   useEffect(() => {
-    const userStr = localStorage.getItem("user")
+    const userStr = localStorage.getItem("user");
     if (userStr) {
       try {
-        const userData = JSON.parse(userStr)
-        setUser(userData)
+        const userData = JSON.parse(userStr);
+        setUser(userData);
       } catch (err) {
-        console.error("Error parsing user data:", err)
+        console.error("Error parsing user data:", err);
       }
     }
-    fetchConversations()
-  }, []) // Run only once on mount
+    fetchConversations();
+  }, []);
+   // Run only once on mount
 
   // Socket event handlers
   useEffect(() => {
@@ -223,7 +233,7 @@ function MainApp({ setIsAuthenticated }) {
       // For new conversations, we need to fetch to get complete data
       await fetchConversations();
     };
-  
+    
     // Socket listeners
     socket.on("new_message", handleNewMessage);
     socket.on("message_read", handleMessageRead);
@@ -287,7 +297,13 @@ function MainApp({ setIsAuthenticated }) {
     setSelectedChat(chat.otherParticipantPhone)
     navigate(`/app/chat/${chat.otherParticipantPhone}`)
   }
-
+  const handleRefreshConversations = (conversationId) => {
+    fetchConversations(); // load lại toàn bộ danh sách chat
+    setSelectedChat(conversationId); // chuyển đến đoạn chat vừa tạo
+    navigate(`/app/chat/${conversationId}`);
+  };
+  
+  
   const slides = [
     {
       id: 1,
@@ -343,7 +359,16 @@ function MainApp({ setIsAuthenticated }) {
 
     return () => clearInterval(intervalId);
   }, [chats]);
-
+  const handleSearchPhone = async (phone) => {
+    try {
+      const res = await api.get(`/users/${phone}`);
+      console.log("Kết quả tìm kiếm:", res.data);
+      // Xử lý hiển thị kết quả hoặc gửi lời mời tại đây
+    } catch (err) {
+      console.error("Không tìm thấy người dùng");
+    }
+  };
+ 
   return (
     <div className="d-flex vh-100" style={{ backgroundColor: "#f0f5ff" }}>
       {/* Sidebar */}
@@ -375,10 +400,13 @@ function MainApp({ setIsAuthenticated }) {
           <div className="nav-items">
             <button className="nav-item active">
               <MessageCircle size={24} />
-            </button>
-            <button className="nav-item">
-              <Users size={24} />
-            </button>
+            </button>        
+            <button
+                className="nav-item"
+                onClick={() => navigate("/app/contacts")}
+            >
+                <User size={24} />
+              </button>
             <button className="nav-item">
               <FileText size={24} />
             </button>
@@ -431,9 +459,10 @@ function MainApp({ setIsAuthenticated }) {
                 className="search-input"
               />
             </div>
-            <button className="action-button" title="Thêm bạn">
+            <button className="action-button" title="Thêm bạn" onClick={() => setShowAddFriendModal(true)}>
               <User size={20} />
             </button>
+
             <button className="action-button" title="Tạo nhóm chat">
               <Users size={20} />
             </button>
@@ -510,6 +539,16 @@ function MainApp({ setIsAuthenticated }) {
       <div className="main-content">
         <Routes>
           <Route path="chat/:phone" element={<ChatDirectly />} />
+          <Route path="friends" element={<FriendList />} />
+          <Route path="contacts" element={<FriendPanel />} />
+          <Route path="chat/:conversationId" element={<ChatDirectly />} />
+          <Route path="chat/id/:userId" element={<ChatDirectly />} />
+
+          <Route path="friend-requests" element={<FriendRequests />} />
+          <Route
+            path="friend-requests"
+            element={<FriendRequests onRefreshConversations={handleRefreshConversations} />}
+          />
           <Route path="/" element={
             <div className="welcome-screen">
               <div className="carousel-container">
@@ -549,6 +588,14 @@ function MainApp({ setIsAuthenticated }) {
           } />
         </Routes>
       </div>
+      {showAddFriendModal && (
+  <AddFriendModal
+    currentUser={user} // ✅ Truyền toàn bộ user object
+    onClose={() => setShowAddFriendModal(false)}
+  />
+)}
+
+
     </div>
   )
 }
@@ -792,7 +839,10 @@ function ChatItem({ avatars, name, message, time, count, hasMore }) {
         </div>
       </div>
     </div>
+    
   )
+  
 }
+
 
 export default App 

@@ -1,0 +1,45 @@
+.friend-section {
+    padding: 12px 24px;
+    background-color: #f4f5f7;
+    height: 100%;
+    overflow-y: auto;
+    font-family: "Segoe UI", sans-serif;
+  }
+  
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  
+  .search-input {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    background: #fff;
+    font-size: 14px;
+    color: #333;
+  }
+  .friend-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px; /* ✅ tạo khoảng cách giữa từng friend-item */
+    padding-right: 4px;
+  }
+  
+  
+  .group {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .letter {
+    font-size: 13px;
+    font-weight: 600;
+    color: #5f6a7d;
+    padding: 8px 0 4px 8px;
+    text-transform: uppercase;
+  }
+  

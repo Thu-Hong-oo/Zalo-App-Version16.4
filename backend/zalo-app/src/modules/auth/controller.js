@@ -267,7 +267,14 @@ const login = async (req, res) => {
             message: 'Đăng nhập thành công',
             accessToken,
             refreshToken,
-            user: userWithoutPassword
+
+            user: {
+                userId: user.userId,
+                phone: user.phone,
+                name: user.name,
+                status: 'online'
+            }
+
         });
     } catch (error) {
         console.error('Login error:', error);

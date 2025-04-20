@@ -1,10 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../../middleware/auth');
+const controller = require('./controller'); // ✅ dùng đúng file
 
-// TODO: Implement conversation routes
-router.get('/', authMiddleware, (req, res) => {
-    res.json({ message: 'Conversation routes not implemented yet' });
-});
+// Tạo cuộc trò chuyện mới
+router.post('/', authMiddleware, controller.createConversation);
 
-module.exports = router; 
+// Lấy tất cả cuộc trò chuyện theo userId
+router.get('/:userId', authMiddleware, controller.getConversationsByUser);
+
+module.exports = router;
