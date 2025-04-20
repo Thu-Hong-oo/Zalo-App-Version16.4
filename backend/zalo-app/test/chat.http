@@ -1,4 +1,4 @@
-### Đăng nhập 
+### Đăng nhập Vân ở đây
 POST http://localhost:3000/api/auth/login
 Content-Type: application/json
 
@@ -19,7 +19,7 @@ Content-Type: application/json
 
 ### Lấy thông tin người dùng theo số điện thoại
 GET http://localhost:3000/api/users/84389804287
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwaG9uZSI6Ijg0MTIzNDU2Nzg5IiwiaWF0IjoxNzQ0NjQ0NjIyLCJleHAiOjE3NDQ3MzEwMjJ9.qz31ORZzy5MhBRPaaoAPj3tyC9GX82DiT-cdaCgqCn4
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MTQyMzE0LCJleHAiOjE3NDUyMjg3MTR9.r-K_saAYoVcWXQadddoDf2cNJfMA5EjDi_g36U9vE8w
 
 ### Lấy lịch sử chat với 1 người Vân ở đây to nguyenvan
 GET http://localhost:3000/api/chat/history/84123456789

@@ -24,7 +24,7 @@ import {
 const LoginScreen = ({ navigation }) => {
   const { setIsLoggedIn, setToken, setRefreshToken, setUser } = useContext(AuthContext);
 
-  const [phoneNumber, setPhoneNumber] = useState("0389804287");
+  const [phoneNumber, setPhoneNumber] = useState("0123456789");
   const [password, setPassword] = useState("123456");
   const [loading, setLoading] = useState(false);
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);

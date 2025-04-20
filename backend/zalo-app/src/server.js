@@ -18,8 +18,12 @@ const userRoutes = require("./modules/user/routes");
 const groupRoutes = require("./modules/group/group.route");
 const friendRoutes = require("./modules/friend/routes");
 const {
+  routes: chatGroupRoutes,
+  socket: initializeChatGroupSocket,
+} = require("./modules/chatGroup");
+const {
   routes: chatRoutes,
-  socket: initializeSocket,
+  socket: initializeChatSocket,
 } = require("./modules/chat");
 
 // Initialize express app
@@ -63,19 +67,21 @@ const upload = multer({
 // Middleware
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:8081"], // Cho phép cả ba origin
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "Accept",
-      "Content-Length",
-      "X-Requested-With",
-      "Access-Control-Allow-Origin",
-    ],
-    exposedHeaders: ["Content-Length", "X-Requested-With"],
+    origin: function (origin, callback) {
+      // Cho phép truy cập từ origin 'null' (file://) và localhost
+      if (
+        !origin ||
+        origin === "null" ||
+        origin.startsWith("http://localhost")
+      ) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
-    maxAge: 86400, // 24 hours
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 app.use(helmet());
@@ -97,9 +103,11 @@ app.use("/api/users", userRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/friends", friendRoutes);
+app.use("/api/chat-group", chatGroupRoutes);
 
 // Initialize socket
-initializeSocket(io);
+initializeChatSocket(io);
+initializeChatGroupSocket(io);
 
 // Start server
 httpServer.listen(PORT, "0.0.0.0", () => {

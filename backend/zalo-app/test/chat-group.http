@@ -1,0 +1,50 @@
+### Get user's groups Vân ở đây
+GET http://localhost:3000/api/users/554d27e4-eeca-469a-a87c-9f208a0533e4/groups
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MTQyMzE0LCJleHAiOjE3NDUyMjg3MTR9.r-K_saAYoVcWXQadddoDf2cNJfMA5EjDi_g36U9vE8w
+### Get Group Messages
+GET http://localhost:3000/api/chat-group/29223937-60fc-47cf-8afe-f09d8dd49795/messages
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MTQyMzE0LCJleHAiOjE3NDUyMjg3MTR9.r-K_saAYoVcWXQadddoDf2cNJfMA5EjDi_g36U9vE8w
+Content-Type: application/json
+
+### Send Group Message 
+POST http://localhost:3000/api/chat-group/29223937-60fc-47cf-8afe-f09d8dd49795/messages
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MTQyMzE0LCJleHAiOjE3NDUyMjg3MTR9.r-K_saAYoVcWXQadddoDf2cNJfMA5EjDi_g36U9vE8w
+Content-Type: application/json
+
+{
+  "content": "ahihi",
+  "fileUrl": null,
+  "fileType": null
+}
+
+### Delete Group Message by Vân ở đây( groupid, messageid)
+DELETE http://localhost:3000/api/chat-group/29223937-60fc-47cf-8afe-f09d8dd49795/messages/57c72d01-8a6c-4426-b70a-26e469046583
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MTQyMzE0LCJleHAiOjE3NDUyMjg3MTR9.r-K_saAYoVcWXQadddoDf2cNJfMA5EjDi_g36U9vE8w
+Content-Type: application/json 
+
+### Đăng nhập Vân ở đây
+POST http://localhost:3000/api/auth/login
+Content-Type: application/json
+
+{
+    "phone": "0389804287",
+    "password": "123456"
+}
+
+### Đăng nhập Thu hồng
+POST http://localhost:3000/api/auth/login
+Content-Type: application/json
+
+{
+    "phone": "0376963653",
+    "password": "123456"
+}
+
+### Đăng nhập Nguyễn Vân
+POST http://localhost:3000/api/auth/login
+Content-Type: application/json
+
+{
+    "phone": "0123456789",
+    "password": "123456"
+}
