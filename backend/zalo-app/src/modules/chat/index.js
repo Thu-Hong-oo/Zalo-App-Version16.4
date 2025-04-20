@@ -462,12 +462,12 @@ const recallMessage = async (req, res) => {
 
     // Check if message is too old to recall (e.g., older than 2 minutes)
     const messageAge = Date.now() - message.timestamp;
-    const MAX_RECALL_TIME = 2 * 60 * 1000; // 2 minutes in milliseconds
+    const MAX_RECALL_TIME = 24 * 60 * 60 * 1000; // 2 minutes in milliseconds
 
     if (messageAge > MAX_RECALL_TIME) {
       return res.status(400).json({
         status: "error",
-        message: "Không thể thu hồi tin nhắn sau 2 phút",
+        message: "Không thể thu hồi tin nhắn sau 24h",
       });
     }
 

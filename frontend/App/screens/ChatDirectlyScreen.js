@@ -79,6 +79,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   const [loadedDates, setLoadedDates] = useState([]);
   const [isNearTop, setIsNearTop] = useState(false);
   const [scrollPosition, setScrollPosition] = useState(0);
+  const [showOptionsModal, setShowOptionsModal] = useState(false);
 
   const formatDate = (timestamp) => {
     try {
@@ -202,6 +203,22 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
             });
             scrollToBottom();
           }
+        });
+
+        // Handle message recalled
+        newSocket.on("message-recalled", (data) => {
+          console.log("Message recalled:", data);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.messageId === data.messageId
+                ? {
+                    ...msg,
+                    content: data.content,
+                    status: "recalled",
+                  }
+                : msg
+            )
+          );
         });
 
         // Handle message sent confirmation
@@ -506,6 +523,19 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         return;
       }
 
+      // Kiểm tra thời gian trước khi gửi yêu cầu thu hồi
+      const messageAge =
+        Date.now() - new Date(targetMessage.timestamp).getTime();
+      const twoMinutes = 2 * 60 * 1000;
+
+      if (messageAge > twoMinutes) {
+        Alert.alert(
+          "Không thể thu hồi",
+          "Tin nhắn chỉ có thể được thu hồi trong vòng 2 phút sau khi gửi"
+        );
+        return;
+      }
+
       const response = await recallMessage(messageId, otherParticipantPhone);
       if (response.status === "success") {
         const recallContent =
@@ -513,14 +543,11 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
             ? `[File] ${targetMessage.fileType || "file"} đã bị thu hồi`
             : "Tin nhắn đã bị thu hồi";
         setMessages((prev) =>
-          [
-            ...prev,
-            {
-              ...targetMessage,
-              content: recallContent,
-              status: "recalled",
-            },
-          ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+          prev.map((msg) =>
+            msg.messageId === messageId
+              ? { ...msg, content: recallContent, status: "recalled" }
+              : msg
+          )
         );
         socket?.emit("message-recalled", {
           messageId,
@@ -555,20 +582,18 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       const response = await deleteMessage(messageId);
       if (response.status === "success") {
         setMessages((prev) =>
-          [
-            ...prev,
-            {
-              ...targetMessage,
-              status: "deleted",
-            },
-          ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+          prev.map((msg) =>
+            msg.messageId === messageId ? { ...msg, status: "deleted" } : msg
+          )
         );
+
         socket?.emit("message-deleted", {
           messageId,
           conversationId: createParticipantId(otherParticipantPhone, "me"),
           type: targetMessage.type,
           fileType: targetMessage.fileType,
         });
+
         Alert.alert("Thành công", "Tin nhắn đã được xóa");
       } else {
         Alert.alert("Lỗi", response.message || "Không thể xóa tin nhắn");
@@ -614,26 +639,36 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
 
   const showMessageOptions = (message) => {
     setSelectedMessage(message);
-    const options = [
-      {
-        text: "Thu hồi",
-        onPress: () => handleRecallMessage(message.messageId),
-      },
-      {
-        text: "Chuyển tiếp",
-        onPress: () => setForwardModalVisible(true),
-      },
-      {
-        text: "Xóa",
-        onPress: () => handleDeleteMessage(message.messageId),
-        style: "destructive",
-      },
-      {
-        text: "Thoát",
-        style: "cancel",
-      },
-    ];
-    Alert.alert("Tùy chọn", "", options);
+
+    // Kiểm tra thời gian của tin nhắn
+    const messageAge = Date.now() - new Date(message.timestamp).getTime();
+    const twoMinutes = 24 * 60 * 60 * 1000; // 2 phút tính bằng milliseconds
+
+    if (messageAge > twoMinutes) {
+      // Nếu tin nhắn quá 2 phút, chỉ hiển thị các tùy chọn khác
+      Alert.alert(
+        "Thông báo",
+        "Tin nhắn chỉ có thể được thu hồi trong vòng 24h sau khi gửi",
+        [
+          {
+            text: "Chuyển tiếp",
+            onPress: () => setForwardModalVisible(true),
+          },
+          {
+            text: "Xóa",
+            onPress: () => handleDeleteMessage(message.messageId),
+            style: "destructive",
+          },
+          {
+            text: "Đóng",
+            style: "cancel",
+          },
+        ]
+      );
+    } else {
+      // Nếu tin nhắn chưa quá 2 phút, hiển thị tất cả tùy chọn
+      setShowOptionsModal(true);
+    }
   };
 
   const pickImage = async () => {
@@ -1178,6 +1213,62 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         }}
         onForward={handleForwardMessage}
       />
+      {/* Options Modal */}
+      <Modal
+        visible={showOptionsModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowOptionsModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowOptionsModal(false)}
+        >
+          <View style={styles.optionsModalContent}>
+            <TouchableOpacity
+              style={styles.optionButton}
+              onPress={() => {
+                handleRecallMessage(selectedMessage.messageId);
+                setShowOptionsModal(false);
+              }}
+            >
+              <Ionicons name="arrow-undo" size={24} color="#1877f2" />
+              <Text style={styles.optionText}>Thu hồi</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.optionButton}
+              onPress={() => {
+                setForwardModalVisible(true);
+                setShowOptionsModal(false);
+              }}
+            >
+              <Ionicons name="arrow-redo" size={24} color="#1877f2" />
+              <Text style={styles.optionText}>Chuyển tiếp</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.optionButton}
+              onPress={() => {
+                handleDeleteMessage(selectedMessage.messageId);
+                setShowOptionsModal(false);
+              }}
+            >
+              <Ionicons name="trash" size={24} color="#ff3b30" />
+              <Text style={[styles.optionText, styles.deleteText]}>Xóa</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.optionButton}
+              onPress={() => setShowOptionsModal(false)}
+            >
+              <Ionicons name="close" size={24} color="#666" />
+              <Text style={styles.optionText}>Đóng</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -1450,6 +1541,35 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 10,
     flexGrow: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  optionsModalContent: {
+    backgroundColor: "white",
+    borderRadius: 12,
+    padding: 20,
+    width: "80%",
+    maxWidth: 300,
+  },
+  optionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f2f5",
+  },
+  optionText: {
+    fontSize: 16,
+    marginLeft: 15,
+    color: "#333",
+  },
+  deleteText: {
+    color: "#ff3b30",
   },
 });
 

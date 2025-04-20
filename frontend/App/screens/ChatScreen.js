@@ -119,7 +119,7 @@ export default function ChatListScreen({ navigation }) {
 
       // Transform groups data to match chat list format
       const groupChats = response.data.groups.map((group) => {
-        console.log("Processing group:", group);
+        // console.log("Processing group:", group);
         return {
           id: group.groupId,
           title: group.name,
@@ -135,14 +135,14 @@ export default function ChatListScreen({ navigation }) {
         };
       });
 
-      console.log("Transformed group chats:", groupChats);
+      // console.log("Transformed group chats:", groupChats);
 
       // Update state with both conversations and groups
       setChats((prevChats) => {
-        console.log("Previous chats:", prevChats);
+        // console.log("Previous chats:", prevChats);
         // Filter out any existing groups from previous chats
         const directChats = prevChats.filter((chat) => !chat.isGroup);
-        console.log("Direct chats:", directChats);
+        // console.log("Direct chats:", directChats);
 
         // Combine direct chats and group chats
         const allChats = [...directChats, ...groupChats];
@@ -155,7 +155,7 @@ export default function ChatListScreen({ navigation }) {
           return timeB - timeA;
         });
 
-        console.log("Final sorted chats:", sortedChats);
+        // console.log("Final sorted chats:", sortedChats);
         return sortedChats;
       });
     } catch (error) {
