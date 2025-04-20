@@ -28,6 +28,7 @@ import FriendList from "./components/FriendList";
 import FriendPanel from "./components/FriendPanel";
 import FriendRequests from "./components/FriendRequests";
 import AddFriendModal from "./components/AddFriendModal";
+import CreateGroupModal from "./components/CreateGroupModal";
 
 // Create socket context
 export const SocketContext = createContext(null)
@@ -59,7 +60,7 @@ function MainApp({ setIsAuthenticated }) {
   const [lastUpdate, setLastUpdate] = useState(Date.now())
   const [sidebarTab, setSidebarTab] = useState("chat"); // mặc định là chat
   const [showAddFriendModal, setShowAddFriendModal] = useState(false);
-
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
 
   const navigate = useNavigate()
 
@@ -463,7 +464,11 @@ function MainApp({ setIsAuthenticated }) {
               <User size={20} />
             </button>
 
-            <button className="action-button" title="Tạo nhóm chat">
+            <button 
+              className="action-button" 
+              title="Tạo nhóm chat"
+              onClick={() => setShowCreateGroupModal(true)}
+            >
               <Users size={20} />
             </button>
           </div>
@@ -595,6 +600,11 @@ function MainApp({ setIsAuthenticated }) {
   />
 )}
 
+      {/* Modals */}
+      <CreateGroupModal 
+        isOpen={showCreateGroupModal}
+        onClose={() => setShowCreateGroupModal(false)}
+      />
 
     </div>
   )
