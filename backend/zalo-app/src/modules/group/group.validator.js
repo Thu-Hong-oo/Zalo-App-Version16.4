@@ -1,14 +1,14 @@
 const Joi = require('joi');
 
 const createGroupSchema = Joi.object({
+  name: Joi.string().allow('', null),
   members: Joi.array().items(Joi.string()).min(2).required(),
   createdBy: Joi.string().required()
-});
+}).unknown(true);
 
 const updateGroupSchema = Joi.object({
-  name: Joi.string(),
-  description: Joi.string().allow(''),
-  avatar: Joi.string().allow(''),
+  name: Joi.string().optional(),
+  avatar: Joi.string().uri().optional()
 }).min(1);
 
 const addMemberSchema = Joi.object({

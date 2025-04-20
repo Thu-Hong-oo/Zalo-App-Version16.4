@@ -42,55 +42,54 @@ api.interceptors.request.use(
   async (config) => {
     try {
       const token = await AsyncStorage.getItem("accessToken");
+      console.log('Interceptor - Token:', token ? 'Token exists' : 'No token found');
+      
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
+        console.log('Interceptor - Added token to headers:', config.headers.Authorization);
+      } else {
+        console.log('Interceptor - No token found, request will be sent without auth');
       }
-      console.log('Request config:', {
+      
+      console.log('Interceptor - Final request config:', {
         url: config.url,
         method: config.method,
-        baseURL: config.baseURL,
+        headers: config.headers
       });
+      
       return config;
     } catch (error) {
-      console.error('Error in request interceptor:', error);
+      console.error('Interceptor error:', error);
       return config;
     }
   },
   (error) => {
-    console.error('Request error:', error);
+    console.error('Interceptor request error:', error);
     return Promise.reject(error);
   }
 );
 
 // Add response interceptor
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log('Response interceptor - Success:', {
+      url: response.config.url,
+      status: response.status
+    });
+    return response;
+  },
   (error) => {
-    // Network or timeout error
-    if (error.code === 'ECONNABORTED') {
-      throw new Error('Kết nối quá thời gian. Vui lòng thử lại.');
-    }
+    console.error('Response interceptor - Error:', {
+      url: error.config?.url,
+      status: error.response?.status,
+      data: error.response?.data
+    });
     
-    if (!error.response) {
-      console.error('Network error details:', {
-        message: error.message,
-        code: error.code,
-        config: {
-          url: error.config?.url,
-          method: error.config?.method,
-          baseURL: error.config?.baseURL,
-        }
-      });
-      throw new Error('Không thể kết nối đến máy chủ. Vui lòng kiểm tra:\n1. Điện thoại và máy tính có cùng mạng WiFi\n2. Địa chỉ IP máy tính đã đúng chưa\n3. Server đã chạy chưa');
-    }
-
-    // Server error with response
     if (error.response?.status === 401) {
-      // Handle unauthorized error
-      AsyncStorage.removeItem("accessToken");
+      console.log('Unauthorized - Token may be invalid or expired');
     }
     
-    throw error;
+    return Promise.reject(error);
   }
 );
 

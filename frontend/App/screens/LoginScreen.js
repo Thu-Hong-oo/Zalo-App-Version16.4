@@ -67,6 +67,7 @@ const LoginScreen = ({ navigation }) => {
       setLoading(true);
       const response = await login(phoneNumber, password);
       
+
       if (response.accessToken && response.refreshToken) {
         /* luôn await để chắc chắn ghi xong trước khi navigate */
         await AsyncStorage.multiSet([
@@ -84,12 +85,13 @@ const LoginScreen = ({ navigation }) => {
         ]);
       
         /* update context như cũ */
+
         setToken(response.accessToken);
         setRefreshToken(response.refreshToken);
         setUser(response.user);
         setIsLoggedIn(true);
       } else {
-        throw new Error('Không nhận được token từ server');
+        throw new Error('Không nhận được thông tin đăng nhập từ server');
       }
     } catch (error) {
       console.error('Login error:', error);

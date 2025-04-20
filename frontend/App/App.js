@@ -25,7 +25,9 @@ import PersonalInfoScreen from "./screens/PersonalInfoScreen";
 import UpdateAvatarScreen from "./screens/UpdateAvatarScreen";
 import PersonalDetailScreen from "./screens/PersonalDetailScreen";
 import ChatDirectlyScreen from "./screens/ChatDirectlyScreen";
+
 import FriendRequestsScreen from "./screens/FriendRequestsScreen";
+
 
 // Create Auth Context
 export const AuthContext = createContext(null);
@@ -84,7 +86,9 @@ function ChatStack() {
    
       <Stack.Screen name="Chat" component={ChatScreen} />
       <Stack.Screen name="ChatDirectly" component={ChatDirectlyScreen} /> 
+
       
+
     </Stack.Navigator>
   );
 }

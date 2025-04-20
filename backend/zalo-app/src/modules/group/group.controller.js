@@ -5,6 +5,24 @@ const { emitEvent } = require('../events');
 
 class GroupController {
   /**
+   * Get user's groups
+   */
+  async getUserGroups(req, res) {
+    try {
+      const userId = req.user.userId; // Lấy userId từ token
+      console.log('Getting groups for user:', userId);
+      
+      const groups = await groupService.getUserGroups(userId);
+      console.log('Found groups:', groups.length);
+      
+      res.json(groups);
+    } catch (error) {
+      console.error('Error getting user groups:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  /**
    * Create a new group
    */
   async createGroup(req, res) {
@@ -14,10 +32,13 @@ class GroupController {
         return res.status(400).json({ error: error.details[0].message });
       }
 
-      // Create group with members
+      console.log('Creating group with request body:', req.body); // Debug log
+
+      // Create group with members and name
       const group = await groupService.createGroup({
         members: req.body.members,
-        createdBy: req.body.createdBy
+        createdBy: req.body.createdBy,
+        name: req.body.name // Explicitly pass the name
       });
 
       emitEvent(GROUP_EVENTS.CREATED, group);
@@ -143,18 +164,6 @@ class GroupController {
         userId: req.params.memberId
       });
       res.json({ message: 'Member removed successfully' });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  }
-
-  /**
-   * Get user's groups
-   */
-  async getUserGroups(req, res) {
-    try {
-      const groups = await groupService.getUserGroups(req.params.userId);
-      res.json(groups);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
