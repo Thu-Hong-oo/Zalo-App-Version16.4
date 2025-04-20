@@ -70,7 +70,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   const initializeSocket = async () => {
     try {
       const token = await getAccessToken();
-      const newSocket = io("http://192.168.148.43:3000", {
+      const newSocket = io("http://192.168.1.77:3000", {
         auth: { token },
         transports: ["websocket", "polling"],
         forceNew: true,
@@ -211,7 +211,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       });
 
       const token = await getAccessToken();
-      const response = await fetch("http://192.168.148.43:3000/api/chat/upload", {
+      const response = await fetch("http://192.168.1.77:3000/api/chat/upload", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,

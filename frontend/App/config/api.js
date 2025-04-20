@@ -5,7 +5,7 @@ import Constants from "expo-constants";
 // cấu hình và quản lý các HTTP requests
 
 // Cấu hình API
-const COMPUTER_IP = "192.168.148.43";
+const COMPUTER_IP = "192.168.1.77";
 const API_URL = `http://${COMPUTER_IP}:3000/api`;
 
 // Hàm lấy API URL với logging
