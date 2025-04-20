@@ -58,9 +58,15 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   const [showVideoPreview, setShowVideoPreview] = useState(false);
   const [forwardModalVisible, setForwardModalVisible] = useState(false);
   const flatListRef = useRef(null);
-  const { title, otherParticipantPhone, avatar } = route.params;
+  const { title = 'Chat', otherParticipantPhone, avatar } = route.params || {};
 
   useEffect(() => {
+    if (!otherParticipantPhone) {
+      Alert.alert('Lỗi', 'Không tìm thấy thông tin người dùng');
+      navigation.goBack();
+      return;
+    }
+
     initializeSocket();
     loadChatHistory();
     return () => {

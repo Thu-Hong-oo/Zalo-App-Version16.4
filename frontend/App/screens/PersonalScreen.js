@@ -70,7 +70,20 @@ const PersonalScreen = () => {
       }
       
       // Clear all stored data
-      await AsyncStorage.multiRemove(['userData', 'token', 'refreshToken', 'isLoggedIn']);
+      const keysToRemove = [
+        'accessToken',
+        'refreshToken',
+        'userInfo',
+        'userData'
+      ];
+      
+      try {
+        await AsyncStorage.multiRemove(keysToRemove);
+        console.log('Successfully cleared all stored data');
+      } catch (storageError) {
+        console.error('Error clearing storage:', storageError);
+        // Continue with logout even if storage clear fails
+      }
       
       // Clear context
       setUser(null);
@@ -78,13 +91,8 @@ const PersonalScreen = () => {
       setRefreshToken(null);
       setIsLoggedIn(false);
       
-      // Close modal and navigate
+      // Close modal
       setLogoutModalVisible(false);
-      // navigation.reset({
-      //   index: 0,
-      //   routes: [{ name: 'Welcome' }],
-      // });
-     // navigation.navigate('Welcome');
     } catch (error) {
       console.error('Logout error:', error);
       Alert.alert('Lỗi', 'Không thể đăng xuất. Vui lòng thử lại.');

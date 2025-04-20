@@ -23,10 +23,10 @@ import {
 
 const LoginScreen = ({ navigation }) => {
   const { setIsLoggedIn, setToken, setRefreshToken, setUser } = useContext(AuthContext);
-  // const [phoneNumber, setPhoneNumber] = useState("0123456789");
-  // const [password, setPassword] = useState("nguyenngoc");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [password, setPassword] = useState("");
+   const [phoneNumber, setPhoneNumber] = useState("0376963653");
+   const [password, setPassword] = useState("123456");
+  // const [phoneNumber, setPhoneNumber] = useState("");
+  // const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
   const [forgotPasswordPhone, setForgotPasswordPhone] = useState("");
@@ -62,34 +62,27 @@ const LoginScreen = ({ navigation }) => {
       Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ thông tin');
       return;
     }
-  
+
     try {
       setLoading(true);
       const response = await login(phoneNumber, password);
       
-
-      if (response.accessToken && response.refreshToken) {
-        /* luôn await để chắc chắn ghi xong trước khi navigate */
-        await AsyncStorage.multiSet([
-          ["accessToken",  response.accessToken],
-          ["refreshToken", response.refreshToken],
-          [
-            "user",
-            JSON.stringify({
-              userId : response.user.userId,   // ⚠️ bắt buộc
-              phone  : response.user.phone,    // tiện fallback
-              name   : response.user.name,
-              avatar : response.user.avatar,
-            }),
-          ],
+      if (response.accessToken && response.refreshToken && response.user) {
+        // Lưu tokens và user info
+        await Promise.all([
+          saveAccessToken(response.accessToken),
+          saveRefreshToken(response.refreshToken),
+          saveUserInfo(response.user)
         ]);
-      
-        /* update context như cũ */
-
+        
+        console.log('Saved user info:', response.user);
+        
+        // Cập nhật context
         setToken(response.accessToken);
         setRefreshToken(response.refreshToken);
         setUser(response.user);
         setIsLoggedIn(true);
+
       } else {
         throw new Error('Không nhận được thông tin đăng nhập từ server');
       }
@@ -103,7 +96,6 @@ const LoginScreen = ({ navigation }) => {
       setLoading(false);
     }
   };
-  
 
   const handleForgotPassword = async () => {
     if (!forgotPasswordPhone) {

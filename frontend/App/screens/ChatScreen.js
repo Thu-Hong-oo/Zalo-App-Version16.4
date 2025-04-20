@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useLayoutEffect } from "react";
 import {
   View,
   Text,
@@ -33,6 +33,11 @@ export default function ChatListScreen({ navigation }) {
   const [isSearching, setIsSearching] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
 
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      tabBarStyle: { display: 'none' }
+    });
+  }, [navigation]);
   useEffect(() => {
     console.log('ChatScreen mounted');
     const loadData = async () => {

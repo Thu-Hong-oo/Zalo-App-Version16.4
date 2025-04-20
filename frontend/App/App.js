@@ -30,7 +30,7 @@ import FriendRequestsScreen from "./screens/FriendRequestsScreen";
 import GroupChatScreen from "./screens/GroupChatScreen";
 import GroupCreateScreen from "./screens/GroupCreationScreen";
 import GroupSettingScreen from "./screens/GroupSettingScreen";
-
+import GroupAddMembersScreen from "./screens/GroupAddMembersScreen";
 // Create Auth Context
 export const AuthContext = createContext(null);
 
@@ -92,6 +92,7 @@ function ChatStack() {
       <Stack.Screen name="GroupCreation" component={GroupCreateScreen} />
       <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} />
       <Stack.Screen name="GroupSetting" component={GroupSettingScreen} />
+      <Stack.Screen name="GroupAddMembers" component={GroupAddMembersScreen} />
     </Stack.Navigator>
   );
 }

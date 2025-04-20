@@ -256,9 +256,7 @@ const GroupChatScreen = () => {
             <Ionicons name="chevron-forward" size={20} color="#aaa" />
           </TouchableOpacity>
           
-          <Text style={styles.setupSubtitle}>
-            Bạn vừa tạo nhóm
-          </Text>
+       
           <View style={styles.memberAvatars}>
             {groupDetails.members && groupDetails.members.map((member, index) => (
               <Image 
