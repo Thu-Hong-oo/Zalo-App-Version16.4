@@ -1,0 +1,48 @@
+POST /groups - Tạo nhóm mới
+GET /groups/:groupId - Lấy thông tin nhóm
+PUT /groups/:groupId - Cập nhật thông tin nhóm
+DELETE /groups/:groupId - Xóa nhóm (soft delete)
+
+POST /groups/:groupId/members - Thêm thành viên
+GET /groups/:groupId/members - Lấy danh sách thành viên
+PUT /groups/:groupId/members/:memberId/role - Cập nhật vai trò thành viên
+DELETE /groups/:groupId/members/:memberId - Xóa thành viên
+
+GET /groups/users/:userId/groups - Lấy danh sách nhóm của người dùng
+PUT /groups/:groupId/members/:memberId/last-read - Cập nhật thời gian đọc tin nhắn cuối cùng
+
+Bảng group-message-zalolite (GROUP_MESSAGE_TABLE):
+PK: groupMessageId (String)
+SK: createdAt (String)
+Index: groupIndex (groupId, createdAt)
+Index: senderIndex (senderId, createdAt)
+####
+Bảng message-zalolite (MESSAGE_TABLE):
+PK: groupMessageId (String)
+SK: createdAt (String)
+Index: conversationIndex (conversationId, timestamp)
+Index: receiverIndex (receiverPhone, timestamp)
+Index: senderIndex (senderPhone, timestamp)
+Các trường hợp chuyển tiếp cần xử lý:
+
+tôi đã có
+GET /:groupId/messages - Lấy tin nhắn trong nhóm
+POST /:groupId/messages - Gửi tin nhắn trong nhóm
+DELETE /:groupId/messages/:messageId - Xóa tin nhắn trong nhóm
+
+xóa có nghĩa là xóa tin nhắn chỉ ở bên phía người thực hiện thao tác này
+
+------
+Mô tả chức năng chuyển tiếp tin nhắn:
+Cho phép chuyển tiếp tin nhắn từ nhóm sang:
+Nhóm khác
+Cuộc trò chuyện cá nhân
+Khi chuyển tiếp:
+Tin nhắn mới được tạo với metadata chứa thông tin về tin nhắn gốc
+Người gửi nhận được thông báo xác nhận
+Người nhận nhận được tin nhắn realtime nếu đang online
+Các thông tin được lưu:
+Nội dung tin nhắn gốc
+Người gửi gốc
+Thời gian chuyển tiếp
+Loại tin nhắn (text/file)

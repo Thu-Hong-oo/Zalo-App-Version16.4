@@ -40,10 +40,6 @@ const getGroupMessages = async (req, res) => {
       });
     }
 
-    // Lấy danh sách tin nhắn đã xóa của user
-    const deletedMessages = await getDeletedMessages(userId, groupId);
-    const deletedMessageIds = new Set(deletedMessages);
-
     const params = {
       TableName: process.env.GROUP_MESSAGE_TABLE,
       IndexName: "groupIndex",
@@ -64,41 +60,37 @@ const getGroupMessages = async (req, res) => {
     }
 
     const result = await dynamoDB.query(params).promise();
-    console.log("Raw messages from DynamoDB:", result.Items); // Debug log
 
-    // Tạo map để lưu trữ tin nhắn gốc và trạng thái xóa
+    // Tạo map để lưu trữ tin nhắn gốc và trạng thái thu hồi
     const messageMap = new Map();
 
     // Xử lý từng tin nhắn
     result.Items.forEach((message) => {
-      if (message.type === "delete_record") {
-        // Nếu là bản ghi xóa, lưu vào map với key là messageId bị xóa
-        const deletedMessageId = message.metadata?.deletedMessageId;
-        if (deletedMessageId) {
-          messageMap.set(deletedMessageId, {
-            ...messageMap.get(deletedMessageId),
-            isDeleted: true,
-            deletedBy: message.senderId,
-            deletedAt: message.createdAt,
+      if (message.type === "recall_record") {
+        // Nếu là bản ghi thu hồi, cập nhật tin nhắn gốc
+        const originalMessageId = message.metadata?.originalMessageId;
+        if (originalMessageId) {
+          messageMap.set(originalMessageId, {
+            ...messageMap.get(originalMessageId),
+            isRecalled: true,
+            recalledBy: message.senderId,
+            recalledAt: message.createdAt,
+            content: "Tin nhắn đã bị thu hồi",
           });
         }
-      } else {
-        // Nếu là tin nhắn gốc, lưu vào map
+      } else if (message.type !== "delete_record") {
+        // Nếu là tin nhắn gốc và chưa bị xóa
         messageMap.set(message.groupMessageId, {
           ...message,
-          isDeleted: false,
+          isRecalled: false,
         });
       }
     });
 
     // Lọc tin nhắn đã bị xóa bởi user hiện tại
     const filteredMessages = Array.from(messageMap.values()).filter(
-      (message) =>
-        !message.isDeleted ||
-        (message.isDeleted && message.deletedBy !== userId)
+      (message) => !message.isDeleted
     );
-
-    console.log("Filtered messages:", filteredMessages); // Debug log
 
     // Group messages by date
     const messagesByDate = {};
@@ -181,6 +173,7 @@ const GroupMessageService = {
       throw new Error("Bạn không có quyền thu hồi tin nhắn trong nhóm này");
     }
 
+    // Lấy tin nhắn gốc
     const originalMessage = await getMessageById(messageId, groupId);
     if (!originalMessage) {
       throw new Error("Không tìm thấy tin nhắn");
@@ -192,25 +185,48 @@ const GroupMessageService = {
 
     const messageAge =
       Date.now() - new Date(originalMessage.createdAt).getTime();
-    const MAX_RECALL_TIME = 2 * 60 * 1000; // 2 phút
+    const MAX_RECALL_TIME = 24 * 60 * 60 * 1000; // 24 h
     if (messageAge > MAX_RECALL_TIME) {
-      throw new Error("Không thể thu hồi tin nhắn sau 2 phút");
+      throw new Error("Không thể thu hồi tin nhắn sau 24 h");
     }
 
-    const updateParams = {
-      TableName: process.env.GROUP_MESSAGE_TABLE,
-      Key: { groupMessageId: messageId },
-      UpdateExpression: "set #status = :status, content = :content",
-      ExpressionAttributeNames: { "#status": "status" },
-      ExpressionAttributeValues: {
-        ":status": "recalled",
-        ":content": "Tin nhắn đã bị thu hồi",
+    // Tạo bản ghi thu hồi
+    const recallRecordId = uuidv4();
+    const timestamp = new Date().toISOString();
+
+    const recallRecord = {
+      groupMessageId: recallRecordId,
+      groupId,
+      senderId: userId,
+      content: "Tin nhắn đã bị thu hồi",
+      type: "recall_record",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      status: "recalled",
+      metadata: {
+        originalMessageId: messageId,
+        originalContent: originalMessage.content,
+        originalSender: originalMessage.senderId,
+        recalledBy: userId,
+        recalledAt: timestamp,
       },
-      ReturnValues: "ALL_NEW",
     };
 
-    const result = await dynamoDB.update(updateParams).promise();
-    return result.Attributes;
+    // Lưu bản ghi thu hồi
+    await dynamoDB
+      .put({
+        TableName: process.env.GROUP_MESSAGE_TABLE,
+        Item: recallRecord,
+      })
+      .promise();
+
+    return {
+      messageId,
+      groupId,
+      content: "Tin nhắn đã bị thu hồi",
+      recalledBy: userId,
+      recalledAt: timestamp,
+    };
   },
 
   async deleteMessage(groupId, messageId, userId) {
@@ -252,6 +268,94 @@ const GroupMessageService = {
 
     await dynamoDB.put(deleteRecord).promise();
     return { deletedMessageId: messageId, deletedBy: userId, originalMessage };
+  },
+
+  async forwardMessage(
+    sourceMessageId,
+    sourceGroupId,
+    targetId,
+    senderId,
+    targetType = "group"
+  ) {
+    try {
+      // Lấy tin nhắn gốc từ nhóm nguồn
+      const originalMessage = await getMessageById(
+        sourceMessageId,
+        sourceGroupId
+      );
+      if (!originalMessage) {
+        throw new Error("Không tìm thấy tin nhắn gốc");
+      }
+
+      // Tạo tin nhắn mới
+      const newMessageId = uuidv4();
+      const timestamp = new Date().toISOString();
+
+      if (targetType === "conversation") {
+        // Nếu chuyển tiếp từ nhóm sang cuộc trò chuyện cá nhân
+        const newMessage = {
+          messageId: newMessageId,
+          conversationId: `${senderId}_${targetId}`,
+          senderPhone: senderId,
+          receiverPhone: targetId,
+          content: originalMessage.content,
+          type: originalMessage.type,
+          fileType: originalMessage.fileType,
+          timestamp: Date.now(),
+          status: "sent",
+          metadata: {
+            forwardedFrom: "group",
+            originalMessageId: sourceMessageId,
+            originalSender: originalMessage.senderId,
+            originalContent: originalMessage.content,
+            originalGroupId: sourceGroupId,
+          },
+        };
+
+        // Lưu tin nhắn mới vào bảng MESSAGE_TABLE
+        await dynamoDB
+          .put({
+            TableName: process.env.MESSAGE_TABLE,
+            Item: newMessage,
+          })
+          .promise();
+
+        return newMessage;
+      } else {
+        // Nếu chuyển tiếp sang nhóm khác
+        const newMessage = {
+          groupMessageId: newMessageId,
+          groupId: targetId,
+          senderId: senderId,
+          content: originalMessage.content,
+          type: originalMessage.type,
+          fileType: originalMessage.fileType,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          status: "sent",
+          metadata: {
+            forwardedFrom: "group",
+            originalMessageId: sourceMessageId,
+            originalSender: originalMessage.senderId,
+            originalContent: originalMessage.content,
+            originalGroupId: sourceGroupId,
+          },
+        };
+
+        // Lưu tin nhắn mới vào bảng GROUP_MESSAGE_TABLE
+        await dynamoDB
+          .put({
+            TableName: process.env.GROUP_MESSAGE_TABLE,
+            Item: newMessage,
+          })
+          .promise();
+
+        return newMessage;
+      }
+    } catch (error) {
+      console.error("Error forwarding message:", error);
+      throw error;
+    }
   },
 };
 
@@ -356,6 +460,104 @@ const deleteGroupMessage = async (req, res) => {
     res.status(500).json({
       status: "error",
       message: error.message || "Đã xảy ra lỗi khi xóa tin nhắn",
+    });
+  }
+};
+
+const forwardGroupMessage = async (req, res) => {
+  try {
+    const { groupId } = req.params; // groupId của nhóm nguồn
+    const { sourceMessageId, targetId, targetType } = req.body;
+    const senderId = req.user.userId;
+
+    console.log("Forward message request:", {
+      sourceGroupId: groupId,
+      targetId,
+      targetType,
+      senderId,
+    });
+
+    // Kiểm tra quyền trong nhóm nguồn
+    const sourceMember = await GroupMemberService.getMember(groupId, senderId);
+    console.log("Source member check:", sourceMember);
+
+    if (!sourceMember || !sourceMember.isActive) {
+      return res.status(403).json({
+        status: "error",
+        message: "Bạn không có quyền truy cập nhóm nguồn",
+      });
+    }
+
+    let forwardedMessage;
+    if (targetType === "group") {
+      // Kiểm tra quyền trong nhóm đích
+      const targetMember = await GroupMemberService.getMember(
+        targetId,
+        senderId
+      );
+      console.log("Target member check:", targetMember);
+
+      if (!targetMember) {
+        return res.status(403).json({
+          status: "error",
+          message: "Bạn không phải là thành viên của nhóm đích",
+        });
+      }
+
+      if (!targetMember.isActive) {
+        return res.status(403).json({
+          status: "error",
+          message: "Bạn đã bị xóa khỏi nhóm đích",
+        });
+      }
+
+      // Chuyển tiếp sang nhóm khác
+      forwardedMessage = await GroupMessageService.forwardMessage(
+        sourceMessageId,
+        groupId,
+        targetId,
+        senderId,
+        targetType
+      );
+
+      // Thông báo cho các thành viên trong nhóm đích
+      const groupMembers = await GroupMemberService.getGroupMembers(targetId);
+      const onlineMembers = groupMembers.filter((member) =>
+        connectedUsers.has(member.userId)
+      );
+      onlineMembers.forEach((member) => {
+        const socket = connectedUsers.get(member.userId);
+        if (socket) {
+          socket.emit("new-group-message", forwardedMessage);
+        }
+      });
+    } else {
+      // Chuyển tiếp sang cuộc trò chuyện cá nhân
+      forwardedMessage = await GroupMessageService.forwardMessage(
+        sourceMessageId,
+        groupId,
+        targetId,
+        senderId,
+        targetType
+      );
+
+      // Thông báo cho người nhận nếu họ đang online
+      const targetSocket = connectedUsers.get(targetId);
+      if (targetSocket) {
+        targetSocket.emit("new-message", forwardedMessage);
+      }
+    }
+
+    res.json({
+      status: "success",
+      message: "Đã chuyển tiếp tin nhắn thành công",
+      data: forwardedMessage,
+    });
+  } catch (error) {
+    console.error("Error in forward message route:", error);
+    res.status(500).json({
+      status: "error",
+      message: error.message || "Đã xảy ra lỗi khi chuyển tiếp tin nhắn",
     });
   }
 };
@@ -484,6 +686,98 @@ const initializeSocket = (io) => {
         }
       });
 
+      socket.on("forward-message", async (data) => {
+        try {
+          const { sourceMessageId, targetId, targetType } = data;
+          const senderId = socket.user.userId;
+
+          let forwardedMessage;
+          let targetSocket;
+
+          if (targetType === "group") {
+            // Chuyển tiếp sang nhóm
+            forwardedMessage = await GroupMessageService.forwardMessage(
+              sourceMessageId,
+              sourceMessageId,
+              targetId,
+              senderId,
+              "group"
+            );
+
+            // Thông báo cho các thành viên trong nhóm
+            const groupMembers = await GroupMemberService.getGroupMembers(
+              targetId
+            );
+            groupMembers.forEach((member) => {
+              const memberSocket = connectedUsers.get(member.userId);
+              if (memberSocket) {
+                memberSocket.emit("new-group-message", forwardedMessage);
+              }
+            });
+          } else {
+            // Chuyển tiếp sang cuộc trò chuyện cá nhân
+            const conversationId = createParticipantId(senderId, targetId);
+            const timestamp = new Date().toISOString();
+
+            // Lấy tin nhắn gốc
+            const originalMessage = await getMessageById(sourceMessageId, null);
+
+            // Tạo tin nhắn mới
+            const newMessage = {
+              messageId: uuidv4(),
+              conversationId,
+              senderPhone: senderId,
+              receiverPhone: targetId,
+              content: originalMessage.content,
+              timestamp: Date.now(),
+              status: "sent",
+              type: originalMessage.type,
+              fileType: originalMessage.fileType,
+              metadata: {
+                forwardedFrom: "group",
+                originalMessageId: sourceMessageId,
+                originalSender: originalMessage.senderId,
+                originalContent: originalMessage.content,
+              },
+            };
+
+            // Lưu tin nhắn mới
+            await dynamoDB
+              .put({
+                TableName: process.env.MESSAGE_TABLE,
+                Item: newMessage,
+              })
+              .promise();
+
+            // Cập nhật conversation
+            await upsertConversation(senderId, targetId, {
+              content: newMessage.content,
+              timestamp: newMessage.timestamp,
+              senderId: senderId,
+            });
+
+            forwardedMessage = newMessage;
+
+            // Thông báo cho người nhận nếu họ đang online
+            targetSocket = connectedUsers.get(targetId);
+            if (targetSocket) {
+              targetSocket.emit("new-message", forwardedMessage);
+            }
+          }
+
+          // Thông báo cho người gửi
+          socket.emit("message-forwarded", {
+            status: "success",
+            message: forwardedMessage,
+          });
+        } catch (error) {
+          console.error("Error forwarding message:", error);
+          socket.emit("error", {
+            message: error.message || "Đã xảy ra lỗi khi chuyển tiếp tin nhắn",
+          });
+        }
+      });
+
       // Xử lý rời group
       socket.on("leave-group", (groupId) => {
         socket.leave(`group:${groupId}`);
@@ -507,19 +801,28 @@ const initializeSocket = (io) => {
 
 // Helper functions
 const getMessageById = async (messageId, groupId) => {
-  const params = {
-    TableName: process.env.GROUP_MESSAGE_TABLE,
-    IndexName: "groupIndex",
-    KeyConditionExpression: "groupId = :groupId",
-    FilterExpression: "groupMessageId = :messageId",
-    ExpressionAttributeValues: {
-      ":groupId": groupId,
-      ":messageId": messageId,
-    },
-  };
+  try {
+    // Tìm tin nhắn trong bảng group-message
+    const params = {
+      TableName: process.env.GROUP_MESSAGE_TABLE,
+      IndexName: "groupIndex",
+      KeyConditionExpression: "groupId = :groupId",
+      FilterExpression: "groupMessageId = :messageId",
+      ExpressionAttributeValues: {
+        ":groupId": groupId,
+        ":messageId": messageId,
+      },
+    };
 
-  const result = await dynamoDB.query(params).promise();
-  return result.Items[0]; // Trả về tin nhắn đầu tiên tìm thấy
+    const result = await dynamoDB.query(params).promise();
+    if (result.Items && result.Items.length > 0) {
+      return result.Items[0];
+    }
+    return null;
+  } catch (error) {
+    console.error("Error getting message by ID:", error);
+    throw error;
+  }
 };
 
 // Sửa lại hàm lấy tin nhắn đã xóa
@@ -536,7 +839,7 @@ const getDeletedMessages = async (userId, groupId) => {
   };
 
   const result = await dynamoDB.query(params).promise();
-  console.log("Deleted messages query result:", result.Items); // Debug log
+  // console.log("Deleted messages query result:", result.Items);
 
   return result.Items.filter((item) => item.type === "delete_record")
     .map((item) => item.metadata?.deletedMessageId)
@@ -556,6 +859,7 @@ router.put(
   authMiddleware,
   recallGroupMessage
 );
+router.post("/:groupId/messages/forward", authMiddleware, forwardGroupMessage);
 
 // Export both router and socket initialization
 module.exports = {
