@@ -121,5 +121,4 @@ export const checkServerConnection = async () => {
     return false;
   }
 };
-
 export default api;

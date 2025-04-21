@@ -122,11 +122,44 @@ Loại tin nhắn (text/file)
    - Endpoint: `/api/chat-group/:groupId/messages/:messageId`
    - Yêu cầu: Authorization token
 
+   {
+  "status": "success",
+  "message": "Đã xóa tin nhắn",
+  "data": {
+    "deletedMessageId": "cf0aa89b-72a6-42b8-b575-a9f5c1f161fb",
+    "deletedBy": "554d27e4-eeca-469a-a87c-9f208a0533e4",
+    "originalMessage": {
+      "content": "demo các chức năng",
+      "metadata": {},
+      "updatedAt": "2025-04-21T09:28:25.134Z",
+      "groupId": "29223937-60fc-47cf-8afe-f09d8dd49795",
+      "senderId": "554d27e4-eeca-469a-a87c-9f208a0533e4",
+      "status": "sent",
+      "createdAt": "2025-04-21T09:28:25.134Z",
+      "fileType": null,
+      "type": "text",
+      "groupMessageId": "cf0aa89b-72a6-42b8-b575-a9f5c1f161fb"
+    }
+  }
+}
+
 4. **Thu hồi tin nhắn nhóm**
    - Method: PUT
    - Endpoint: `/api/chat-group/:groupId/messages/:messageId/recall`
    - Yêu cầu: Authorization token
    - Giới hạn: Chỉ có thể thu hồi trong 24h
+
+   {
+  "status": "success",
+  "message": "Đã thu hồi tin nhắn thành công",
+  "data": {
+    "messageId": "cf0aa89b-72a6-42b8-b575-a9f5c1f161fb",
+    "groupId": "29223937-60fc-47cf-8afe-f09d8dd49795",
+    "content": "Tin nhắn đã bị thu hồi",
+    "recalledBy": "554d27e4-eeca-469a-a87c-9f208a0533e4",
+    "recalledAt": "2025-04-21T09:30:40.506Z"
+  }
+}
 
 5. **Chuyển tiếp tin nhắn nhóm/conservation(cá nhân chat 1-1)**
    - Method: POST
@@ -146,3 +179,22 @@ Tất cả các API đều:
 - Kiểm tra quyền thành viên trong nhóm
 - Hỗ trợ realtime thông qua socket.io
 
+Cấu trúc:
+Khi xóa, thu hồi sẽ tạo mới record với cấu trúc:
+Xóa: metadata : { "deletedMessageId" : { "S" : "ea4ffa26-2477-4e00-9fe3-54c3c4324715" }, "originalType" : { "S" : "text" }, "originalSender" : { "S" : "554d27e4-eeca-469a-a87c-9f208a0533e4" }, "deletedBy" : { "S" : "554d27e4-eeca-469a-a87c-9f208a0533e4" }, "originalContent" : { "S" : "Nhắn để xóa thôi chẳng để làm gì" } }
+    status: deleted, type: delete_record
+
+Thu Hồi: metadata :{ "recalledAt" : { "S" : "2025-04-21T09:20:58.835Z" }, "originalMessageId" : { "S" : "ea4ffa26-2477-4e00-9fe3-54c3c4324715" }, "originalSender" : { "S" : "554d27e4-eeca-469a-a87c-9f208a0533e4" }, "originalContent" : { "S" : "Nhắn để xóa thôi chẳng để làm gì" }, "recalledBy" : { "S" : "554d27e4-eeca-469a-a87c-9f208a0533e4" } }
+status: recalled, type: recall_record
+
+Cấu trúc chung của bảng
+groupMessageId (String)
+createdAt (String)
+content
+fileType
+groupId
+metadata ( ban đầu là {})
+senderId
+status
+type ( nếu là recall thì sẽ ở trạng thái recall_record)
+updatedAt

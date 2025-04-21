@@ -43,6 +43,7 @@ import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import ForwardMessageModal from "./ForwardMessageModal";
 import { getApiUrl, getBaseUrl, api } from "../config/api";
+import axios from "axios";
 // import jwt_decode from "jwt-decode"; // Tạm thời comment lại
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -93,6 +94,8 @@ const GroupChatScreen = () => {
   const [scrollPosition, setScrollPosition] = useState(0);
   const [lastEvaluatedKey, setLastEvaluatedKey] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [userCache, setUserCache] = useState({});
+  const [deletedMessages, setDeletedMessages] = useState(new Set());
 
   const viewabilityConfig = {
     itemVisiblePercentThreshold: 50,
@@ -227,6 +230,36 @@ const GroupChatScreen = () => {
     setMessage("");
   };
 
+  const fetchUserInfo = async (userId) => {
+    try {
+      // Check cache first
+      if (userCache[userId]) {
+        return userCache[userId];
+      }
+
+      const response = await axios.get(`${getApiUrl()}/users/byId/${userId}`, {
+        headers: {
+          Authorization: `Bearer ${await getAccessToken()}`,
+        },
+      });
+
+      if (!response.data) {
+        throw new Error("Không nhận được dữ liệu từ server");
+      }
+
+      // Update cache
+      setUserCache((prev) => ({
+        ...prev,
+        [userId]: response.data,
+      }));
+
+      return response.data;
+    } catch (error) {
+      console.error("Get user info error:", error);
+      return null;
+    }
+  };
+
   const loadChatHistory = async (loadMore = false) => {
     try {
       if (loadMore && !hasMoreMessages) return;
@@ -249,26 +282,91 @@ const GroupChatScreen = () => {
       const userId = await getUserIdFromToken();
 
       if (response.status === "success" && response.data.messages) {
-        const messageArray = Object.entries(response.data.messages)
-          .flatMap(([date, messages]) =>
-            messages.map((msg) => ({
-              ...msg,
-              senderId: msg.senderId,
-              senderName: msg.senderName || "Người dùng",
-              senderAvatar: msg.senderAvatar,
-              status: msg.status || "sent",
-              isMe: msg.senderId === userId, // Thêm trường isMe
-            }))
-          )
-          .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+        // Tạo map để theo dõi tin nhắn bị thu hồi và xóa
+        const recallMap = new Map();
+        const deleteMap = new Map();
 
-        console.log(
-          "Processed messages:",
-          messageArray.map((m) => ({
-            content: m.content,
-            senderId: m.senderId,
-            isMe: m.isMe,
-          }))
+        // Xử lý các tin nhắn theo ngày
+        const messageArray = await Promise.all(
+          Object.entries(response.data.messages).flatMap(([date, messages]) => {
+            // Trước tiên, lọc ra các record thu hồi và xóa
+            messages.forEach((msg) => {
+              if (
+                msg.type === "recall_record" &&
+                msg.metadata?.originalMessageId
+              ) {
+                recallMap.set(msg.metadata.originalMessageId, msg);
+              }
+              if (
+                msg.type === "delete_record" &&
+                msg.metadata?.deletedMessageId
+              ) {
+                deleteMap.set(msg.metadata.deletedMessageId, msg);
+              }
+            });
+
+            // Sau đó xử lý các tin nhắn thông thường
+            return messages
+              .filter(
+                (msg) =>
+                  msg.type !== "recall_record" && msg.type !== "delete_record"
+              ) // Loại bỏ các record thu hồi và xóa
+              .map(async (msg) => {
+                const recallRecord = recallMap.get(msg.groupMessageId);
+                const deleteRecord = deleteMap.get(msg.groupMessageId);
+                const isMe = msg.senderId === userId;
+
+                // Nếu là tin nhắn của người khác, fetch thông tin người gửi
+                let senderInfo = {};
+                if (!isMe) {
+                  const userInfo = await fetchUserInfo(msg.senderId);
+                  if (userInfo) {
+                    senderInfo = {
+                      senderName: userInfo.name,
+                      senderAvatar: userInfo.avatar,
+                    };
+                  }
+                }
+
+                // Nếu tin nhắn đã bị thu hồi
+                if (recallRecord) {
+                  return {
+                    ...msg,
+                    ...senderInfo,
+                    content: "Tin nhắn đã bị thu hồi",
+                    status: "recalled",
+                    type: "recall_record",
+                    metadata: {
+                      ...msg.metadata,
+                      originalMessageId: msg.groupMessageId,
+                      recalledBy: recallRecord.metadata.recalledBy,
+                      recalledAt: recallRecord.metadata.recalledAt,
+                    },
+                    isMe,
+                  };
+                }
+
+                // Nếu tin nhắn đã bị xóa bởi người dùng hiện tại
+                if (
+                  deleteRecord &&
+                  deleteRecord.metadata.deletedBy === userId
+                ) {
+                  return null; // Không hiển thị tin nhắn đã xóa
+                }
+
+                return {
+                  ...msg,
+                  ...senderInfo,
+                  status: msg.status || "sent",
+                  isMe,
+                };
+              });
+          })
+        );
+
+        // Lọc bỏ các tin nhắn null (đã bị xóa)
+        const filteredMessages = (await Promise.all(messageArray)).filter(
+          Boolean
         );
 
         setMessages((prev) => {
@@ -277,14 +375,16 @@ const GroupChatScreen = () => {
             prev.forEach((msg) => {
               messageMap.set(msg.groupMessageId, msg);
             });
-            messageArray.forEach((msg) => {
+            filteredMessages.forEach((msg) => {
               messageMap.set(msg.groupMessageId, msg);
             });
             return Array.from(messageMap.values()).sort(
               (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
             );
           }
-          return messageArray;
+          return filteredMessages.sort(
+            (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+          );
         });
 
         setHasMoreMessages(response.data.pagination.hasMore);
@@ -306,7 +406,6 @@ const GroupChatScreen = () => {
         const token = await getAccessToken();
         const userId = await getUserIdFromToken();
         setCurrentUserId(userId);
-        console.log("Current user ID:", userId);
 
         const newSocket = io(getBaseUrl(), {
           auth: { token },
@@ -325,44 +424,68 @@ const GroupChatScreen = () => {
           console.error("Socket connection error:", error);
         });
 
-        newSocket.on("new-group-message", (newMsg) => {
-          console.log("Received new group message:", newMsg);
-          setMessages((prev) => {
-            const newMessages = [...prev];
-            const existingIndex = newMessages.findIndex(
-              (msg) => msg.groupMessageId === newMsg.groupMessageId
-            );
-            if (existingIndex === -1) {
-              // Đảm bảo tin nhắn mới có đầy đủ thông tin
-              const enhancedMsg = {
-                ...newMsg,
-                senderId: newMsg.senderId,
-                senderName: newMsg.senderName || "Người dùng",
-                senderAvatar: newMsg.senderAvatar,
-                status: "sent",
+        newSocket.on("new-group-message", async (newMessage) => {
+          if (newMessage.groupId === groupId) {
+            // Nếu tin nhắn không phải của người dùng hiện tại, lấy thông tin người gửi
+            if (newMessage.senderId !== userId) {
+              const senderInfo = await fetchUserInfo(newMessage.senderId);
+              newMessage = {
+                ...newMessage,
+                senderName: senderInfo.name,
+                senderAvatar: senderInfo.avatar,
               };
-              newMessages.push(enhancedMsg);
             }
-            return newMessages.sort(
-              (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
-            );
-          });
-          scrollToBottom();
+
+            setMessages((prev) => {
+              const uniqueMessages = prev.filter(
+                (msg) => msg.groupMessageId !== newMessage.groupMessageId
+              );
+              return [...uniqueMessages, newMessage].sort(
+                (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+              );
+            });
+            scrollToBottom();
+          }
         });
 
-        newSocket.on("group-message-recalled", (data) => {
-          console.log("Group message recalled:", data);
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.groupMessageId === data.groupMessageId
-                ? {
-                    ...msg,
-                    content: data.content,
-                    status: "recalled",
-                  }
-                : msg
-            )
-          );
+        newSocket.on("group-message-recalled", (recallData) => {
+          if (recallData.groupId === groupId) {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.groupMessageId === recallData.messageId
+                  ? {
+                      ...msg,
+                      content: "Tin nhắn đã bị thu hồi",
+                      status: "recalled",
+                      type: "recall_record",
+                      metadata: {
+                        ...msg.metadata,
+                        originalMessageId: msg.groupMessageId,
+                        recalledBy: recallData.recalledBy,
+                        recalledAt: recallData.recalledAt,
+                      },
+                    }
+                  : msg
+              )
+            );
+          }
+        });
+
+        newSocket.on("group-message-deleted", (deleteData) => {
+          if (deleteData.groupId === groupId) {
+            // Chỉ ẩn tin nhắn nếu người dùng hiện tại là người xóa
+            if (deleteData.deletedBy === userId) {
+              setMessages((prev) =>
+                prev.filter(
+                  (msg) => msg.groupMessageId !== deleteData.messageId
+                )
+              );
+              // Thêm vào danh sách tin nhắn đã xóa
+              setDeletedMessages(
+                (prev) => new Set([...prev, deleteData.messageId])
+              );
+            }
+          }
         });
 
         newSocket.on("message-sent", (response) => {
@@ -517,31 +640,78 @@ const GroupChatScreen = () => {
         return;
       }
 
+      // Cập nhật UI ngay lập tức
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.groupMessageId === messageId
+            ? {
+                ...msg,
+                content: "Tin nhắn đã bị thu hồi",
+                status: "recalled",
+                type: "recall_record",
+                metadata: {
+                  ...msg.metadata,
+                  originalMessageId: msg.groupMessageId,
+                  recalledBy: currentUserId,
+                  recalledAt: new Date().toISOString(),
+                },
+              }
+            : msg
+        )
+      );
+
       const response = await recallGroupMessage(groupId, messageId);
       if (response.status === "success") {
-        const recallContent =
-          targetMessage.type === "file"
-            ? `[File] ${targetMessage.fileType || "file"} đã bị thu hồi`
-            : "Tin nhắn đã bị thu hồi";
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.groupMessageId === messageId
-              ? { ...msg, content: recallContent, status: "recalled" }
-              : msg
-          )
-        );
+        // Gửi sự kiện socket để thông báo cho các thành viên khác
         socket?.emit("recall-group-message", {
           messageId,
           groupId,
-          content: recallContent,
+          recalledBy: currentUserId,
+          recalledAt: new Date().toISOString(),
         });
         Alert.alert("Thành công", "Tin nhắn đã được thu hồi");
       } else {
+        // Nếu thu hồi thất bại, khôi phục tin nhắn gốc
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.groupMessageId === messageId
+              ? {
+                  ...msg,
+                  content: targetMessage.content,
+                  status: "sent",
+                  type: targetMessage.type,
+                  metadata: targetMessage.metadata,
+                }
+              : msg
+          )
+        );
         Alert.alert("Lỗi", response.message || "Không thể thu hồi tin nhắn");
       }
     } catch (error) {
       console.error("Error recalling message:", error);
       Alert.alert("Lỗi", "Đã xảy ra lỗi khi thu hồi tin nhắn");
+    }
+  };
+
+  const showMessageOptions = (message) => {
+    setSelectedMessage(message);
+    const isMe = message.isMe || message.senderId === currentUserId;
+
+    if (isMe) {
+      // Kiểm tra thời gian của tin nhắn cho thu hồi
+      const messageAge = Date.now() - new Date(message.createdAt).getTime();
+      const MAX_RECALL_TIME = 24 * 60 * 60 * 1000; // 24h
+
+      if (messageAge > MAX_RECALL_TIME) {
+        // Nếu tin nhắn quá 24h, chỉ hiển thị chuyển tiếp và xóa
+        setShowOptionsModal(true);
+      } else {
+        // Nếu tin nhắn chưa quá 24h, hiển thị tất cả tùy chọn
+        setShowOptionsModal(true);
+      }
+    } else {
+      // Tin nhắn của người khác, hiển thị chuyển tiếp và xóa
+      setShowOptionsModal(true);
     }
   };
 
@@ -559,23 +729,42 @@ const GroupChatScreen = () => {
         return;
       }
 
+      // Thêm vào danh sách tin nhắn đã xóa
+      setDeletedMessages((prev) => new Set([...prev, messageId]));
+
+      // Xóa tin nhắn ngay lập tức ở giao diện người dùng
+      setMessages((prev) =>
+        prev.filter((msg) => msg.groupMessageId !== messageId)
+      );
+
       const response = await deleteGroupMessage(groupId, messageId);
       if (response.status === "success") {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.groupMessageId === messageId
-              ? { ...msg, status: "deleted" }
-              : msg
-          )
-        );
-
+        // Gửi sự kiện socket để thông báo cho các thành viên khác
         socket?.emit("delete-group-message", {
           messageId,
           groupId,
+          deletedBy: currentUserId,
         });
-
         Alert.alert("Thành công", "Tin nhắn đã được xóa");
       } else {
+        // Nếu xóa thất bại, khôi phục tin nhắn
+        setDeletedMessages((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(messageId);
+          return newSet;
+        });
+        setMessages((prev) => {
+          const updatedMessages = [...prev];
+          const index = updatedMessages.findIndex(
+            (msg) => msg.groupMessageId === messageId
+          );
+          if (index === -1) {
+            updatedMessages.push(targetMessage);
+          }
+          return updatedMessages.sort(
+            (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+          );
+        });
         Alert.alert("Lỗi", response.message || "Không thể xóa tin nhắn");
       }
     } catch (error) {
@@ -615,40 +804,6 @@ const GroupChatScreen = () => {
       Alert.alert("Lỗi", error.message || "Không thể chuyển tiếp tin nhắn");
     } finally {
       setSelectedMessage(null);
-    }
-  };
-
-  const showMessageOptions = (message) => {
-    setSelectedMessage(message);
-
-    // Kiểm tra thời gian của tin nhắn
-    const messageAge = Date.now() - new Date(message.createdAt).getTime();
-    const MAX_RECALL_TIME = 24 * 60 * 60 * 1000; // 24h
-
-    if (messageAge > MAX_RECALL_TIME) {
-      // Nếu tin nhắn quá 24h, chỉ hiển thị các tùy chọn khác
-      Alert.alert(
-        "Thông báo",
-        "Tin nhắn chỉ có thể được thu hồi trong vòng 24h sau khi gửi",
-        [
-          {
-            text: "Chuyển tiếp",
-            onPress: () => setForwardModalVisible(true),
-          },
-          {
-            text: "Xóa",
-            onPress: () => handleDeleteMessage(message.groupMessageId),
-            style: "destructive",
-          },
-          {
-            text: "Đóng",
-            style: "cancel",
-          },
-        ]
-      );
-    } else {
-      // Nếu tin nhắn chưa quá 24h, hiển thị tất cả tùy chọn
-      setShowOptionsModal(true);
     }
   };
 
@@ -758,16 +913,24 @@ const GroupChatScreen = () => {
                       {msg.senderName || "Người dùng"}
                     </Text>
                   )}
-                  {msg.status === "recalled" ? (
-                    <Text
-                      style={[
-                        styles.messageText,
-                        isMe ? styles.myMessageText : styles.otherMessageText,
-                        styles.recalledMessage,
-                      ]}
-                    >
-                      {msg.content}
-                    </Text>
+                  {msg.status === "recalled" || msg.isRecalled ? (
+                    <View style={styles.recalledMessageContainer}>
+                      <Ionicons
+                        name="refresh"
+                        size={16}
+                        color={isMe ? "rgba(255,255,255,0.6)" : "#999"}
+                        style={styles.recalledIcon}
+                      />
+                      <Text
+                        style={[
+                          styles.messageText,
+                          isMe ? styles.myMessageText : styles.otherMessageText,
+                          styles.recalledMessage,
+                        ]}
+                      >
+                        Tin nhắn đã bị thu hồi
+                      </Text>
+                    </View>
                   ) : msg.type === "text" ? (
                     <Text
                       style={[
@@ -879,16 +1042,23 @@ const GroupChatScreen = () => {
           onPress={() => setShowOptionsModal(false)}
         >
           <View style={styles.optionsModalContent}>
-            <TouchableOpacity
-              style={styles.optionButton}
-              onPress={() => {
-                handleRecallMessage(selectedMessage.groupMessageId);
-                setShowOptionsModal(false);
-              }}
-            >
-              <Ionicons name="arrow-undo" size={24} color="#1877f2" />
-              <Text style={styles.optionText}>Thu hồi</Text>
-            </TouchableOpacity>
+            {selectedMessage &&
+              (selectedMessage.isMe ||
+                selectedMessage.senderId === currentUserId) &&
+              new Date().getTime() -
+                new Date(selectedMessage.createdAt).getTime() <=
+                24 * 60 * 60 * 1000 && (
+                <TouchableOpacity
+                  style={styles.optionButton}
+                  onPress={() => {
+                    handleRecallMessage(selectedMessage.groupMessageId);
+                    setShowOptionsModal(false);
+                  }}
+                >
+                  <Ionicons name="arrow-undo" size={24} color="#1877f2" />
+                  <Text style={styles.optionText}>Thu hồi</Text>
+                </TouchableOpacity>
+              )}
 
             <TouchableOpacity
               style={styles.optionButton}
@@ -1106,6 +1276,14 @@ const styles = StyleSheet.create({
     padding: 20,
     width: "80%",
     maxWidth: 300,
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
   optionButton: {
     flexDirection: "row",
@@ -1123,9 +1301,16 @@ const styles = StyleSheet.create({
   deleteText: {
     color: "#ff3b30",
   },
+  recalledMessageContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  recalledIcon: {
+    marginRight: 4,
+  },
   recalledMessage: {
     fontStyle: "italic",
-    color: "#999",
+    opacity: 0.7,
   },
 });
 
