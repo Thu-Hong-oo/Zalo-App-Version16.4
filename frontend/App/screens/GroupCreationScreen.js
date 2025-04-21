@@ -14,7 +14,7 @@ import {
   ActivityIndicator,
   Pressable
 } from 'react-native';
-import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getRecentContacts, createGroup } from '../modules/group/controller';
@@ -24,140 +24,96 @@ const NewGroupScreen = () => {
   const [selectedContacts, setSelectedContacts] = useState([]);
   const [activeTab, setActiveTab] = useState('recent');
   const [loading, setLoading] = useState(false);
-  const [recentChats, setRecentChats] = useState([]);
+  const [contacts, setContacts] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [groupName, setGroupName] = useState('');
-  
-
 
   useEffect(() => {
-    loadRecentChats();
+    loadContacts();
   }, []);
-  useEffect(() => {
-    navigation.setOptions({
-      tabBarVisible: false,
-    });
-  }, [navigation]);
 
-  const loadRecentChats = async () => {
+  const loadContacts = async () => {
     try {
       setLoading(true);
       const response = await getRecentContacts();
+      console.log('Recent contacts response:', response);
       
-      if (response.status === 'success' && response.data?.contacts) {
-        setRecentChats(response.data.contacts);
+      if (response?.contacts) {
+        const formattedContacts = response.contacts.map(contact => ({
+          userId: contact.userId,
+          name: contact.name,
+          avatar: contact.avatar || 'https://via.placeholder.com/50',
+          lastActive: contact.lastActive || 'Hoạt động gần đây'
+        }));
+        setContacts(formattedContacts);
       }
     } catch (error) {
-      console.error('Error loading recent contacts:', error);
-      Alert.alert(
-        'Lỗi',
-        error.message === 'Không tìm thấy token xác thực'
-          ? 'Vui lòng đăng nhập lại'
-          : 'Không thể tải danh sách liên hệ gần đây'
-      );
+      console.error('Error loading contacts:', error);
+      Alert.alert('Lỗi', 'Không thể tải danh sách liên hệ');
     } finally {
       setLoading(false);
     }
   };
 
   const handleCreateGroup = async () => {
-    console.log('Button pressed - Starting group creation...');
-    console.log('Current state:', {
-      selectedContacts: selectedContacts.length,
-      groupName: groupName.trim(),
-      loading
-    });
-
-    if (selectedContacts.length < 2) {
-      Alert.alert('Thông báo', 'Vui lòng chọn ít nhất 2 thành viên');
+    if (selectedContacts.length < 1) {
+      Alert.alert('Thông báo', 'Vui lòng chọn ít nhất 1 thành viên khác để tạo nhóm');
       return;
     }
 
     try {
       setLoading(true);
+      const userInfoStr = await AsyncStorage.getItem('userInfo');
       
-      // Lấy token và userInfo từ AsyncStorage
-      const [token, userInfoStr] = await Promise.all([
-        AsyncStorage.getItem('accessToken'),
-        AsyncStorage.getItem('userInfo')
-      ]);
-      
-      console.log('Retrieved token and userInfo');
-      
-      if (!token) {
-        throw new Error('Vui lòng đăng nhập lại');
-      }
-
       if (!userInfoStr) {
         throw new Error('Vui lòng đăng nhập lại');
       }
 
       const userData = JSON.parse(userInfoStr);
-      console.log('Parsed user data:', userData);
-
+      
       if (!userData || !userData.userId) {
         throw new Error('Vui lòng đăng nhập lại');
       }
+      
+      const creatorUserId = userData.userId;
 
       let finalGroupName = groupName.trim();
       if (!finalGroupName) {
-        const memberNames = [userData.name, ...selectedContacts.slice(0, 2).map(c => c.name.split(' ')[0])];
-        finalGroupName = memberNames.join(', ');
-        console.log('Auto-generated group name:', finalGroupName);
+          const memberNames = [
+              userData.name?.split(' ')[0] || 'Bạn',
+              ...selectedContacts.map(c => c.name.split(' ')[0]).slice(0, 2)
+          ];
+          finalGroupName = memberNames.join(', ');
       }
+
+      const memberIds = [
+        creatorUserId,
+        ...selectedContacts.map(c => c.userId)
+      ];
 
       const groupData = {
         name: finalGroupName,
-        members: [...selectedContacts.map(c => c.userId), userData.userId],
-        createdBy: userData.userId
+        members: memberIds,
+        createdBy: creatorUserId
       };
 
-      console.log('Sending group creation request with data:', {
-        name: groupData.name,
-        memberCount: groupData.members.length,
-        createdBy: groupData.createdBy,
-        members: groupData.members
-      });
-
+      console.log('Creating group with data (including creator):', groupData);
       const response = await createGroup(groupData);
 
-      console.log('Group creation response:', response);
-
-      if (response.status === 'success' && response.data) {
-        console.log('Group created successfully, navigating to GroupChat...');
+      if (response && response.groupId) {
         navigation.replace('GroupChat', {
-          groupId: response.data.groupId,
-          groupName: response.data.name || finalGroupName,
-          memberCount: response.data.memberCount
+          groupId: response.groupId,
+          title: finalGroupName,
         });
+      } else {
+        throw new Error('Không nhận được thông tin nhóm từ server');
       }
     } catch (error) {
       console.error('Error creating group:', error);
-      console.error('Error details:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status
-      });
-      
-      if (error.response?.status === 401) {
-        Alert.alert(
-          'Lỗi xác thực',
-          'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
-          [
-            {
-              text: 'Đăng nhập lại',
-              onPress: () => navigation.replace('Login')
-            }
-          ]
-        );
-      } else {
-        Alert.alert(
-          'Lỗi',
-          error.message === 'Vui lòng đăng nhập lại'
-            ? error.message
-            : 'Không thể tạo nhóm. Vui lòng thử lại sau.'
-        );
-      }
+      Alert.alert(
+        'Lỗi',
+        error.message || 'Không thể tạo nhóm. Vui lòng thử lại sau.'
+      );
     } finally {
       setLoading(false);
     }
@@ -175,29 +131,10 @@ const NewGroupScreen = () => {
     setSelectedContacts(selectedContacts.filter(contact => contact.userId !== contactId));
   };
 
-  const renderAvatar = (contact) => {
-    if (contact.avatar) {
-      return (
-        <Image 
-          source={{ uri: contact.avatar }} 
-          style={styles.avatar} 
-        />
-      );
-    } else if (contact.initials) {
-      return (
-        <View style={[styles.avatar, { backgroundColor: contact.color }]}>
-          <Text style={styles.initials}>{contact.initials}</Text>
-        </View>
-      );
-    }
-    return <View style={styles.avatar} />;
-  };
-
-  const filteredContacts = activeTab === 'recent' 
-    ? recentChats.filter(chat => 
-        chat.name.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : []; // TODO: Implement contacts tab
+  const filteredContacts = contacts.filter(contact => 
+    !searchQuery || 
+    contact.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const renderContactItem = ({ item }) => {
     const isSelected = selectedContacts.some(contact => contact.userId === item.userId);
@@ -209,78 +146,22 @@ const NewGroupScreen = () => {
         activeOpacity={0.7}
       >
         <Image 
-          source={{ uri: item.avatar || 'https://via.placeholder.com/50' }} 
-          style={[styles.avatar, { resizeMode: 'cover' }]}
+          source={{ uri: item.avatar }} 
+          style={styles.avatar}
         />
         <View style={styles.contactInfo}>
           <Text style={styles.contactName}>{item.name}</Text>
           <Text style={styles.contactTime}>{item.lastActive}</Text>
         </View>
         <TouchableOpacity 
-          style={[styles.checkbox, isSelected && styles.checkboxBorderSelected]}
+          style={[styles.checkbox, isSelected && styles.checkboxSelected]}
           onPress={() => toggleContactSelection(item)}
         >
           {isSelected && (
-            <View style={styles.checkboxSelected}>
-              <Ionicons name="checkmark" size={16} color="#fff" />
-            </View>
+            <Ionicons name="checkmark" size={16} color="#fff" />
           )}
         </TouchableOpacity>
       </TouchableOpacity>
-    );
-  };
-
-  const renderSelectedContactsBar = () => {
-    if (selectedContacts.length === 0) return null;
-    
-    return (
-      <View style={styles.selectedContactsBar}>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.selectedContactsScrollContent}
-        >
-          {selectedContacts.map(contact => (
-            <View key={contact.userId} style={styles.selectedContactItem}>
-              <Image 
-                source={{ uri: contact.avatar || 'https://via.placeholder.com/50' }}
-                style={styles.avatar}
-              />
-              <TouchableOpacity 
-                style={styles.removeContactButton}
-                onPress={() => removeSelectedContact(contact.userId)}
-              >
-                <Ionicons name="close" size={14} color="#000" />
-              </TouchableOpacity>
-            </View>
-          ))}
-        </ScrollView>
-        
-        <Pressable 
-          style={({ pressed }) => [
-            styles.nextButton,
-            (selectedContacts.length < 2) && styles.nextButtonDisabled,
-            pressed && styles.nextButtonPressed
-          ]}
-          onPress={() => {
-            console.log('Create group button pressed');
-            if (selectedContacts.length < 2) {
-              Alert.alert('Thông báo', 'Vui lòng chọn ít nhất 2 thành viên');
-              return;
-            }
-            handleCreateGroup();
-          }}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <View style={styles.nextButtonContent}>
-              <Ionicons name="arrow-forward" size={24} color="#fff" />
-            </View>
-          )}
-        </Pressable>
-      </View>
     );
   };
 
@@ -288,7 +169,6 @@ const NewGroupScreen = () => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton}
@@ -301,8 +181,7 @@ const NewGroupScreen = () => {
           <Text style={styles.subtitle}>Đã chọn: {selectedContacts.length}</Text>
         </View>
       </View>
-      
-      {/* Group Name */}
+
       <View style={styles.groupNameContainer}>
         <View style={styles.cameraIcon}>
           <Ionicons name="camera-outline" size={24} color="#666" />
@@ -315,8 +194,7 @@ const NewGroupScreen = () => {
           placeholderTextColor="#999"
         />
       </View>
-      
-      {/* Search Bar */}
+
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
         <TextInput
@@ -327,8 +205,7 @@ const NewGroupScreen = () => {
           placeholderTextColor="#999"
         />
       </View>
-      
-      {/* Tabs */}
+
       <View style={styles.tabContainer}>
         <TouchableOpacity 
           style={[styles.tab, activeTab === 'recent' && styles.activeTab]}
@@ -347,20 +224,25 @@ const NewGroupScreen = () => {
           </Text>
         </TouchableOpacity>
       </View>
-      
+
       {loading ? (
-        <ActivityIndicator style={{ flex: 1 }} size="large" color="#2196F3" />
+        <ActivityIndicator style={styles.loader} size="large" color="#2196F3" />
       ) : (
         <FlatList
           data={filteredContacts}
           renderItem={renderContactItem}
           keyExtractor={item => item.userId}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: selectedContacts.length > 0 ? 70 : 0 }}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>
+                {searchQuery ? 'Không tìm thấy kết quả' : 'Không có liên hệ'}
+              </Text>
+            </View>
+          )}
         />
       )}
-      
-      {/* Selected Contacts Bar */}
+
       {selectedContacts.length > 0 && (
         <View style={styles.selectedContactsBar}>
           <ScrollView 
@@ -371,8 +253,8 @@ const NewGroupScreen = () => {
             {selectedContacts.map(contact => (
               <View key={contact.userId} style={styles.selectedContactItem}>
                 <Image 
-                  source={{ uri: contact.avatar || 'https://via.placeholder.com/50' }}
-                  style={styles.avatar}
+                  source={{ uri: contact.avatar }} 
+                  style={styles.selectedAvatar}
                 />
                 <TouchableOpacity 
                   style={styles.removeContactButton}
@@ -387,25 +269,16 @@ const NewGroupScreen = () => {
           <Pressable 
             style={({ pressed }) => [
               styles.nextButton,
-              (selectedContacts.length < 2) && styles.nextButtonDisabled,
+              selectedContacts.length < 2 && styles.nextButtonDisabled,
               pressed && styles.nextButtonPressed
             ]}
-            onPress={() => {
-              console.log('Create group button pressed');
-              if (selectedContacts.length < 2) {
-                Alert.alert('Thông báo', 'Vui lòng chọn ít nhất 2 thành viên');
-                return;
-              }
-              handleCreateGroup();
-            }}
-            disabled={loading}
+            onPress={handleCreateGroup}
+            disabled={loading || selectedContacts.length < 2}
           >
             {loading ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <View style={styles.nextButtonContent}>
-                <Ionicons name="arrow-forward" size={24} color="#fff" />
-              </View>
+              <Ionicons name="arrow-forward" size={24} color="#fff" />
             )}
           </Pressable>
         </View>
@@ -447,12 +320,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
   cameraIcon: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#eee',
+    backgroundColor: '#f5f5f5',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -469,7 +344,7 @@ const styles = StyleSheet.create({
     marginVertical: 8,
     paddingHorizontal: 12,
     height: 40,
-    backgroundColor: '#f2f2f2',
+    backgroundColor: '#f5f5f5',
     borderRadius: 20,
   },
   searchIcon: {
@@ -506,21 +381,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
   avatar: {
     width: 50,
     height: 50,
     borderRadius: 25,
     backgroundColor: '#eee',
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
   },
-  initials: {
-    fontSize: 20,
-    color: 'white',
-    fontWeight: 'bold',
+  selectedAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#eee',
   },
   contactInfo: {
     flex: 1,
@@ -529,10 +404,11 @@ const styles = StyleSheet.create({
   contactName: {
     fontSize: 16,
     fontWeight: '500',
+    color: '#000',
   },
   contactTime: {
     fontSize: 14,
-    color: '#999',
+    color: '#666',
     marginTop: 2,
   },
   checkbox: {
@@ -544,20 +420,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  checkboxBorderSelected: {
-    borderColor: '#2196F3',
-  },
   checkboxSelected: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
     backgroundColor: '#2196F3',
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderColor: '#2196F3',
   },
   selectedContactsBar: {
     position: 'absolute',
-    bottom: 56, // Height of bottom nav
+    bottom: 0,
     left: 0,
     right: 0,
     height: 70,
@@ -566,28 +435,28 @@ const styles = StyleSheet.create({
     borderTopColor: '#eee',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 16,
   },
   selectedContactsScrollContent: {
     paddingVertical: 10,
-    paddingRight: 60, // Space for the next button
+    paddingRight: 60,
   },
   selectedContactItem: {
-    marginHorizontal: 5,
+    marginRight: 12,
     position: 'relative',
   },
   removeContactButton: {
     position: 'absolute',
-    top: -5,
-    right: -5,
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    top: -4,
+    right: -4,
     width: 20,
     height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderRadius: 10,
+    backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#ddd',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   nextButton: {
     position: 'absolute',
@@ -599,25 +468,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#2196F3',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    zIndex: 1000,
   },
   nextButtonDisabled: {
-    backgroundColor: '#B0BEC5',
+    backgroundColor: '#ccc',
   },
   nextButtonPressed: {
     opacity: 0.8,
-    transform: [{ scale: 0.98 }],
   },
-  nextButtonContent: {
-    width: '100%',
-    height: '100%',
+  loader: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 40,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#999',
   },
 });
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,31 +11,198 @@ import {
   Switch,
   Modal,
   Alert,
-  ActivityIndicator
+
+  ActivityIndicator,
+  FlatList,
+  TextInput
 } from 'react-native';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import { leaveGroup, dissolveGroup } from '../modules/group/controller';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
+import { 
+  leaveGroup, 
+  dissolveGroup, 
+  getGroupInfo, 
+  getGroupMembers,
+  updateMemberRole,
+  addGroupMember,
+  removeGroupMember,
+  updateGroupAvatar,
+  updateGroupName
+} from '../modules/group/controller';
+import { AuthContext } from '../App';
 import COLORS from '../components/colors';
+import { socketService } from '../services/socketService';
+
 
 const GroupSettingsScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { groupId } = route.params;
+
+  const { user } = useContext(AuthContext);
+  console.log('Thông tin user để biet ai tạo nhóm, ', user);
   const [showLeaveGroupModal, setShowLeaveGroupModal] = useState(false);
   const [showDissolveGroupModal, setShowDissolveGroupModal] = useState(false);
+  const [showTransferAdminModal, setShowTransferAdminModal] = useState(false);
+  const [showMembersModal, setShowMembersModal] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [groupInfo, setGroupInfo] = useState(null);
+  const [members, setMembers] = useState([]);
+  const [selectedMember, setSelectedMember] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showEditNameModal, setShowEditNameModal] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [isEditingName, setIsEditingName] = useState(false);
+
+  // Fetch group info and members
+  const fetchGroupInfo = useCallback(async () => {
+    setLoading(true);
+    try {
+      console.log(`Fetching group info for groupId: ${groupId}`);
+      const info = await getGroupInfo(groupId);
+      console.log('Fetched group info:', info);
+      if (info && info.groupId) {
+        setGroupInfo(info);
+        setMembers(info.members || []);
+        const currentMember = info.members?.find(m => m.userId === user?.userId);
+        setIsAdmin(currentMember?.role === 'ADMIN');
+      } else {
+        // Handle group not found or invalid data
+        setGroupInfo(null);
+        setMembers([]);
+        setIsAdmin(false);
+        Alert.alert('Lỗi', 'Không thể tải thông tin nhóm hoặc nhóm không tồn tại.');
+        // Consider navigating back if group doesn't exist
+        // navigation.goBack();
+      }
+    } catch (error) {
+      console.error('Error fetching group info:', error);
+      Alert.alert('Lỗi', 'Không thể tải thông tin nhóm');
+    } finally {
+      setLoading(false);
+    }
+  }, [groupId, user?.userId]);
+
+  // Fetch data when the screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchGroupInfo();
+    }, [fetchGroupInfo])
+  );
+
+  useEffect(() => {
+    // Setup socket listeners
+    const handleMemberAdded = (data) => {
+      if (data.groupId === groupId) {
+        console.log('Socket event (Settings): Member added', data);
+        fetchGroupInfo(); // Re-fetch group info
+      }
+    };
+
+    const handleMemberRemoved = (data) => {
+      if (data.groupId === groupId) {
+        console.log('Socket event (Settings): Member removed', data);
+        fetchGroupInfo(); // Re-fetch group info
+      }
+    };
+
+    const handleGroupUpdated = (data) => {
+      if (data.groupId === groupId) {
+        console.log('Socket event (Settings): Group updated', data);
+        fetchGroupInfo(); // Re-fetch group info
+      }
+    };
+
+    socketService.addListener('group:memberAdded', handleMemberAdded);
+    socketService.addListener('group:memberRemoved', handleMemberRemoved);
+    socketService.addListener('group:updated', handleGroupUpdated);
+    socketService.joinGroup(groupId); // Join the group room
+
+    // Cleanup listeners on unmount
+    return () => {
+      socketService.removeListener('group:memberAdded', handleMemberAdded);
+      socketService.removeListener('group:memberRemoved', handleMemberRemoved);
+      socketService.removeListener('group:updated', handleGroupUpdated);
+      socketService.leaveGroup(groupId); // Leave the group room
+    };
+  }, [groupId, fetchGroupInfo]);
+
+  const handleTransferAdmin = async () => {
+    if (!selectedMember) {
+      Alert.alert('Lỗi', 'Vui lòng chọn thành viên để chuyển quyền');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      // First make the selected member an admin
+      await updateMemberRole(groupId, selectedMember.userId, 'ADMIN');
+      // Then demote current admin to member
+      await updateMemberRole(groupId, user.userId, 'MEMBER');
+      
+      // Sau khi chuyển quyền thành công, rời nhóm
+      await leaveGroup(groupId, user.userId);
+      
+      setShowTransferAdminModal(false);
+      
+      // Reset navigation stack và chuyển về màn hình Chat
+      navigation.reset({
+        index: 0,
+        routes: [
+          {
+            name: 'ChatTab',
+            state: {
+              routes: [
+                { name: 'Chat' }
+              ]
+            }
+          }
+        ]
+      });
+    } catch (error) {
+      console.error('Transfer admin error:', error);
+      Alert.alert('Lỗi', 'Không thể chuyển quyền trưởng nhóm');
+
+    } finally {
+      setLoading(false);
+    }
+  };
+
 
   const handleLeaveGroup = async () => {
     try {
       setLoading(true);
-      await leaveGroup(groupId);
+      
+      // Check if user is admin and there are other members
+      if (isAdmin && members.length > 1) {
+        setShowLeaveGroupModal(false);
+        setShowTransferAdminModal(true);
+        return;
+      }
+
+      await leaveGroup(groupId, user.userId);
       setShowLeaveGroupModal(false);
-      Alert.alert('Thành công', 'Bạn đã rời khỏi nhóm');
-      navigation.goBack();
+      
+      // Reset navigation stack và chuyển về màn hình Chat
+      navigation.reset({
+        index: 0,
+        routes: [
+          {
+            name: 'ChatTab',
+            state: {
+              routes: [
+                { name: 'Chat' }
+              ]
+            }
+          }
+        ]
+      });
     } catch (error) {
       console.error('Leave group error:', error);
       Alert.alert('Lỗi', error.message || 'Không thể rời nhóm. Vui lòng thử lại.');
+
     } finally {
       setLoading(false);
     }
@@ -44,17 +211,189 @@ const GroupSettingsScreen = () => {
   const handleDissolveGroup = async () => {
     try {
       setLoading(true);
-      await dissolveGroup(groupId);
-      setShowDissolveGroupModal(false);
-      Alert.alert('Thành công', 'Nhóm đã được giải tán');
-      navigation.goBack();
+      const response = await dissolveGroup(groupId);
+      if (response) {
+        setShowDissolveGroupModal(false);
+        // Reset navigation stack và chuyển về màn hình Chat
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: 'ChatTab',
+              state: {
+                routes: [
+                  { name: 'Chat' }
+                ]
+              }
+            }
+          ]
+        });
+      }
     } catch (error) {
-      console.error('Dissolve group error:', error);
-      Alert.alert('Lỗi', error.message || 'Không thể giải tán nhóm. Vui lòng thử lại.');
+      console.error('Error dissolving group:', error);
+      setShowDissolveGroupModal(false);
+      Alert.alert('Lỗi', 'Không thể giải tán nhóm');
     } finally {
       setLoading(false);
     }
   };
+
+  const handlePickImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Lỗi', 'Cần cấp quyền truy cập thư viện ảnh');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setLoading(true);
+        try {
+          const selectedImage = result.assets[0];
+          
+          // Format file object for multer
+          const file = {
+            uri: selectedImage.uri,
+            type: selectedImage.type || 'image/jpeg',
+            fileName: selectedImage.uri.split('/').pop() || 'avatar.jpg',
+            width: selectedImage.width,
+            height: selectedImage.height
+          };
+
+          console.log('Selected image:', selectedImage);
+          console.log('Formatted file:', file);
+          
+          const uploadResponse = await updateGroupAvatar(groupId, file);
+          console.log('Upload avatar response:', uploadResponse);
+          
+          // Refresh group info to get new avatar
+          await fetchGroupInfo();
+          Alert.alert('Thành công', 'Đã cập nhật ảnh nhóm');
+        } catch (error) {
+          console.error('Upload avatar error:', error);
+          if (error.response) {
+            console.error('Error response:', error.response.data);
+          }
+          Alert.alert('Lỗi', error.message || 'Không thể cập nhật ảnh nhóm');
+        } finally {
+          setLoading(false);
+        }
+      }
+    } catch (error) {
+      console.error('Pick image error:', error);
+      Alert.alert('Lỗi', 'Không thể chọn ảnh');
+    }
+  };
+
+  const handleUpdateGroupName = async () => {
+    if (!newGroupName.trim()) {
+      Alert.alert('Lỗi', 'Tên nhóm không được để trống');
+      return;
+    }
+
+    setIsEditingName(true);
+    try {
+      await updateGroupName(groupId, newGroupName.trim());
+      await fetchGroupInfo(); // Refresh group info
+      setShowEditNameModal(false);
+      Alert.alert('Thành công', 'Đã cập nhật tên nhóm');
+    } catch (error) {
+      Alert.alert('Lỗi', 'Không thể cập nhật tên nhóm');
+    } finally {
+      setIsEditingName(false);
+    }
+  };
+
+  const renderMemberItem = ({ item }) => (
+    <TouchableOpacity 
+      style={styles.memberItem}
+      onPress={() => setSelectedMember(item)}
+    >
+      <Image 
+        source={{ 
+          uri: item.avatar || 'https://users-zalolite.s3.ap-southeast-1.amazonaws.com/avatars/default-avatar.jpg'
+        }}
+        style={styles.memberAvatar}
+      />
+      <View style={styles.memberInfo}>
+        <Text style={styles.memberName}>{item.name || 'Thành viên'}</Text>
+        <Text style={styles.memberRole}>{item.role === 'ADMIN' ? 'Trưởng nhóm' : 'Thành viên'}</Text>
+      </View>
+      {showTransferAdminModal && item.userId !== user.userId && (
+        <View style={styles.radioButton}>
+          <View style={[
+            styles.radioCircle,
+            selectedMember?.userId === item.userId && styles.radioCircleSelected
+          ]} />
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+
+  const renderMembersModal = () => (
+    <Modal
+      visible={showMembersModal}
+      animationType="slide"
+      onRequestClose={() => setShowMembersModal(false)}
+    >
+      <SafeAreaView style={styles.modalContainer}>
+        <View style={styles.modalHeader}>
+          <TouchableOpacity onPress={() => setShowMembersModal(false)}>
+            <Ionicons name="close" size={24} color="#666" />
+          </TouchableOpacity>
+          <Text style={styles.modalTitle}>Thành viên nhóm</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <FlatList
+          data={members}
+          renderItem={renderMemberItem}
+          keyExtractor={item => item.userId}
+          contentContainerStyle={styles.membersList}
+        />
+      </SafeAreaView>
+    </Modal>
+  );
+
+  const renderTransferAdminModal = () => (
+    <Modal
+      visible={showTransferAdminModal}
+      animationType="slide"
+      onRequestClose={() => setShowTransferAdminModal(false)}
+    >
+      <SafeAreaView style={styles.modalContainer}>
+        <View style={styles.modalHeader}>
+          <TouchableOpacity onPress={() => setShowTransferAdminModal(false)}>
+            <Ionicons name="close" size={24} color="#666" />
+          </TouchableOpacity>
+          <Text style={styles.modalTitle}>Chọn trưởng nhóm mới</Text>
+          <TouchableOpacity 
+            onPress={handleTransferAdmin}
+            disabled={!selectedMember || loading}
+          >
+            <Text style={[
+              styles.confirmText,
+              (!selectedMember || loading) && styles.confirmTextDisabled
+            ]}>
+              {loading ? 'Đang xử lý...' : 'Xong'}
+    </Text>
+          </TouchableOpacity>
+        </View>
+        <FlatList
+          data={members.filter(m => m.userId !== user.userId)}
+          renderItem={renderMemberItem}
+          keyExtractor={item => item.userId}
+          contentContainerStyle={styles.membersList}
+        />
+      </SafeAreaView>
+    </Modal>
+  );
 
   const renderConfirmationModal = (visible, title, message, onCancel, onConfirm, confirmText, type = 'normal') => (
     <Modal
@@ -79,11 +418,89 @@ const GroupSettingsScreen = () => {
               style={[styles.modalButton, styles.confirmButton]}
               onPress={onConfirm}
               disabled={loading}
+
             >
               {loading ? (
                 <ActivityIndicator color="white" size="small" />
               ) : (
                 <Text style={styles.confirmButtonText}>{confirmText}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const renderSuccessModal = () => (
+    <Modal
+      visible={showSuccessModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => {
+        setShowSuccessModal(false);
+        navigation.navigate('ChatTab', {
+          screen: 'Chat'
+        });
+      }}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Thành công</Text>
+          <Text style={styles.modalMessage}>Nhóm đã được giải tán thành công</Text>
+          <View style={styles.modalButtons}>
+            <TouchableOpacity 
+              style={[styles.modalButton, styles.confirmButton]}
+              onPress={() => {
+                setShowSuccessModal(false);
+                navigation.navigate('ChatTab', {
+                  screen: 'Chat'
+                });
+              }}
+            >
+              <Text style={styles.confirmButtonText}>Đóng</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const renderEditNameModal = () => (
+    <Modal
+      visible={showEditNameModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowEditNameModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Đổi tên nhóm</Text>
+          <TextInput
+            style={styles.input}
+            value={newGroupName}
+            onChangeText={setNewGroupName}
+            placeholder="Nhập tên nhóm mới"
+            maxLength={50}
+          />
+          <View style={styles.modalButtons}>
+            <TouchableOpacity 
+              style={[styles.modalButton, styles.cancelButton]}
+              onPress={() => setShowEditNameModal(false)}
+              disabled={isEditingName}
+            >
+              <Text style={styles.cancelButtonText}>Hủy</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.modalButton, styles.confirmButton]}
+              onPress={handleUpdateGroupName}
+              disabled={isEditingName}
+            >
+              {isEditingName ? (
+                <ActivityIndicator color="white" size="small" />
+              ) : (
+                <Text style={styles.confirmButtonText}>Lưu</Text>
+
               )}
             </TouchableOpacity>
           </View>
@@ -112,15 +529,34 @@ const GroupSettingsScreen = () => {
         <View style={styles.profileSection}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
-              <Ionicons name="people" size={40} color="#ccc" />
+              {groupInfo?.avatar ? (
+                <Image 
+                  source={{ uri: groupInfo.avatar }}
+                  style={styles.avatarImage}
+                />
+              ) : (
+                <Ionicons name="people" size={40} color="#ccc" />
+              )}
             </View>
-            <TouchableOpacity style={styles.cameraButton}>
+            <TouchableOpacity 
+              style={styles.cameraButton}
+              onPress={handlePickImage}
+              disabled={loading}
+            >
               <Ionicons name="camera" size={20} color="#666" />
             </TouchableOpacity>
           </View>
           
-          <TouchableOpacity style={styles.groupNameContainer}>
-            <Text style={styles.groupNameText}>Đặt tên nhóm</Text>
+          <TouchableOpacity 
+            style={styles.groupNameContainer}
+            onPress={() => {
+              setNewGroupName(groupInfo?.name || '');
+              setShowEditNameModal(true);
+            }}
+          >
+            <Text style={styles.groupNameText}>
+              {groupInfo?.name || 'Đặt tên nhóm'}
+            </Text>
             <Ionicons name="pencil" size={16} color="#666" />
           </TouchableOpacity>
         </View>
@@ -134,14 +570,17 @@ const GroupSettingsScreen = () => {
             <Text style={styles.actionText}>Tìm{'\n'}tin nhắn</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionButton}>
+         
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => navigation.navigate('GroupAddMembers', { groupId })}
+            >
             <View style={styles.actionIconContainer}>
-              <Ionicons name="person-add" size={24} color="#666" />
+                <Ionicons name="person-add" size={24} color="#666" />
             </View>
             <Text style={styles.actionText}>Thêm{'\n'}thành viên</Text>
           </TouchableOpacity>
 
-         
 
           <TouchableOpacity style={styles.actionButton}>
             <View style={styles.actionIconContainer}>
@@ -153,7 +592,6 @@ const GroupSettingsScreen = () => {
 
         {/* Menu Items */}
         <View style={styles.menuContainer}>
-         
           <TouchableOpacity style={styles.menuItem}>
             <Ionicons name="link" size={24} color="#666" style={styles.menuIcon} />
             <View style={styles.menuContent}>
@@ -161,60 +599,61 @@ const GroupSettingsScreen = () => {
               <Text style={styles.menuSubText}>https://zalo.me/g/dcjntb992</Text>
             </View>
           </TouchableOpacity>
-
+          
           <TouchableOpacity style={styles.menuItem}>
             <Ionicons name="images-outline" size={24} color="#666" style={styles.menuIcon} />
             <View style={styles.menuContent}>
-              <Text style={styles.menuText}>Ảnh, file, link</Text>
+            <Text style={styles.menuText}>Ảnh, file, link</Text>
               <View style={styles.mediaPreview}>
                 <Text style={styles.mediaPreviewText}>
-                  Hình mới nhất của trò chuyện sẽ xuất hiện tại đây
-                </Text>
-              </View>
+                Hình mới nhất của trò chuyện sẽ xuất hiện tại đây
+              </Text>
             </View>
+          </View>
           </TouchableOpacity>
-
+          
           <TouchableOpacity style={styles.menuItem}>
             <Ionicons name="calendar-outline" size={24} color="#666" style={styles.menuIcon} />
             <Text style={styles.menuText}>Lịch nhóm</Text>
           </TouchableOpacity>
-
+          
           <TouchableOpacity style={styles.menuItem}>
             <Ionicons name="bookmark-outline" size={24} color="#666" style={styles.menuIcon} />
             <Text style={styles.menuText}>Tin nhắn đã ghim</Text>
           </TouchableOpacity>
-
+          
           <TouchableOpacity style={styles.menuItem}>
             <Ionicons name="bar-chart-outline" size={24} color="#666" style={styles.menuIcon} />
             <Text style={styles.menuText}>Bình chọn</Text>
           </TouchableOpacity>
-
+          
           <TouchableOpacity style={styles.menuItem}>
             <Ionicons name="settings-outline" size={24} color="#666" style={styles.menuIcon} />
             <View style={styles.menuContent}>
-              <Text style={styles.menuText}>Cài đặt nhóm</Text>
+            <Text style={styles.menuText}>Cài đặt nhóm</Text>
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem}>
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => setShowMembersModal(true)}
+          >
             <Ionicons name="people-outline" size={24} color="#666" style={styles.menuIcon} />
             <Text style={styles.menuText}>Xem thành viên</Text>
           </TouchableOpacity>
-
-
-          <TouchableOpacity style={styles.menuItem}>
+          {groupInfo && groupInfo.createdBy === user.userId && (
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => setShowTransferAdminModal(true)}
+          >
             <Ionicons name="person-outline" size={24} color="#666" style={styles.menuIcon} />
             <Text style={styles.menuText}>Chuyển quyền trưởng nhóm</Text>
           </TouchableOpacity>
-
-    
-
+  )}
           <TouchableOpacity style={[styles.menuItem, styles.dangerItem]}>
             <Ionicons name="trash-outline" size={24} color="#ff3b30" style={styles.menuIcon} />
             <Text style={[styles.menuText, styles.dangerText]}>Xóa lịch sử trò chuyện</Text>
           </TouchableOpacity>
-
-       
         </View>
 
         {/* Danger Zone */}
@@ -230,20 +669,26 @@ const GroupSettingsScreen = () => {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            style={[styles.menuItem, styles.dangerItem]}
-            onPress={() => setShowDissolveGroupModal(true)}
-            disabled={loading}
-          >
-            <Ionicons name="trash-outline" size={24} color="#ff3b30" style={styles.menuIcon} />
-            <Text style={[styles.menuText, styles.dangerText]}>
-              {loading ? 'Đang xử lý...' : 'Giải tán nhóm'}
-            </Text>
-          </TouchableOpacity>
+
+          {groupInfo && groupInfo.createdBy === user.userId && (
+            <TouchableOpacity 
+              style={[styles.menuItem, styles.dangerItem]}
+              onPress={() => setShowDissolveGroupModal(true)}
+              disabled={loading}
+            >
+              <Ionicons name="trash-outline" size={24} color="#ff3b30" style={styles.menuIcon} />
+              <Text style={[styles.menuText, styles.dangerText]}>
+                {loading ? 'Đang xử lý...' : 'Giải tán nhóm'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
         </View>
       </ScrollView>
 
-      {/* Leave Group Modal */}
+      {/* Modals */}
+      {renderMembersModal()}
+      {renderTransferAdminModal()}
       {renderConfirmationModal(
         showLeaveGroupModal,
         'Rời nhóm',
@@ -252,8 +697,6 @@ const GroupSettingsScreen = () => {
         handleLeaveGroup,
         'Rời nhóm'
       )}
-
-      {/* Dissolve Group Modal */}
       {renderConfirmationModal(
         showDissolveGroupModal,
         'Giải tán nhóm',
@@ -263,6 +706,8 @@ const GroupSettingsScreen = () => {
         'Giải tán',
         'danger'
       )}
+      {renderSuccessModal()}
+      {renderEditNameModal()}
     </SafeAreaView>
   );
 };
@@ -483,6 +928,83 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '500',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  confirmText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmTextDisabled: {
+    opacity: 0.5,
+  },
+  membersList: {
+    padding: 15,
+  },
+  memberItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  memberAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 15,
+  },
+  memberInfo: {
+    flex: 1,
+  },
+  memberName: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  memberRole: {
+    fontSize: 14,
+    color: '#666',
+  },
+  radioButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioCircle: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#fff',
+  },
+  radioCircleSelected: {
+    backgroundColor: COLORS.primary,
+  },
+  avatarImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 20,
+    fontSize: 16,
   },
 });
 
