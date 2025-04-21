@@ -1,29 +1,6 @@
 import api from '../../config/api';
 import { getApiUrlAsync } from '../../config/api';
 
-// Thêm interceptor để xử lý lỗi
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    console.log('API Error:', error);
-    if (error.code === 'ECONNABORTED') {
-      throw new Error('Kết nối quá thời gian. Vui lòng thử lại.');
-    }
-    if (!error.response) {
-      console.log('Network error details:', {
-        message: error.message,
-        code: error.code,
-        config: {
-          url: error.config?.url,
-          method: error.config?.method,
-          baseURL: error.config?.baseURL,
-        }
-      });
-      throw new Error('Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng.');
-    }
-    throw error.response?.data || error;
-  }
-);
 
 // Hàm khởi tạo API
 export const initApi = async () => {
@@ -32,7 +9,7 @@ export const initApi = async () => {
     api.defaults.baseURL = url;
     console.log('✅ API initialized with URL:', url);
   } catch (error) {
-    console.log('Failed to initialize API:', error);
+    console.error('Failed to initialize API:', error);
     throw error;
   }
 };
@@ -74,10 +51,31 @@ export const completeRegistration = async (phone, name, password) => {
 
 export const login = async (phone, password) => {
   try {
-    const response = await api.post('/auth/login', { phone, password });
+    console.log('Attempting login with:', { phone });
+    const response = await api.post('/auth/login', { 
+      phone, 
+      password 
+    });
+    
+    if (!response.data) {
+      throw new Error('Không nhận được dữ liệu từ server');
+    }
+    
+    console.log('Login successful:', response.data);
     return response.data;
   } catch (error) {
-    throw error;
+    console.error('Login error:', error);
+    if (error.response) {
+      // Lỗi từ server
+      const message = error.response.data?.message || 'Đăng nhập thất bại';
+      throw new Error(message);
+    } else if (error.request) {
+      // Không nhận được phản hồi từ server
+      throw new Error('Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng.');
+    } else {
+      // Lỗi khác
+      throw new Error(error.message || 'Đã xảy ra lỗi khi đăng nhập');
+    }
   }
 };
 

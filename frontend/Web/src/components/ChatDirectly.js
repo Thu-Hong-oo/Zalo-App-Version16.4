@@ -1,5 +1,5 @@
 // Optimized ChatDirectly component
-import React, { useState, useEffect, useRef, useContext, useMemo } from "react";
+import React, { useState, useEffect, useRef, useContext, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import EmojiPicker from "emoji-picker-react";
@@ -31,20 +31,21 @@ import {
   FileArchive,
   AlertCircle,
 } from "lucide-react";
-import api from "../config/api";
+import api, { getBaseUrl,getApiUrl } from "../config/api";
 import "./css/ChatDirectly.css";
 import MessageContextMenu from "./MessageContextMenu";
 import ForwardMessageModal from "./ForwardMessageModal";
 import ConfirmModal from "../../../Web/src/components/ConfirmModal";
 
 const ChatDirectly = () => {
-  const [message, setMessage] = useState("");
+  const { phone } = useParams();
   const [messages, setMessages] = useState([]);
-  const [isTyping, setIsTyping] = useState(false);
-  const [socket, setSocket] = useState(null);
-  const [userInfo, setUserInfo] = useState(null);
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [socket, setSocket] = useState(null);
+  const [userInfo, setUserInfo] = useState(null);
+  const [isTyping, setIsTyping] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -61,7 +62,6 @@ const ChatDirectly = () => {
   const attachMenuRef = useRef(null);
   const fileInputRef = useRef(null);
   const documentInputRef = useRef(null);
-  const { phone } = useParams();
   const navigate = useNavigate();
   const [contextMenu, setContextMenu] = useState({
     visible: false,
@@ -87,6 +87,30 @@ const ChatDirectly = () => {
     title: "",
     message: "",
   });
+
+  const extractFilenameFromUrl = (url) => {
+    if (!url) return null;
+    
+    try {
+      // Try to get the filename from the URL
+      const urlParts = url.split('/');
+      const lastPart = urlParts[urlParts.length - 1];
+      
+      // Check if the URL contains a filename parameter
+      const urlParams = new URLSearchParams(url);
+      const filenameParam = urlParams.get('filename');
+      
+      if (filenameParam) {
+        return decodeURIComponent(filenameParam);
+      }
+      
+      // If no filename parameter, use the last part of the URL
+      return lastPart;
+    } catch (error) {
+      console.error("Error extracting filename from URL:", error);
+      return null;
+    }
+  };
 
   // Close emoji picker when clicking outside
   useEffect(() => {
@@ -125,7 +149,7 @@ const ChatDirectly = () => {
     }
   };
 
-  const loadChatHistory = async () => {
+  const loadChatHistory = useCallback(async () => {
     try {
       setLoading(true);
       const res = await api.get(`/chat/history/${phone}`);
@@ -142,7 +166,174 @@ const ChatDirectly = () => {
     } finally {
       setLoading(false);
     }
+  }, [phone]);
+
+  const scrollToBottom = useCallback(() => {
+    const el = messagesEndRef.current;
+    if (!el) return;
+    const container = el.parentElement;
+    const isNearBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+    if (isNearBottom) el.scrollIntoView({ behavior: "smooth" });
+  }, []);
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!message.trim() && !selectedFiles.length) return;
+
+    let tempId = null;
+    try {
+      if (message.trim()) {
+        const currentUserPhone = localStorage.getItem("phone");
+        tempId = `temp-${Date.now()}`;
+        const newMsg = {
+          messageId: tempId,
+          senderPhone: currentUserPhone,
+          receiverPhone: phone,
+          content: message.trim(),
+          timestamp: Date.now(),
+          status: "sending",
+          isTempId: true,
+        };
+
+        setMessage("");
+        setMessages((prev) => [...prev, newMsg]);
+        scrollToBottom();
+
+        socket.emit("send-message", {
+          tempId,
+          receiverPhone: phone,
+          content: newMsg.content,
+        });
+
+        socket.once("message-sent", (response) => {
+          if (response && response.messageId) {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.messageId === tempId
+                  ? {
+                      ...msg,
+                      messageId: response.messageId,
+                      isTempId: false,
+                      status: "sent",
+                    }
+                  : msg
+              )
+            );
+          }
+        });
+
+        socket.once("error", (error) => {
+          console.error("Error sending message:", error);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.messageId === tempId ? { ...msg, status: "error" } : msg
+            )
+          );
+        });
+      }
+
+      if (selectedFiles.length > 0) {
+        await handleUpload(selectedFiles);
+      }
+    } catch (err) {
+      console.error("Error sending message:", err);
+      if (tempId) {
+        setMessages((prev) => prev.filter((msg) => msg.messageId !== tempId));
+      }
+      alert("Không thể gửi tin nhắn. Vui lòng thử lại.");
+    }
   };
+
+  useEffect(() => {
+    const token = localStorage.getItem("accessToken");
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
+    const newSocket = io(getBaseUrl(), {
+      auth: { token },
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      transports: ["websocket"],
+      withCredentials: true,
+    });
+
+    newSocket.on("connect", () => {
+      console.log("Socket connected");
+      newSocket.emit("join-chat", { receiverPhone: phone });
+    });
+
+    newSocket.on("new-message", (msg) => {
+      if (!msg || !msg.messageId) return;
+
+      setMessages((prev) => {
+        const exists = prev.some(
+          (m) =>
+            m.messageId === msg.messageId ||
+            (m.content === msg.content &&
+              m.senderPhone === msg.senderPhone &&
+              Math.abs(m.timestamp - msg.timestamp) < 1000)
+        );
+
+        if (exists) return prev;
+        return [...prev, { ...msg, status: "received" }];
+      });
+      scrollToBottom();
+    });
+
+    newSocket.on("typing", ({ senderPhone }) => {
+      if (senderPhone === phone) {
+        setIsTyping(true);
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+        }
+        typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 3000);
+      }
+    });
+
+    newSocket.on("stop_typing", ({ senderPhone }) => {
+      if (senderPhone === phone) {
+        setIsTyping(false);
+      }
+    });
+
+    newSocket.on("message-recalled", ({ messageId }) => {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.messageId === messageId
+            ? { ...msg, content: "Tin nhắn đã bị thu hồi", status: "recalled" }
+            : msg
+        )
+      );
+    });
+
+    newSocket.on("message-deleted", ({ messageId }) => {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.messageId === messageId ? { ...msg, status: "deleted" } : msg
+        )
+      );
+    });
+
+    setSocket(newSocket);
+
+    // Initial load
+    fetchUserInfo();
+    loadChatHistory();
+
+    return () => {
+      if (newSocket) {
+        newSocket.emit("leave-chat", { receiverPhone: phone });
+        newSocket.disconnect();
+      }
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, [phone, navigate, loadChatHistory]);
 
   const handleRecallMessage = async () => {
     try {
@@ -258,238 +449,6 @@ const ChatDirectly = () => {
     });
   };
 
-  const initializeSocket = () => {
-    const token = localStorage.getItem("accessToken");
-    if (!token) {
-      console.error("No access token found");
-      return;
-    }
-
-    const newSocket = io("http://:3000", {
-      auth: { token },
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-    });
-
-    newSocket.on("connect", () => {
-      console.log("Socket connected");
-      // Đăng ký nhận tin nhắn cho cuộc trò chuyện hiện tại
-      newSocket.emit("join-chat", { receiverPhone: phone });
-    });
-
-    newSocket.on("connect_error", (error) => {
-      console.error("Socket connection error:", error);
-    });
-
-    newSocket.on("disconnect", (reason) => {
-      console.log("Socket disconnected:", reason);
-    });
-
-    newSocket.on("typing", ({ senderPhone }) => {
-      if (senderPhone === phone) {
-        setIsTyping(true);
-        setTimeout(() => setIsTyping(false), 3000);
-      }
-    });
-
-    newSocket.on("stop_typing", ({ senderPhone }) => {
-      if (senderPhone === phone) setIsTyping(false);
-    });
-
-    newSocket.on("message-recalled", ({ messageId }) => {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.messageId === messageId
-            ? { ...msg, content: "Tin nhắn đã bị thu hồi", status: "recalled" }
-            : msg
-        )
-      );
-    });
-
-    setSocket(newSocket);
-
-    // Cleanup function
-    return () => {
-      if (newSocket) {
-        newSocket.emit("leave-chat", { receiverPhone: phone });
-        newSocket.disconnect();
-      }
-    };
-  };
-
-  useEffect(() => {
-    const cleanup = initializeSocket();
-    fetchUserInfo();
-    loadChatHistory();
-    return () => {
-      cleanup?.();
-    };
-  }, [phone]);
-
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleNewMessage = (msg) => {
-      if (!msg || !msg.messageId) return;
-
-      setMessages((prev) => {
-        // Kiểm tra tin nhắn đã tồn tại
-        const exists = prev.some(
-          (m) =>
-            m.messageId === msg.messageId ||
-            (m.content === msg.content &&
-              m.senderPhone === msg.senderPhone &&
-              Math.abs(m.timestamp - msg.timestamp) < 1000)
-        );
-
-        if (exists) return prev;
-        return [...prev, { ...msg, status: "received" }];
-      });
-      scrollToBottom();
-    };
-
-    const handleMessageRecalled = ({ messageId }) => {
-      if (!messageId) return;
-
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.messageId === messageId || msg.tempId === messageId
-            ? { ...msg, content: "Tin nhắn đã bị thu hồi", status: "recalled" }
-            : msg
-        )
-      );
-    };
-
-    socket.on("new-message", handleNewMessage);
-    socket.on("message-recalled", handleMessageRecalled);
-    socket.on("message-deleted", ({ messageId }) => {
-      if (!messageId) return;
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.messageId === messageId ? { ...msg, status: "deleted" } : msg
-        )
-      );
-    });
-
-    return () => {
-      socket.off("new-message", handleNewMessage);
-      socket.off("message-recalled", handleMessageRecalled);
-      socket.off("message-deleted");
-    };
-  }, [socket]);
-
-  // Thêm effect để tự động load lại tin nhắn khi có thay đổi
-  useEffect(() => {
-    if (socket?.connected) {
-      loadChatHistory();
-    }
-  }, [socket]);
-
-  const scrollToBottom = () => {
-    const el = messagesEndRef.current;
-    if (!el) return;
-    const container = el.parentElement;
-    const isNearBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight <
-      150;
-    if (isNearBottom) el.scrollIntoView({ behavior: "smooth" });
-  };
-
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!message.trim() && !selectedFiles.length) return;
-
-    let tempId = null;
-    try {
-      if (message.trim()) {
-        const currentUserPhone = localStorage.getItem("phone");
-        tempId = `temp-${Date.now()}`;
-        const newMsg = {
-          messageId: tempId,
-          senderPhone: currentUserPhone,
-          receiverPhone: phone,
-          content: message.trim(),
-          timestamp: Date.now(),
-          status: "sending",
-          isTempId: true,
-        };
-
-        setMessage("");
-        setMessages((prev) => [...prev, newMsg]);
-        scrollToBottom();
-
-        // Gửi tin nhắn qua socket và đợi phản hồi
-        socket.emit("send-message", {
-          tempId,
-          receiverPhone: phone,
-          content: newMsg.content,
-        });
-
-        // Lắng nghe phản hồi từ server
-        socket.once("message-sent", (response) => {
-          if (response && response.messageId) {
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.messageId === tempId
-                  ? {
-                      ...msg,
-                      messageId: response.messageId,
-                      isTempId: false,
-                      status: "sent",
-                    }
-                  : msg
-              )
-            );
-          }
-        });
-
-        socket.once("error", (error) => {
-          console.error("Error sending message:", error);
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.messageId === tempId ? { ...msg, status: "error" } : msg
-            )
-          );
-        });
-      }
-
-      if (selectedFiles.length > 0) {
-        await handleUpload(selectedFiles);
-      }
-    } catch (err) {
-      console.error("Error sending message:", err);
-      if (tempId) {
-        setMessages((prev) => prev.filter((msg) => msg.messageId !== tempId));
-      }
-      alert("Không thể gửi tin nhắn. Vui lòng thử lại.");
-    }
-  };
-
-  const extractFilenameFromUrl = (url) => {
-    if (!url) return null;
-    
-    try {
-      // Try to get the filename from the URL
-      const urlParts = url.split('/');
-      const lastPart = urlParts[urlParts.length - 1];
-      
-      // Check if the URL contains a filename parameter
-      const urlParams = new URLSearchParams(url);
-      const filenameParam = urlParams.get('filename');
-      
-      if (filenameParam) {
-        return decodeURIComponent(filenameParam);
-      }
-      
-      // If no filename parameter, use the last part of the URL
-      return lastPart;
-    } catch (error) {
-      console.error("Error extracting filename from URL:", error);
-      return null;
-    }
-  };
-
   const showError = (title, message) => {
     setErrorModal({
       isOpen: true,
@@ -522,7 +481,7 @@ const ChatDirectly = () => {
       console.log("Starting upload with token:", token);
       console.log("Files to upload:", files);
 
-      const response = await fetch("http://192.168.148.43:3000/api/chat/upload", {
+      const response = await fetch(getApiUrl()+"/chat/upload", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -706,15 +665,6 @@ const ChatDirectly = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const handleTyping = () => {
-    if (!socket || typingTimeoutRef.current) return;
-    socket.emit("typing", { receiverPhone: phone });
-    typingTimeoutRef.current = setTimeout(() => {
-      socket.emit("stop_typing", { receiverPhone: phone });
-      typingTimeoutRef.current = null;
-    }, 1000);
-  };
-
   const onEmojiClick = (emojiObject) => {
     const cursor = document.querySelector(".message-input").selectionStart;
     const text =
@@ -778,7 +728,14 @@ const ChatDirectly = () => {
   const renderedMessages = useMemo(
     () =>
       messages
-        .filter((msg) => msg.status !== "deleted")
+        .filter((msg) => {
+          // Chỉ ẩn tin nhắn deleted nếu là tin nhắn của người dùng hiện tại
+          const currentUserPhone = localStorage.getItem("phone");
+          if (msg.status === "deleted" && msg.senderPhone === currentUserPhone) {
+            return false;
+          }
+          return true;
+        })
         .map((msg, idx) => {
           const isOther = msg.senderPhone !== localStorage.getItem("phone");
           const isRecalled = msg.status === "recalled";
@@ -874,6 +831,7 @@ const ChatDirectly = () => {
   if (loading) return <div className="loading">Đang tải...</div>;
   if (error) return <div className="error">{error}</div>;
 
+  //layout
   return (
     <div className="chat-directly">
       <div className="chat-header">
@@ -1130,7 +1088,6 @@ const ChatDirectly = () => {
             value={message}
             onChange={(e) => {
               setMessage(e.target.value);
-              handleTyping();
             }}
             onBlur={() => socket?.emit("stop_typing", { receiverPhone: phone })}
             placeholder={`Nhập @, tin nhắn tới ${userInfo?.name || phone}`}

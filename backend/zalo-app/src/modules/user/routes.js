@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { auth } = require('../../core/middleware/auth');
+const  auth  = require('../../middleware/auth');
 const userController = require('./controller');
 
 // Debug logs for each middleware
@@ -58,7 +58,12 @@ router.post('/avatar', auth, upload.single('avatar'), userController.updateAvata
 // Password route
 router.put('/password', auth, userController.changePassword);
 
+// Get recent contacts
+router.get('/recent-contacts', auth, userController.getRecentContacts);
+
+// Search and user lookup routes
 router.get('/search', auth, userController.searchUsers);
 router.get('/:phone', auth, userController.getUserByPhone);
+router.get('/:userId/groups', auth, userController.getUserGroups);
 
 module.exports = router; 

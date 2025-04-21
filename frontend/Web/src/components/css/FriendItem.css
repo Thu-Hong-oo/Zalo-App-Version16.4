@@ -1,0 +1,68 @@
+.friend-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #fff;
+    padding: 8px 16px;
+    border-radius: 10px;
+    transition: background-color 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+  
+    /* ✅ khoảng cách giữa các friend-item */
+    margin-bottom: 8px;
+  }
+  
+  
+  .friend-item:hover {
+    background-color: #f1f1f1;
+    box-shadow: 0px 1px 3px rgba(0,0,0,0.08);
+  }
+  
+  .friend-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  
+  .friend-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  
+  .friend-name {
+    font-size: 15px;
+    font-weight: 500;
+    color: #1d1d1f;
+  }
+  
+  .friend-more {
+    color: #6e6e73;
+  }
+  .friend-more-wrapper {
+    position: relative;
+  }
+  
+  .friend-popup-menu {
+    position: absolute;
+    top: 24px;
+    right: 0;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    z-index: 100;
+    width: 120px;
+  }
+  
+  .menu-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  
+  .menu-item:hover {
+    background-color: #f5f5f5;
+  }
+  

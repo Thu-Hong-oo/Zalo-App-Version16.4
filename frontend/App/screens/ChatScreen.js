@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext, useLayoutEffect } from "react";
 import {
   View,
   Text,
@@ -10,15 +10,19 @@ import {
   SafeAreaView,
   ActivityIndicator,
   LogBox,
+  Modal
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { getConversations } from "../modules/chat/controller";
 import api from "../config/api";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AuthContext } from "../App";
 
 // Enable logging in development
 LogBox.ignoreLogs(["Warning: ..."]); // Ignore specific warnings if needed
 
 export default function ChatListScreen({ navigation }) {
+  const { user } = useContext(AuthContext);
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -27,18 +31,33 @@ export default function ChatListScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResult, setSearchResult] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
 
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      tabBarStyle: { display: 'none' }
+    });
+  }, [navigation]);
   useEffect(() => {
-    fetchConversations();
+    console.log('ChatScreen mounted');
+    const loadData = async () => {
+      if (user?.userId) {
+        console.log('Current user ID from context:', user.userId);
+        await fetchConversations();
+        await fetchGroups();
+      }
+    };
+    loadData();
 
     // Add focus listener to reload conversations when screen comes into focus
     const unsubscribe = navigation.addListener("focus", () => {
-      fetchConversations();
+      console.log('ChatScreen focused');
+      loadData();
     });
 
     // Cleanup subscription on unmount
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, user]);
 
   const fetchUserInfo = async (phone) => {
     try {
@@ -87,6 +106,72 @@ export default function ChatListScreen({ navigation }) {
     }
   };
 
+  const fetchGroups = async () => {
+    try {
+      if (!user?.userId) {
+        console.log('No user ID available in context');
+        return;
+      }
+
+      console.log('Fetching groups for user:', user.userId);
+      const response = await api.get(`/users/${user.userId}/groups`);
+      console.log('Groups API response:', response.data);
+
+      if (!response.data?.groups) {
+        console.log('No groups data in response');
+        return;
+      }
+
+      // Transform groups data to match chat list format
+      const groupChats = response.data.groups.map(group => {
+        console.log('Processing group:', group);
+        return {
+          id: group.groupId,
+          title: group.name,
+          message: group.lastMessage?.content || 'Chưa có tin nhắn',
+          time: formatTime(group.lastMessageAt || group.createdAt),
+          isGroup: true,
+          memberCount: group.memberCount,
+          members: group.members || [],
+          avatar: null,
+          unreadCount: 0,
+          lastMessageAt: group.lastMessageAt || group.createdAt,
+          memberRole: group.memberRole
+        };
+      });
+
+      console.log('Transformed group chats:', groupChats);
+
+      // Update state with both conversations and groups
+      setChats(prevChats => {
+        console.log('Previous chats:', prevChats);
+        // Filter out any existing groups from previous chats
+        const directChats = prevChats.filter(chat => !chat.isGroup);
+        console.log('Direct chats:', directChats);
+        
+        // Combine direct chats and group chats
+        const allChats = [...directChats, ...groupChats];
+        console.log('Combined chats before sorting:', allChats);
+        
+        // Sort by last message time
+        const sortedChats = allChats.sort((a, b) => {
+          const timeA = new Date(a.lastMessageAt || a.time);
+          const timeB = new Date(b.lastMessageAt || b.time);
+          return timeB - timeA;
+        });
+        
+        console.log('Final sorted chats:', sortedChats);
+        return sortedChats;
+      });
+    } catch (error) {
+      console.error('Error fetching groups:', error);
+      if (error.response) {
+        console.error('Error response:', error.response.data);
+        console.error('Error status:', error.response.status);
+      }
+    }
+  };
+
   const fetchConversations = async (isRefreshing = false) => {
     try {
       if (!isRefreshing) {
@@ -96,7 +181,9 @@ export default function ChatListScreen({ navigation }) {
       }
       setError(null);
 
+      console.log('Fetching conversations...');
       const response = await getConversations();
+      console.log('Conversations response:', response);
 
       if (response.status === "success" && response.data?.conversations) {
         // Transform API data to match UI requirements
@@ -119,11 +206,16 @@ export default function ChatListScreen({ navigation }) {
               isFromMe: conv.lastMessage.isFromMe,
               unreadCount: conv.unreadCount || 0,
               otherParticipantPhone: otherParticipant.phone,
+              lastMessageAt: conv.lastMessage.timestamp,
+              isGroup: false
             };
           })
         );
 
+        console.log('Transformed conversations:', transformedChats);
         setChats(transformedChats);
+        // Fetch groups after setting conversations
+        await fetchGroups();
       } else {
         throw new Error("Invalid response format from server");
       }
@@ -137,6 +229,7 @@ export default function ChatListScreen({ navigation }) {
   };
 
   const handleRefresh = () => {
+    console.log('Refreshing...');
     fetchConversations(true);
   };
 
@@ -261,15 +354,26 @@ export default function ChatListScreen({ navigation }) {
     <TouchableOpacity
       style={styles.chatItem}
       onPress={() =>
-        navigation.navigate("ChatDirectly", {
-          title: item.title,
-          otherParticipantPhone: item.otherParticipantPhone,
-          avatar: item.avatar,
-        })
+        item.isGroup 
+          ? navigation.navigate("GroupChat", {
+              groupId: item.id,
+              title: item.title,
+              members: item.members,
+              memberCount: item.memberCount
+            })
+          : navigation.navigate("ChatDirectly", {
+              title: item.title,
+              otherParticipantPhone: item.otherParticipantPhone,
+              avatar: item.avatar,
+            })
       }
     >
       <View style={styles.avatarContainer}>
-        {item.avatar ? (
+        {item.isGroup ? (
+          <View style={[styles.avatarTextContainer, { backgroundColor: '#1877f2' }]}>
+            <Ionicons name="people" size={24} color="#fff" />
+          </View>
+        ) : item.avatar ? (
           <Image source={{ uri: item.avatar }} style={styles.avatar} />
         ) : (
           <View style={styles.avatarTextContainer}>
@@ -284,7 +388,12 @@ export default function ChatListScreen({ navigation }) {
       </View>
       <View style={styles.chatContent}>
         <View style={styles.chatHeader}>
-          <Text style={styles.chatTitle}>{item.title}</Text>
+          <Text style={styles.chatTitle}>
+            {item.title}
+            {item.isGroup && (
+              <Text style={styles.memberCount}> · {item.memberCount}</Text>
+            )}
+          </Text>
           <Text style={styles.chatTime}>{item.time}</Text>
         </View>
         <Text
@@ -327,7 +436,7 @@ export default function ChatListScreen({ navigation }) {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#fff" />
+          {/* <Ionicons name="search" size={20} color="#fff" /> */}
           <TextInput
             placeholder="Tìm kiếm"
             placeholderTextColor="#fff"
@@ -344,9 +453,47 @@ export default function ChatListScreen({ navigation }) {
         <TouchableOpacity style={styles.headerButton}>
           <Ionicons name="qr-code" size={24} color="#fff" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.headerButton} onPress={handleRefresh}>
-          <Ionicons name="refresh" size={24} color="#fff" />
+        <TouchableOpacity style={styles.headerButton} onPress={() => setShowAddModal(true)}>
+          <Ionicons name="add" size={27} color="#fff" />
         </TouchableOpacity>
+
+        {/* Add Modal */}
+        <Modal
+          visible={showAddModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowAddModal(false)}
+        >
+          <TouchableOpacity 
+            style={styles.modalOverlay}
+            activeOpacity={1} 
+            onPress={() => setShowAddModal(false)}
+          >
+            <View style={styles.modalContent}>
+              <TouchableOpacity 
+                style={styles.modalOption}
+                onPress={() => {
+                  setShowAddModal(false);
+                  navigation.navigate('FriendRequests');
+                }}
+              >
+                <Ionicons name="person-add" size={24} color="#1877f2" />
+                <Text style={styles.modalOptionText}>Thêm bạn</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.modalOption}
+                onPress={() => {
+                  setShowAddModal(false);
+                  navigation.navigate('GroupCreation');
+                }}
+              >
+                <Ionicons name="people" size={24} color="#1877f2" />
+                <Text style={styles.modalOptionText}>Tạo nhóm</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </View>
 
       {/* Search Results */}
@@ -604,5 +751,39 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: "#666",
     padding: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-start',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    marginTop: 60,
+    marginHorizontal: 20,
+    borderRadius: 10,
+    padding: 15,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  modalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  modalOptionText: {
+    marginLeft: 15,
+    fontSize: 16,
+    color: '#333',
+  },
+  memberCount: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: 'normal'
   },
 });

@@ -1,17 +1,38 @@
-import axios from 'axios';
+import axios from "axios";
 
+// Cấu hình API
+const COMPUTER_IP = "192.168.1.16";  // Địa chỉ IP máy tính
+const BASE_URL = `http://${COMPUTER_IP}:3000`;  // API base URL
+const API_URL = `${BASE_URL}/api`;  // API URL chính
+
+// Hàm lấy base URL cho socket
+export const getBaseUrl = () => {
+  return BASE_URL;
+};
+
+// Hàm lấy API URL
+export const getApiUrl = () => {
+  return API_URL;
+};
+
+// Hàm lấy API URL (async version for backward compatibility)
+export const getApiUrlAsync = async () => {
+  return Promise.resolve(API_URL);
+};
+
+// Tạo instance Axios
 const api = axios.create({
-  baseURL: 'http://localhost:3000/api',
-  timeout: 10000,
+  baseURL: API_URL,
+  withCredentials: true,  // Đảm bảo cookie và credentials được gửi
   headers: {
-    'Content-Type': 'application/json',
-  }
+    "Content-Type": "application/json",
+  },
 });
 
-// Add a request interceptor
+// Add request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('accessToken');
+    const token = localStorage.getItem("accessToken");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -22,40 +43,48 @@ api.interceptors.request.use(
   }
 );
 
-// Add a response interceptor
+// Add response interceptor to handle errors
 api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
-
-    // If the error status is 401 and there is no originalRequest._retry flag,
-    // it means the token has expired and we need to refresh it
-    if (error.response.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-
-      try {
-        const refreshToken = localStorage.getItem('refreshToken');
-        const response = await axios.post('http://localhost:3000/api/auth/refresh-token', {
-          refreshToken
-        });
-
-        const { accessToken } = response.data;
-        localStorage.setItem('accessToken', accessToken);
-
-        // Retry the original request with the new token
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
-        return axios(originalRequest);
-      } catch (error) {
-        // If refresh token fails, redirect to login
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        window.location.href = '/login';
-        return Promise.reject(error);
-      }
+  (response) => {
+    return response;
+  },
+  (error) => {
+    // Xử lý lỗi phản hồi
+    if (error.response) {
+      console.error("API Error:", {
+        url: error.config.url,
+        message: error.message,
+        response: error.response.data,
+        status: error.response.status,
+      });
+    } else if (error.request) {
+      console.error("API Error:", {
+        url: error.config.url,
+        message: "Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.",
+        response: undefined,
+        status: undefined,
+      });
+    } else {
+      console.error("API Error:", {
+        url: error.config.url,
+        message: error.message,
+        response: undefined,
+        status: undefined,
+      });
     }
-
     return Promise.reject(error);
   }
 );
 
-export default api; 
+// Hàm kiểm tra kết nối tới server
+export const checkServerConnection = async () => {
+  try {
+    const response = await axios.get(`${BASE_URL}/health`, { timeout: 5000 });  // Kiểm tra kết nối với endpoint `/health`
+    return response.status === 200;  // Nếu status là 200, server hoạt động
+  } catch (error) {
+    console.error('Server connection check failed:', error);
+    return false;  // Nếu có lỗi, trả về false
+  }
+};
+
+export default api;

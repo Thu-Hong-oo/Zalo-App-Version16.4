@@ -22,8 +22,8 @@ POST http://localhost:3000/api/auth/register/complete
 Content-Type: application/json
 
 {
-    "phone": "0376963658",
-    "name": "Trầm",
+    "phone": "0987654321",
+    "name": "Tôi chỉ là người test Group API",
     "password": "123456"
 }
 
@@ -34,7 +34,7 @@ POST http://localhost:3000/api/auth/login
 Content-Type: application/json
 
 {
-    "phone": "0376963653",
+    "phone": "0123456789",
     "password": "123456"
 }
 
@@ -120,8 +120,8 @@ GET http://localhost:3000/api/users/search?query=nguyenvana
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwaG9uZSI6Ijg0Mzc2OTYzNjUzIiwiaWF0IjoxNzQ0MjM0MjQ4LCJleHAiOjE3NDQzMjA2NDh9.njkenA1oyOH6rknkRm42FTx9v_PBpQ5ZTi4rrPHO8l8
 
 ### Lấy thông tin người dùng theo số điện thoại
-GET http://localhost:3000/api/users/84376963653
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwaG9uZSI6Ijg0Mzc2OTYzNjUzIiwiaWF0IjoxNzQ0MjM0MjQ4LCJleHAiOjE3NDQzMjA2NDh9.njkenA1oyOH6rknkRm42FTx9v_PBpQ5ZTi4rrPHO8l8
+GET http://localhost:3000/api/users/84389804287
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI0NjM4NTBhMS03NWJhLTRmMDktYmY3ZS1jMGNhNjJiMGVhMTgiLCJwaG9uZSI6Ijg0Mzc2OTYzNjUzIiwiaWF0IjoxNzQ1MjI0OTMyLCJleHAiOjE3NDUzMTEzMzJ9._G6UKz7e5NFaN8AsOjeoR-sJXQ90oU8-BNoTdAtBEeg
 
 ### ========== TIN NHẮN ==========
 
