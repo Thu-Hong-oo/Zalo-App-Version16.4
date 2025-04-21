@@ -283,87 +283,34 @@ const GroupChatScreen = () => {
       const userId = await getUserIdFromToken();
 
       if (response.status === "success" && response.data.messages) {
-        // Tạo map để theo dõi tin nhắn bị thu hồi và xóa
-        const recallMap = new Map();
-        const deleteMap = new Map();
-
         // Xử lý các tin nhắn theo ngày
         const messageArray = await Promise.all(
-          Object.entries(response.data.messages).flatMap(([date, messages]) => {
-            // Trước tiên, lọc ra các record thu hồi và xóa
-            messages.forEach((msg) => {
-              if (
-                msg.type === "recall_record" &&
-                msg.metadata?.originalMessageId
-              ) {
-                recallMap.set(msg.metadata.originalMessageId, msg);
-              }
-              if (
-                msg.type === "delete_record" &&
-                msg.metadata?.deletedMessageId
-              ) {
-                deleteMap.set(msg.metadata.deletedMessageId, msg);
-              }
-            });
+          Object.entries(response.data.messages).flatMap(([date, messages]) =>
+            messages.map(async (msg) => {
+              const isMe = msg.senderId === userId;
 
-            // Sau đó xử lý các tin nhắn thông thường
-            return messages
-              .filter(
-                (msg) =>
-                  msg.type !== "recall_record" && msg.type !== "delete_record"
-              ) // Loại bỏ các record thu hồi và xóa
-              .map(async (msg) => {
-                const recallRecord = recallMap.get(msg.groupMessageId);
-                const deleteRecord = deleteMap.get(msg.groupMessageId);
-                const isMe = msg.senderId === userId;
-
-                // Nếu là tin nhắn của người khác, fetch thông tin người gửi
-                let senderInfo = {};
-                if (!isMe) {
-                  const userInfo = await fetchUserInfo(msg.senderId);
-                  if (userInfo) {
-                    senderInfo = {
-                      senderName: userInfo.name,
-                      senderAvatar: userInfo.avatar,
-                    };
-                  }
-                }
-
-                // Nếu tin nhắn đã bị thu hồi
-                if (recallRecord) {
-                  return {
-                    ...msg,
-                    ...senderInfo,
-                    content: "Tin nhắn đã bị thu hồi",
-                    status: "recalled",
-                    metadata: {
-                      ...msg.metadata,
-                      recalledBy: recallRecord.metadata.recalledBy,
-                      recalledAt: recallRecord.metadata.recalledAt,
-                    },
-                    isMe,
+              // Nếu là tin nhắn của người khác, fetch thông tin người gửi
+              let senderInfo = {};
+              if (!isMe) {
+                const userInfo = await fetchUserInfo(msg.senderId);
+                if (userInfo) {
+                  senderInfo = {
+                    senderName: userInfo.name,
+                    senderAvatar: userInfo.avatar,
                   };
                 }
+              }
 
-                // Nếu tin nhắn đã bị xóa bởi người dùng hiện tại
-                if (
-                  deleteRecord &&
-                  deleteRecord.metadata.deletedBy === userId
-                ) {
-                  return null; // Không hiển thị tin nhắn đã xóa
-                }
-
-                return {
-                  ...msg,
-                  ...senderInfo,
-                  status: msg.status || "sent",
-                  isMe,
-                };
-              });
-          })
+              return {
+                ...msg,
+                ...senderInfo,
+                status: msg.status || "sent",
+                isMe,
+              };
+            })
+          )
         );
 
-        // Lọc bỏ các tin nhắn null (đã bị xóa)
         const filteredMessages = (await Promise.all(messageArray)).filter(
           Boolean
         );
@@ -448,27 +395,10 @@ const GroupChatScreen = () => {
         });
 
         newSocket.on("group-message-recalled", (recallData) => {
-          console.log("=== Socket Recall Event Debug ===");
-          console.log("Raw recall data:", recallData);
-          console.log("Message ID:", recallData.messageId);
-          console.log("Group ID:", recallData.groupId);
-          console.log("Current group ID:", groupId);
-
           if (recallData.groupId === groupId) {
-            console.log("Processing recall for current group");
-
-            // Cập nhật recalledMessages
-            setRecalledMessages((prev) => {
-              const newSet = new Set(prev);
-              newSet.add(recallData.messageId);
-              return newSet;
-            });
-
-            // Cập nhật messages
-            setMessages((prevMessages) => {
-              const updatedMessages = prevMessages.map((msg) => {
+            setMessages((prev) =>
+              prev.map((msg) => {
                 if (msg.groupMessageId === recallData.messageId) {
-                  console.log("Found target message, updating...");
                   return {
                     ...msg,
                     content: "Tin nhắn đã bị thu hồi",
@@ -481,26 +411,24 @@ const GroupChatScreen = () => {
                   };
                 }
                 return msg;
-              });
-              console.log("Updated messages:", updatedMessages);
-              return updatedMessages;
-            });
+              })
+            );
           }
         });
 
         newSocket.on("group-message-deleted", (deleteData) => {
+          console.log("Received delete event:", deleteData);
           if (deleteData.groupId === groupId) {
-            console.log("Received delete event:", deleteData);
-            // Chỉ ẩn tin nhắn nếu người dùng hiện tại là người xóa
+            // Nếu người dùng hiện tại là người xóa, xóa tin nhắn khỏi UI
             if (deleteData.deletedBy === userId) {
+              console.log(
+                "User is the deleter, removing message:",
+                deleteData.deletedMessageId
+              );
               setMessages((prev) =>
                 prev.filter(
                   (msg) => msg.groupMessageId !== deleteData.deletedMessageId
                 )
-              );
-              // Thêm vào danh sách tin nhắn đã xóa
-              setDeletedMessages(
-                (prev) => new Set([...prev, deleteData.deletedMessageId])
               );
             }
           }
@@ -696,16 +624,6 @@ const GroupChatScreen = () => {
         setMessages((prev) =>
           prev.filter((msg) => msg.groupMessageId !== messageId)
         );
-
-        // Thêm vào danh sách tin nhắn đã xóa
-        setDeletedMessages((prev) => new Set([...prev, messageId]));
-
-        // Gửi sự kiện socket để thông báo cho các thành viên khác
-        socket?.emit("delete-group-message", {
-          groupId: response.data.originalMessage.groupId,
-          deletedMessageId: response.data.deletedMessageId,
-          deletedBy: response.data.deletedBy,
-        });
         Alert.alert("Thành công", "Tin nhắn đã được xóa");
       } else {
         Alert.alert("Lỗi", response.message || "Không thể xóa tin nhắn");
@@ -847,6 +765,12 @@ const GroupChatScreen = () => {
         renderItem={({ item }) => {
           if (item.type === "system") return null;
 
+          // Kiểm tra nếu tin nhắn đã bị xóa
+          if (deletedMessages.has(item.groupMessageId)) {
+            console.log("Message is in deletedMessages:", item.groupMessageId);
+            return null;
+          }
+
           const isMe = item.isMe || item.senderId === currentUserId;
           const isRecalled =
             item.status === "recalled" ||
@@ -855,14 +779,14 @@ const GroupChatScreen = () => {
           return (
             <TouchableOpacity
               key={item.groupMessageId || item.id}
-              onLongPress={() =>
-                isMe && !isRecalled && showMessageOptions(item)
-              }
+              onLongPress={() => {
+                setSelectedMessage(item);
+                setShowOptionsModal(true);
+              }}
               style={[
                 styles.messageContainer,
                 isMe ? styles.myMessage : styles.otherMessage,
               ]}
-              disabled={isRecalled}
             >
               {!isMe && (
                 <Image
@@ -1023,53 +947,88 @@ const GroupChatScreen = () => {
           onPress={() => setShowOptionsModal(false)}
         >
           <View style={styles.optionsModalContent}>
-            {selectedMessage &&
-              (selectedMessage.isMe ||
-                selectedMessage.senderId === currentUserId) &&
-              new Date().getTime() -
-                new Date(selectedMessage.createdAt).getTime() <=
-                24 * 60 * 60 * 1000 && (
+            {selectedMessage && (
+              <>
+                {/* Tùy chọn cho tin nhắn của mình */}
+                {selectedMessage.senderId === currentUserId && (
+                  <>
+                    {new Date().getTime() -
+                      new Date(selectedMessage.createdAt).getTime() <=
+                      24 * 60 * 60 * 1000 && (
+                      <TouchableOpacity
+                        style={styles.optionButton}
+                        onPress={() => {
+                          handleRecallMessage(selectedMessage.groupMessageId);
+                          setShowOptionsModal(false);
+                        }}
+                      >
+                        <Ionicons name="arrow-undo" size={24} color="#1877f2" />
+                        <Text style={styles.optionText}>Thu hồi</Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      style={styles.optionButton}
+                      onPress={() => {
+                        setForwardModalVisible(true);
+                        setShowOptionsModal(false);
+                      }}
+                    >
+                      <Ionicons name="arrow-redo" size={24} color="#1877f2" />
+                      <Text style={styles.optionText}>Chuyển tiếp</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.optionButton}
+                      onPress={() => {
+                        handleDeleteMessage(selectedMessage.groupMessageId);
+                        setShowOptionsModal(false);
+                      }}
+                    >
+                      <Ionicons name="trash" size={24} color="#ff3b30" />
+                      <Text style={[styles.optionText, styles.deleteText]}>
+                        Xóa
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+
+                {/* Tùy chọn cho tin nhắn của người khác */}
+                {selectedMessage.senderId !== currentUserId && (
+                  <>
+                    <TouchableOpacity
+                      style={styles.optionButton}
+                      onPress={() => {
+                        setForwardModalVisible(true);
+                        setShowOptionsModal(false);
+                      }}
+                    >
+                      <Ionicons name="arrow-redo" size={24} color="#1877f2" />
+                      <Text style={styles.optionText}>Chuyển tiếp</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.optionButton}
+                      onPress={() => {
+                        handleDeleteMessage(selectedMessage.groupMessageId);
+                        setShowOptionsModal(false);
+                      }}
+                    >
+                      <Ionicons name="trash" size={24} color="#ff3b30" />
+                      <Text style={[styles.optionText, styles.deleteText]}>
+                        Xóa
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+
+                {/* Nút Thoát chung cho cả hai trường hợp */}
                 <TouchableOpacity
                   style={styles.optionButton}
-                  onPress={() => {
-                    handleRecallMessage(selectedMessage.groupMessageId);
-                    setShowOptionsModal(false);
-                  }}
+                  onPress={() => setShowOptionsModal(false)}
                 >
-                  <Ionicons name="arrow-undo" size={24} color="#1877f2" />
-                  <Text style={styles.optionText}>Thu hồi</Text>
+                  <Ionicons name="close" size={24} color="#666" />
+                  <Text style={styles.optionText}>Thoát</Text>
                 </TouchableOpacity>
-              )}
-
-            <TouchableOpacity
-              style={styles.optionButton}
-              onPress={() => {
-                setForwardModalVisible(true);
-                setShowOptionsModal(false);
-              }}
-            >
-              <Ionicons name="arrow-redo" size={24} color="#1877f2" />
-              <Text style={styles.optionText}>Chuyển tiếp</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.optionButton}
-              onPress={() => {
-                handleDeleteMessage(selectedMessage.groupMessageId);
-                setShowOptionsModal(false);
-              }}
-            >
-              <Ionicons name="trash" size={24} color="#ff3b30" />
-              <Text style={[styles.optionText, styles.deleteText]}>Xóa</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.optionButton}
-              onPress={() => setShowOptionsModal(false)}
-            >
-              <Ionicons name="close" size={24} color="#666" />
-              <Text style={styles.optionText}>Đóng</Text>
-            </TouchableOpacity>
+              </>
+            )}
           </View>
         </TouchableOpacity>
       </Modal>

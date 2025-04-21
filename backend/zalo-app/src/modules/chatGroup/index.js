@@ -70,6 +70,7 @@ const getGroupMessages = async (req, res) => {
 
     // Tạo map để lưu trữ tin nhắn gốc và trạng thái thu hồi
     const messageMap = new Map();
+    const deleteMap = new Map();
 
     // Xử lý từng tin nhắn
     result.Items.forEach((message) => {
@@ -85,8 +86,17 @@ const getGroupMessages = async (req, res) => {
             content: "Tin nhắn đã bị thu hồi",
           });
         }
-      } else if (message.type !== "delete_record") {
-        // Nếu là tin nhắn gốc và chưa bị xóa
+      } else if (message.type === "delete_record") {
+        // Nếu là bản ghi xóa, lưu vào deleteMap
+        const deletedMessageId = message.metadata?.deletedMessageId;
+        if (deletedMessageId) {
+          deleteMap.set(deletedMessageId, {
+            deletedBy: message.senderId,
+            deletedAt: message.createdAt,
+          });
+        }
+      } else if (message.type === "text" || message.type === "file") {
+        // Nếu là tin nhắn gốc
         messageMap.set(message.groupMessageId, {
           ...message,
           isRecalled: false,
@@ -96,7 +106,10 @@ const getGroupMessages = async (req, res) => {
 
     // Lọc tin nhắn đã bị xóa bởi user hiện tại
     const filteredMessages = Array.from(messageMap.values()).filter(
-      (message) => !message.isDeleted
+      (message) => {
+        const deleteInfo = deleteMap.get(message.groupMessageId);
+        return !deleteInfo || deleteInfo.deletedBy !== userId;
+      }
     );
 
     // Group messages by date

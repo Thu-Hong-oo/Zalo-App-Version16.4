@@ -180,9 +180,9 @@ Tất cả các API đều:
 - Hỗ trợ realtime thông qua socket.io
 
 Cấu trúc:
-Khi xóa, thu hồi sẽ tạo mới record với cấu trúc:
+Khi xóa, thu hồi sẽ tạo mới record copy từ record gốc nhưng sửa lại metadata:
 Xóa: metadata : { "deletedMessageId" : { "S" : "ea4ffa26-2477-4e00-9fe3-54c3c4324715" }, "originalType" : { "S" : "text" }, "originalSender" : { "S" : "554d27e4-eeca-469a-a87c-9f208a0533e4" }, "deletedBy" : { "S" : "554d27e4-eeca-469a-a87c-9f208a0533e4" }, "originalContent" : { "S" : "Nhắn để xóa thôi chẳng để làm gì" } }
-    status: deleted, type: delete_record
+    status: deleted, type: delete_record, tin nhắn gốc KHÔNG cập nhật lại status
 
 Thu Hồi: metadata :{ "recalledAt" : { "S" : "2025-04-21T09:20:58.835Z" }, "originalMessageId" : { "S" : "ea4ffa26-2477-4e00-9fe3-54c3c4324715" }, "originalSender" : { "S" : "554d27e4-eeca-469a-a87c-9f208a0533e4" }, "originalContent" : { "S" : "Nhắn để xóa thôi chẳng để làm gì" }, "recalledBy" : { "S" : "554d27e4-eeca-469a-a87c-9f208a0533e4" } }
 status: recalled, type: recall_record
