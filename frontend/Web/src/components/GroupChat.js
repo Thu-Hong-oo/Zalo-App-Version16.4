@@ -1,235 +1,193 @@
-"use client";
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { getGroupDetails, sendGroupMessage } from '../services/group';
+import './css/GroupChat.css';
 
-import { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Video, Search, Menu, Send, Smile, Mic, Image } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
-import { toast } from "sonner";
-import api from "../config/api";
-
-export default function GroupChat() {
+const GroupChat = () => {
   const { groupId } = useParams();
-  const { state } = useLocation();
   const navigate = useNavigate();
   const [groupDetails, setGroupDetails] = useState(null);
-  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const scrollRef = useRef(null);
 
   useEffect(() => {
     fetchGroupDetails();
   }, [groupId]);
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [groupDetails]);
-
   const fetchGroupDetails = async () => {
     try {
-      setLoading(true);
-      const response = await api.get(`/chat/groups/${groupId}`);
-      if (response.data.status === 'success' && response.data.data) {
-        setGroupDetails(response.data.data);
+      console.log(`Fetching group details for group ID: ${groupId}`);
+      const response = await getGroupDetails(groupId);
+      console.log('Group details response:', response);
+      
+      if (response.status === 'success') {
+        setGroupDetails(response.data);
+        setLoading(false);
       } else {
-        throw new Error("Không thể tải thông tin nhóm");
+        throw new Error('Không nhận được dữ liệu từ server');
       }
     } catch (err) {
-      setError(err.message);
-      toast.error(err.message);
-    } finally {
+      console.error('Error fetching group details:', err);
+      setError('Không thể tải thông tin nhóm. Vui lòng thử lại sau.');
       setLoading(false);
     }
   };
 
-  const createSystemMessage = (details) => {
-    if (!details?.members || details.members.length === 0) return null;
-    const creator = details.members.find((m) => m.userId === details.createdBy);
-    const creatorName = creator?.name || "Người tạo";
-    const otherMemberNames = details.members
-      .filter((m) => m.userId !== details.createdBy)
-      .slice(0, 2)
-      .map((m) => m.name || "Thành viên");
-    let displayText = creatorName;
-    if (otherMemberNames.length > 0) {
-      displayText += `, ${otherMemberNames.join(", ")}`;
-    }
-    const displayUserIds = [
-      creator?.userId,
-      ...details.members
-        .filter((m) => m.userId !== details.createdBy)
-        .slice(0, 2)
-        .map((m) => m.userId),
-    ].filter(Boolean);
-    const memberAvatars = details.members
-      .filter((m) => displayUserIds.includes(m.userId))
-      .map((m) => m.avatar || "/placeholder.svg");
-
-    return {
-      id: `system-${details.groupId}`,
-      type: "system",
-      text: `${displayText} đã tham gia nhóm`,
-      memberNames: displayText,
-      memberAvatars,
-      timestamp: new Date(details.createdAt),
-    };
-  };
-
   const formatTime = (dateString) => {
-    if (!dateString) return "";
+    if (!dateString) return '';
     const date = new Date(dateString);
-    return `${date.getHours()}:${date.getMinutes().toString().padStart(2, "0")} Hôm nay`;
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const sendMessage = async () => {
-    if (message.trim() === "") return;
+    if (!message.trim()) return;
+
     try {
-      const response = await api.post(`/chat/groups/${groupId}/messages`, {
-        content: message.trim(),
-      });
-      if (response.data.status === 'success') {
-        setMessage("");
-        // Refresh messages or update UI
+      console.log(`Sending message to group ${groupId}: ${message}`);
+      const response = await sendGroupMessage(groupId, message);
+      
+      if (response.status === 'success') {
+        setMessages(prevMessages => [...prevMessages, response.data]);
+        setMessage('');
+      } else {
+        throw new Error('Không nhận được dữ liệu từ server');
       }
     } catch (err) {
-      toast.error("Không thể gửi tin nhắn");
+      console.error('Error sending message:', err);
+      setError('Không thể gửi tin nhắn. Vui lòng thử lại sau.');
     }
   };
 
+  const handleBack = () => {
+    navigate('/app');
+  };
+
   if (loading) {
-    return (
-      <div className="flex justify-center items-center h-screen bg-[#E8EEF7]">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#0088FF]"></div>
-      </div>
-    );
+    return <div className="loading">Đang tải...</div>;
   }
 
-  if (error || !groupDetails) {
+  if (error) {
     return (
-      <div className="flex flex-col justify-center items-center h-screen bg-[#E8EEF7]">
-        <p className="text-red-500">{error || "Không tìm thấy thông tin nhóm"}</p>
-        <Button onClick={() => navigate(-1)} className="mt-4 bg-[#0088FF] hover:bg-[#0077E6]">
+      <div className="error-container">
+        <div className="error">{error}</div>
+        <button className="retry-button" onClick={fetchGroupDetails}>
+          Thử lại
+        </button>
+        <button className="back-button" onClick={handleBack}>
           Quay lại
-        </Button>
+        </button>
       </div>
     );
   }
-
-  const systemMessage = createSystemMessage(groupDetails);
-  const messages = systemMessage ? [systemMessage] : [];
 
   return (
-    <div className="flex flex-col h-screen bg-[#E8EEF7]">
-      {/* Header */}
-      <div className="flex items-center p-4 bg-[#0088FF] text-white">
-        <Button variant="ghost" onClick={() => navigate(-1)} className="text-white">
-          <ArrowLeft className="h-6 w-6" />
-        </Button>
-        <div className="flex-1 ml-2">
-          <h2 className="text-lg font-bold">{groupDetails.name}</h2>
-          <p className="text-sm opacity-80">
-            {groupDetails.members?.length || state?.memberCount} thành viên
-          </p>
+    <div className="group-chat-container">
+      <header className="group-chat-header">
+        <button className="back-button" onClick={handleBack}>
+          ←
+        </button>
+        <div className="header-title">
+          <h1>{groupDetails?.name || 'Nhóm chat'}</h1>
+          <p>{groupDetails?.memberCount || groupDetails?.members?.length || 0} thành viên</p>
         </div>
-        <Button variant="ghost" className="text-white">
-          <Video className="h-6 w-6" />
-        </Button>
-        <Button variant="ghost" className="text-white">
-          <Search className="h-6 w-6" />
-        </Button>
-        <Button
-          variant="ghost"
-          className="text-white"
-          onClick={() => navigate(`/app/group/${groupId}/settings`)}
-        >
-          <Menu className="h-6 w-6" />
-        </Button>
-      </div>
+      </header>
 
-      {/* Messages */}
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto p-4 space-y-4"
-      >
-        {/* Group Info Card */}
-        <div className="bg-white rounded-lg p-4 text-center">
-          <div className="flex justify-center mb-4 relative">
-            {groupDetails.members?.[0] && (
-              <Avatar className="h-12 w-12 z-20">
-                <AvatarImage src={groupDetails.members[0].avatar || "/placeholder.svg"} />
-                <AvatarFallback>{groupDetails.members[0].name[0]}</AvatarFallback>
-              </Avatar>
-            )}
-            {groupDetails.members?.[1] && (
-              <Avatar className="h-12 w-12 z-10 -ml-4">
-                <AvatarImage src={groupDetails.members[1].avatar || "/placeholder.svg"} />
-                <AvatarFallback>{groupDetails.members[1].name[0]}</AvatarFallback>
-              </Avatar>
-            )}
-            <Avatar className="h-6 w-6 absolute bottom-0 right-0 z-30 bg-white">
-              <AvatarImage src={groupDetails.avatar || "/placeholder.svg"} />
-              <AvatarFallback>G</AvatarFallback>
-            </Avatar>
+      <div className="messages-container">
+        <div className="group-info-card">
+          <div className="group-avatars">
+            <img 
+              src={groupDetails?.avatar || 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png'} 
+              alt="Group Avatar"
+              className="group-main-avatar"
+            />
           </div>
-          <h3 className="text-lg font-bold">{groupDetails.name}</h3>
-          <p className="text-sm text-gray-600">
+          <h2 className="group-card-title">{groupDetails?.name || 'Nhóm chat'}</h2>
+          <p className="group-card-subtitle">
             Bắt đầu chia sẻ những câu chuyện thú vị cùng nhau
           </p>
         </div>
 
-        {/* Time Indicator */}
-        <div className="text-center">
-          <span className="bg-gray-200 text-gray-600 text-xs px-3 py-1 rounded-full">
-            {formatTime(groupDetails.createdAt)}
+        <div className="time-indicator">
+          <span className="time-text">
+            {formatTime(groupDetails?.createdAt)}
           </span>
         </div>
 
-        {/* System Message */}
-        {messages.map((msg) => (
-          <div key={msg.id} className="flex items-center bg-white rounded-full p-2">
-            <div className="flex -space-x-2 mr-2">
-              {msg.memberAvatars.map((avatar, index) => (
-                <Avatar key={index} className="h-6 w-6 border-2 border-white">
-                  <AvatarImage src={avatar} />
-                  <AvatarFallback>M</AvatarFallback>
-                </Avatar>
+        {messages.map(msg => (
+          <div key={msg.id} className="system-message-container">
+            <div className="system-message-avatars">
+              {msg.memberAvatars?.map((avatarUri, index) => (
+                <img 
+                  key={`sys-avatar-${index}`}
+                  src={avatarUri}
+                  alt={`Member ${index + 1}`}
+                  className="system-message-avatar"
+                />
               ))}
             </div>
-            <p className="text-sm">
-              <span className="font-bold">{msg.memberNames}</span> đã tham gia nhóm
+            <p className="system-message-text">
+              <strong>{msg.memberNames}</strong> đã tham gia nhóm
             </p>
           </div>
         ))}
+
+        <div className="setup-card">
+          <div className="setup-avatar-container">
+            <div className="setup-avatar">
+              <i className="camera-icon">📷</i>
+            </div>
+            <span className="setup-title">{groupDetails?.name || 'Nhóm chat'}</span>
+            <i className="chevron-icon">›</i>
+          </div>
+
+          <p className="setup-subtitle">Bạn vừa tạo nhóm</p>
+          
+          <div className="member-avatars">
+            {groupDetails?.members?.map((member, index) => (
+              <img 
+                key={`setup-avatar-${member.userId || index}`}
+                src={member.avatar || 'https://via.placeholder.com/50'}
+                alt={`Member ${index + 1}`}
+                className="member-avatar"
+                style={{ zIndex: (groupDetails.members?.length || 0) - index }}
+              />
+            ))}
+            <button className="add-member-button">
+              <i className="person-add-icon">+</i>
+            </button>
+          </div>
+
+          <button className="wave-button">
+            👋 Vẫy tay chào
+          </button>
+
+          <button className="qr-button">
+            Xem mã QR tham gia nhóm
+          </button>
+        </div>
       </div>
 
-      {/* Message Input */}
-      <div className="p-4 bg-white border-t">
-        <div className="flex items-center space-x-2">
-          <Button variant="ghost" className="text-gray-600">
-            <Smile className="h-6 w-6" />
-          </Button>
-          <Input
-            className="flex-1 rounded-full bg-gray-100"
-            placeholder="Tin nhắn"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && sendMessage()}
-          />
-          <Button variant="ghost" className="text-gray-600">
-            <Mic className="h-6 w-6" />
-          </Button>
-          <Button variant="ghost" className="text-gray-600">
-            <Image className="h-6 w-6" />
-          </Button>
-          <Button onClick={sendMessage} className="bg-[#0088FF] hover:bg-[#0077E6]">
-            <Send className="h-5 w-5" />
-          </Button>
-        </div>
+      <div className="input-container">
+        <button className="emoji-button">😊</button>
+        <input
+          type="text"
+          className="message-input"
+          placeholder="Tin nhắn"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+        />
+        <button className="attach-button">
+          <i className="mic-icon">🎤</i>
+        </button>
+        <button className="attach-button">
+          <i className="image-icon">🖼️</i>
+        </button>
       </div>
     </div>
   );
-}
+};
+
+export default GroupChat; 
