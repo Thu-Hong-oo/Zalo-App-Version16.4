@@ -65,29 +65,11 @@ const upload = multer({
 });
 
 // Middleware
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // Cho phép truy cập từ origin 'null' (file://) và localhost
-      if (
-        !origin ||
-        origin === "null" ||
-        origin.startsWith("http://localhost")
-      ) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
 app.use(helmet());
-app.use(morgan("dev"));
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(morgan("dev"));
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 // Make upload middleware available to routes
@@ -100,12 +82,30 @@ app.use((req, res, next) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 // app.use("/api", gatewayRoutes);
-app.use("/api/chat", chatRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/friends", friendRoutes);
+app.use("/api/chat", chatRoutes);
 app.use("/api/chat-group", chatGroupRoutes);
 
-// Initialize socket
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    status: "error",
+    message: "Something went wrong!",
+    error: process.env.NODE_ENV === "development" ? err.message : undefined,
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    status: "error",
+    message: "Route not found",
+  });
+});
+
+// Initialize socket connections
 initializeChatSocket(io);
 initializeChatGroupSocket(io);
 

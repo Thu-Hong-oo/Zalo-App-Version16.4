@@ -46,3 +46,103 @@ Nội dung tin nhắn gốc
 Người gửi gốc
 Thời gian chuyển tiếp
 Loại tin nhắn (text/file)
+
+`chatGroup/index.js`:
+
+1. **Lấy danh sách tin nhắn nhóm**
+   - Method: GET
+   - Endpoint: `/api/chat-group/:groupId/messages`
+   - Query params: 
+     - `limit` (mặc định: 50)
+     - `before` (mặc định: true)
+     - `lastEvaluatedKey` (cho phân trang)
+   - Yêu cầu: Authorization token
+
+   Trả về response dạng:
+   {
+  "status": "success",
+  "data": {
+    "messages": {
+      "21/4/2025": [
+        {
+          "content": "aloha nha",
+          "metadata": {},
+          "updatedAt": "2025-04-21T04:25:56.678Z",
+          "groupId": "29223937-60fc-47cf-8afe-f09d8dd49795",
+          "senderId": "554d27e4-eeca-469a-a87c-9f208a0533e4",
+          "status": "sent",
+          "createdAt": "2025-04-21T04:25:56.678Z",
+          "fileType": null,
+          "type": "text",
+          "groupMessageId": "8ed10c4f-9114-4ca9-948d-78a4c79337fc",
+          "isRecalled": false
+        }
+      ],
+      "20/4/2025": [
+        {
+          "content": "con chó kêu gâu gâu",
+          "metadata": {},
+          "updatedAt": "2025-04-20T16:40:34.527Z",
+          "groupId": "29223937-60fc-47cf-8afe-f09d8dd49795",
+          "senderId": "554d27e4-eeca-469a-a87c-9f208a0533e4",
+          "status": "sent",
+          "createdAt": "2025-04-20T16:40:34.527Z",
+          "fileType": null,
+          "type": "text",
+          "groupMessageId": "13f29624-9019-43a7-b0d6-2f8f3afa35b6",
+          "isRecalled": false
+        }
+      ]
+    },
+    "pagination": {
+      "hasMore": false,
+      "total": 2,
+      "lastEvaluatedKey": null
+    }
+  }
+}
+
+1.1. Lấy tin nhắn theo ngày
+- Method: GET
+   - Endpoint: `/api/chat-group/:groupId/messages?date=YYYY-MM-DD`
+
+
+2. **Gửi tin nhắn nhóm**
+   - Method: POST
+   - Endpoint: `/api/chat-group/:groupId/messages`
+     {
+       "content": "Nội dung tin nhắn",
+       "fileUrl": "URL file (nếu có)",
+       "fileType": "Loại file (nếu có)"
+     }
+   - Yêu cầu: Authorization token
+
+3. **Xóa tin nhắn nhóm**
+   - Method: DELETE
+   - Endpoint: `/api/chat-group/:groupId/messages/:messageId`
+   - Yêu cầu: Authorization token
+
+4. **Thu hồi tin nhắn nhóm**
+   - Method: PUT
+   - Endpoint: `/api/chat-group/:groupId/messages/:messageId/recall`
+   - Yêu cầu: Authorization token
+   - Giới hạn: Chỉ có thể thu hồi trong 24h
+
+5. **Chuyển tiếp tin nhắn nhóm/conservation(cá nhân chat 1-1)**
+   - Method: POST
+   - Endpoint: `/api/chat-group/:groupId/messages/forward`
+   - Body:
+     ```json
+     {
+       "sourceMessageId": "ID tin nhắn gốc",
+       "targetId": "ID nhóm/cuộc trò chuyện đích",
+       "targetType": "group/conversation"
+     }
+     ```
+   - Yêu cầu: Authorization token
+
+Tất cả các API đều:
+- Yêu cầu xác thực qua token
+- Kiểm tra quyền thành viên trong nhóm
+- Hỗ trợ realtime thông qua socket.io
+

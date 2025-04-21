@@ -21,7 +21,7 @@ const upload = multer({
 const getGroupMessages = async (req, res) => {
   try {
     const { groupId } = req.params;
-    const { lastEvaluatedKey, limit = 50, before = true } = req.query;
+    const { lastEvaluatedKey, limit = 50, before = true, date } = req.query;
     const userId = req.user.userId;
 
     // Kiểm tra quyền truy cập nhóm
@@ -43,13 +43,20 @@ const getGroupMessages = async (req, res) => {
     const params = {
       TableName: process.env.GROUP_MESSAGE_TABLE,
       IndexName: "groupIndex",
-      KeyConditionExpression: "groupId = :groupId",
+      KeyConditionExpression: date
+        ? "groupId = :groupId AND begins_with(createdAt, :datePrefix)"
+        : "groupId = :groupId",
       ExpressionAttributeValues: {
         ":groupId": groupId,
       },
       ScanIndexForward: !before,
       Limit: parseInt(limit),
     };
+
+    // Nếu có tham số date, thêm điều kiện lọc theo ngày
+    if (date) {
+      params.ExpressionAttributeValues[":datePrefix"] = date; // YYYY-MM-DD
+    }
 
     if (lastEvaluatedKey) {
       try {

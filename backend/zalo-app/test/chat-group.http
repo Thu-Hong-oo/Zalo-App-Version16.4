@@ -1,6 +1,12 @@
 ### Get user's groups Vân ở đây
 GET http://localhost:3000/api/users/554d27e4-eeca-469a-a87c-9f208a0533e4/groups
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MTQyMzE0LCJleHAiOjE3NDUyMjg3MTR9.r-K_saAYoVcWXQadddoDf2cNJfMA5EjDi_g36U9vE8w
+
+### Get Group Messages với date
+GET http://localhost:3000/api/chat-group/29223937-60fc-47cf-8afe-f09d8dd49795/messages?date=2025-04-21
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MTQyMzE0LCJleHAiOjE3NDUyMjg3MTR9.r-K_saAYoVcWXQadddoDf2cNJfMA5EjDi_g36U9vE8w
+Content-Type: application/json
+
 ### Get Group Messages
 GET http://localhost:3000/api/chat-group/29223937-60fc-47cf-8afe-f09d8dd49795/messages
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MTQyMzE0LCJleHAiOjE3NDUyMjg3MTR9.r-K_saAYoVcWXQadddoDf2cNJfMA5EjDi_g36U9vE8w
@@ -12,7 +18,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkM
 Content-Type: application/json
 
 {
-  "content": "con chó kêu gâu gâu",
+  "content": "con mều nha",
   "fileUrl": null,
   "fileType": null
 }
@@ -23,7 +29,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkM
 Content-Type: application/json 
 
 ### Recall Message (groupid, messageid)
-PUT http://localhost:3000/api/chat-group/29223937-60fc-47cf-8afe-f09d8dd49795/messages/13f29624-9019-43a7-b0d6-2f8f3afa35b6/recall
+PUT http://localhost:3000/api/chat-group/29223937-60fc-47cf-8afe-f09d8dd49795/messages/8ed10c4f-9114-4ca9-948d-78a4c79337fc/recall
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MTQyMzE0LCJleHAiOjE3NDUyMjg3MTR9.r-K_saAYoVcWXQadddoDf2cNJfMA5EjDi_g36U9vE8w
 
 ### Đăng nhập Vân ở đây
@@ -59,7 +65,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkM
 Content-Type: application/json
 
 {
-  "sourceMessageId": "13f29624-9019-43a7-b0d6-2f8f3afa35b6",
+  "sourceMessageId": "8ed10c4f-9114-4ca9-948d-78a4c79337fc",
   "targetId": "d8a5f5b9-ea1f-47cf-a1fd-b5ce9742fdc9",
   "targetType": "group"
 }
@@ -70,7 +76,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkM
 Content-Type: application/json
 
 {
-  "sourceMessageId": "13f29624-9019-43a7-b0d6-2f8f3afa35b6",
+  "sourceMessageId": "8ed10c4f-9114-4ca9-948d-78a4c79337fc",
   "targetId": "0123456789",
   "targetType": "conversation"
 }
