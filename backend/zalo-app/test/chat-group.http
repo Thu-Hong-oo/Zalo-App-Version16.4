@@ -17,23 +17,23 @@ Content-Type: application/json
 
 ### Send Group Message 
 POST http://localhost:3000/api/chat-group/29223937-60fc-47cf-8afe-f09d8dd49795/messages
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MTQyMzE0LCJleHAiOjE3NDUyMjg3MTR9.r-K_saAYoVcWXQadddoDf2cNJfMA5EjDi_g36U9vE8w
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MjMwNTczLCJleHAiOjE3NDUzMTY5NzN9.xRuejlgltQR7VXnJElU-thCYI7EUTvS_00E5GbNKeWg
 Content-Type: application/json
 
 {
-  "content": "demo các chức năng",
+  "content": "thu hồi jbjhftukkli",
   "fileUrl": null,
   "fileType": null
 }
 
 ### Delete Group Message by Vân ở đây( groupid, messageid)
-DELETE http://localhost:3000/api/chat-group/29223937-60fc-47cf-8afe-f09d8dd49795/messages/cf0aa89b-72a6-42b8-b575-a9f5c1f161fb
+DELETE http://localhost:3000/api/chat-group/29223937-60fc-47cf-8afe-f09d8dd49795/messages/712ef912-f68e-4e55-8d9c-d2078ef19ee0
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MTQyMzE0LCJleHAiOjE3NDUyMjg3MTR9.r-K_saAYoVcWXQadddoDf2cNJfMA5EjDi_g36U9vE8w
 Content-Type: application/json 
 
 ### Recall Message (groupid, messageid)
-PUT http://localhost:3000/api/chat-group/29223937-60fc-47cf-8afe-f09d8dd49795/messages/cf0aa89b-72a6-42b8-b575-a9f5c1f161fb/recall
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MTQyMzE0LCJleHAiOjE3NDUyMjg3MTR9.r-K_saAYoVcWXQadddoDf2cNJfMA5EjDi_g36U9vE8w
+PUT http://localhost:3000/api/chat-group/29223937-60fc-47cf-8afe-f09d8dd49795/messages/33de1608-102c-483f-b707-131171e29cd2/recall
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NTRkMjdlNC1lZWNhLTQ2OWEtYTg3Yy05ZjIwOGEwNTMzZTQiLCJwaG9uZSI6Ijg0Mzg5ODA0Mjg3IiwiaWF0IjoxNzQ1MjMwNTczLCJleHAiOjE3NDUzMTY5NzN9.xRuejlgltQR7VXnJElU-thCYI7EUTvS_00E5GbNKeWg
 
 ### Đăng nhập Vân ở đây
 POST http://localhost:3000/api/auth/login

@@ -175,6 +175,12 @@ const GroupMessageService = {
   },
 
   async recallMessage(groupId, messageId, userId) {
+    console.log("Starting recallMessage with params:", {
+      groupId,
+      messageId,
+      userId,
+    });
+
     const member = await GroupMemberService.getMember(groupId, userId);
     if (!member || !member.isActive) {
       throw new Error("Bạn không có quyền thu hồi tin nhắn trong nhóm này");
@@ -182,6 +188,8 @@ const GroupMessageService = {
 
     // Lấy tin nhắn gốc
     const originalMessage = await getMessageById(messageId, groupId);
+    console.log("Original message:", originalMessage);
+
     if (!originalMessage) {
       throw new Error("Không tìm thấy tin nhắn");
     }
@@ -197,17 +205,57 @@ const GroupMessageService = {
       throw new Error("Không thể thu hồi tin nhắn sau 24 h");
     }
 
+    // Cập nhật trạng thái tin nhắn gốc
+    const updateParams = {
+      TableName: process.env.GROUP_MESSAGE_TABLE,
+      Key: {
+        groupMessageId: messageId,
+        createdAt: originalMessage.createdAt,
+      },
+      UpdateExpression: "SET #status = :status, metadata = :metadata",
+      ExpressionAttributeNames: {
+        "#status": "status",
+      },
+      ExpressionAttributeValues: {
+        ":status": "recalled",
+        ":metadata": {
+          ...originalMessage.metadata,
+          recalledBy: userId,
+          recalledAt: new Date().toISOString(),
+        },
+      },
+    };
+
+    console.log(
+      "DynamoDB update params:",
+      JSON.stringify(updateParams, null, 2)
+    );
+
+    try {
+      await dynamoDB.update(updateParams).promise();
+      console.log("Successfully updated original message status");
+    } catch (error) {
+      console.error("Error updating original message:", error);
+      console.error("Error details:", {
+        code: error.code,
+        message: error.message,
+        requestId: error.requestId,
+        statusCode: error.statusCode,
+      });
+      throw error;
+    }
+
     // Tạo bản ghi thu hồi
     const recallRecordId = uuidv4();
     const timestamp = new Date().toISOString();
 
     const recallRecord = {
       groupMessageId: recallRecordId,
+      createdAt: timestamp,
       groupId,
       senderId: userId,
       content: "Tin nhắn đã bị thu hồi",
       type: "recall_record",
-      createdAt: timestamp,
       updatedAt: timestamp,
       status: "recalled",
       metadata: {
@@ -219,13 +267,24 @@ const GroupMessageService = {
       },
     };
 
+    console.log(
+      "Creating recall record:",
+      JSON.stringify(recallRecord, null, 2)
+    );
+
     // Lưu bản ghi thu hồi
-    await dynamoDB
-      .put({
-        TableName: process.env.GROUP_MESSAGE_TABLE,
-        Item: recallRecord,
-      })
-      .promise();
+    try {
+      await dynamoDB
+        .put({
+          TableName: process.env.GROUP_MESSAGE_TABLE,
+          Item: recallRecord,
+        })
+        .promise();
+      console.log("Successfully created recall record");
+    } catch (error) {
+      console.error("Error creating recall record:", error);
+      throw error;
+    }
 
     return {
       messageId,

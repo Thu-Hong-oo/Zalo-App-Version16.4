@@ -101,7 +101,7 @@ const GroupChatScreen = () => {
     itemVisiblePercentThreshold: 50,
     minimumViewTime: 300,
   };
-
+  
   useEffect(() => {
     const fetchGroupDetails = async () => {
       if (!groupId) {
@@ -109,14 +109,14 @@ const GroupChatScreen = () => {
         setLoading(false);
         return;
       }
-
+      
       console.log(`Fetching details for groupId: ${groupId}`);
       setLoading(true);
       setError(null);
       try {
         const response = await getGroupInfo(groupId);
         console.log("Fetched group details:", response);
-        if (response && response.groupId) {
+        if (response && response.groupId) { 
           setGroupDetails(response);
           // Thêm tin nhắn hệ thống vào messages khi có groupDetails
           const systemMessage = createSystemMessage(response);
@@ -171,21 +171,21 @@ const GroupChatScreen = () => {
   const createSystemMessage = (details) => {
     if (!details || !details.members || details.members.length === 0)
       return null;
-
+    
     const creator = details.members.find((m) => m.userId === details.createdBy);
     const creatorName = creator?.name || "Người tạo";
-
+    
     // Lấy tên của tối đa 2 thành viên khác (không phải người tạo)
     const otherMemberNames = details.members
       .filter((m) => m.userId !== details.createdBy)
       .slice(0, 2)
       .map((m) => m.name || "Thành viên");
-
+      
     let displayText = creatorName;
     if (otherMemberNames.length > 0) {
       displayText += `, ${otherMemberNames.join(", ")}`;
     }
-
+    
     // Lấy avatar của những người được hiển thị tên
     const displayUserIds = [
       creator?.userId,
@@ -335,10 +335,8 @@ const GroupChatScreen = () => {
                     ...senderInfo,
                     content: "Tin nhắn đã bị thu hồi",
                     status: "recalled",
-                    type: "recall_record",
                     metadata: {
                       ...msg.metadata,
-                      originalMessageId: msg.groupMessageId,
                       recalledBy: recallRecord.metadata.recalledBy,
                       recalledAt: recallRecord.metadata.recalledAt,
                     },
@@ -450,6 +448,7 @@ const GroupChatScreen = () => {
 
         newSocket.on("group-message-recalled", (recallData) => {
           if (recallData.groupId === groupId) {
+            console.log("Received recall event:", recallData);
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.groupMessageId === recallData.messageId
@@ -457,10 +456,8 @@ const GroupChatScreen = () => {
                       ...msg,
                       content: "Tin nhắn đã bị thu hồi",
                       status: "recalled",
-                      type: "recall_record",
                       metadata: {
                         ...msg.metadata,
-                        originalMessageId: msg.groupMessageId,
                         recalledBy: recallData.recalledBy,
                         recalledAt: recallData.recalledAt,
                       },
@@ -473,57 +470,19 @@ const GroupChatScreen = () => {
 
         newSocket.on("group-message-deleted", (deleteData) => {
           if (deleteData.groupId === groupId) {
+            console.log("Received delete event:", deleteData);
             // Chỉ ẩn tin nhắn nếu người dùng hiện tại là người xóa
             if (deleteData.deletedBy === userId) {
               setMessages((prev) =>
                 prev.filter(
-                  (msg) => msg.groupMessageId !== deleteData.messageId
+                  (msg) => msg.groupMessageId !== deleteData.deletedMessageId
                 )
               );
               // Thêm vào danh sách tin nhắn đã xóa
               setDeletedMessages(
-                (prev) => new Set([...prev, deleteData.messageId])
+                (prev) => new Set([...prev, deleteData.deletedMessageId])
               );
             }
-          }
-        });
-
-        newSocket.on("message-sent", (response) => {
-          console.log("Message sent response received:", response);
-          if (response) {
-            setMessages((prev) => {
-              const updatedMessages = prev.map((msg) => {
-                if (
-                  msg.tempId === response.tempId ||
-                  msg.groupMessageId === response.tempId
-                ) {
-                  return {
-                    ...msg,
-                    groupMessageId:
-                      response.groupMessageId || msg.groupMessageId,
-                    status: "sent",
-                    isTempId: false,
-                    createdAt: response.createdAt || msg.createdAt,
-                  };
-                }
-                return msg;
-              });
-              return updatedMessages;
-            });
-          }
-        });
-
-        newSocket.on("error", (error) => {
-          console.log("Socket error received:", error);
-          if (error && error.tempId) {
-            setMessages((prev) => {
-              return prev.map((msg) => {
-                if (msg.tempId === error.tempId) {
-                  return { ...msg, status: "error" };
-                }
-                return msg;
-              });
-            });
           }
         });
 
@@ -547,7 +506,7 @@ const GroupChatScreen = () => {
     }
   };
 
-  const handleSendMessage = async () => {
+  const handleSendMessage = () => {
     if (!message.trim() && !selectedFiles.length) return;
 
     try {
@@ -628,8 +587,7 @@ const GroupChatScreen = () => {
         return;
       }
 
-      const messageAge =
-        Date.now() - new Date(targetMessage.createdAt).getTime();
+      const messageAge = Date.now() - new Date(targetMessage.createdAt).getTime();
       const MAX_RECALL_TIME = 24 * 60 * 60 * 1000; // 24h
 
       if (messageAge > MAX_RECALL_TIME) {
@@ -640,52 +598,27 @@ const GroupChatScreen = () => {
         return;
       }
 
-      // Cập nhật UI ngay lập tức
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.groupMessageId === messageId
-            ? {
-                ...msg,
-                content: "Tin nhắn đã bị thu hồi",
-                status: "recalled",
-                type: "recall_record",
-                metadata: {
-                  ...msg.metadata,
-                  originalMessageId: msg.groupMessageId,
-                  recalledBy: currentUserId,
-                  recalledAt: new Date().toISOString(),
-                },
-              }
-            : msg
-        )
-      );
-
       const response = await recallGroupMessage(groupId, messageId);
       if (response.status === "success") {
-        // Gửi sự kiện socket để thông báo cho các thành viên khác
-        socket?.emit("recall-group-message", {
-          messageId,
-          groupId,
-          recalledBy: currentUserId,
-          recalledAt: new Date().toISOString(),
-        });
-        Alert.alert("Thành công", "Tin nhắn đã được thu hồi");
-      } else {
-        // Nếu thu hồi thất bại, khôi phục tin nhắn gốc
+        console.log("Response:", response);
+
+        // Cập nhật UI ngay lập tức
         setMessages((prev) =>
           prev.map((msg) =>
             msg.groupMessageId === messageId
               ? {
                   ...msg,
-                  content: targetMessage.content,
-                  status: "sent",
-                  type: targetMessage.type,
-                  metadata: targetMessage.metadata,
+                  content: "Tin nhắn đã bị thu hồi",
+                  status: "recalled",
+                  metadata: {
+                    ...msg.metadata,
+                    recalledBy: response.data.recalledBy,
+                    recalledAt: response.data.recalledAt,
+                  },
                 }
               : msg
           )
         );
-        Alert.alert("Lỗi", response.message || "Không thể thu hồi tin nhắn");
       }
     } catch (error) {
       console.error("Error recalling message:", error);
@@ -729,42 +662,24 @@ const GroupChatScreen = () => {
         return;
       }
 
-      // Thêm vào danh sách tin nhắn đã xóa
-      setDeletedMessages((prev) => new Set([...prev, messageId]));
-
-      // Xóa tin nhắn ngay lập tức ở giao diện người dùng
-      setMessages((prev) =>
-        prev.filter((msg) => msg.groupMessageId !== messageId)
-      );
-
       const response = await deleteGroupMessage(groupId, messageId);
       if (response.status === "success") {
+        // Xóa tin nhắn ngay lập tức ở giao diện người dùng
+        setMessages((prev) =>
+          prev.filter((msg) => msg.groupMessageId !== messageId)
+        );
+
+        // Thêm vào danh sách tin nhắn đã xóa
+        setDeletedMessages((prev) => new Set([...prev, messageId]));
+
         // Gửi sự kiện socket để thông báo cho các thành viên khác
         socket?.emit("delete-group-message", {
-          messageId,
-          groupId,
-          deletedBy: currentUserId,
+          groupId: response.data.originalMessage.groupId,
+          deletedMessageId: response.data.deletedMessageId,
+          deletedBy: response.data.deletedBy,
         });
         Alert.alert("Thành công", "Tin nhắn đã được xóa");
       } else {
-        // Nếu xóa thất bại, khôi phục tin nhắn
-        setDeletedMessages((prev) => {
-          const newSet = new Set(prev);
-          newSet.delete(messageId);
-          return newSet;
-        });
-        setMessages((prev) => {
-          const updatedMessages = [...prev];
-          const index = updatedMessages.findIndex(
-            (msg) => msg.groupMessageId === messageId
-          );
-          if (index === -1) {
-            updatedMessages.push(targetMessage);
-          }
-          return updatedMessages.sort(
-            (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
-          );
-        });
         Alert.alert("Lỗi", response.message || "Không thể xóa tin nhắn");
       }
     } catch (error) {
@@ -826,24 +741,24 @@ const GroupChatScreen = () => {
       </SafeAreaView>
     );
   }
-
+  
   if (!groupDetails) {
-    return (
+     return (
       <SafeAreaView style={styles.containerCentered}>
         <Text>Không tìm thấy thông tin nhóm.</Text>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={{ color: "blue", marginTop: 10 }}>Quay lại</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
-  // --- Render UI với groupDetails ---
+  // --- Render UI với groupDetails --- 
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
-
+      
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -852,7 +767,7 @@ const GroupChatScreen = () => {
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-
+        
         <View style={styles.headerTitle}>
           <Text style={styles.title} numberOfLines={1}>
             {groupDetails.name}
@@ -861,14 +776,14 @@ const GroupChatScreen = () => {
             {groupDetails.members ? groupDetails.members.length : 0} thành viên
           </Text>
         </View>
-
+        
         <TouchableOpacity style={styles.headerButton}>
           <Ionicons name="menu" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
-
+      
       {/* Chat Messages */}
-      <ScrollView
+      <ScrollView 
         style={styles.messagesContainer}
         contentContainerStyle={styles.scrollContent}
         ref={scrollViewRef}
@@ -895,7 +810,7 @@ const GroupChatScreen = () => {
                 disabled={msg.status === "recalled"}
               >
                 {!isMe && (
-                  <Image
+              <Image 
                     source={{
                       uri: msg.senderAvatar || "https://via.placeholder.com/50",
                     }}
@@ -929,8 +844,8 @@ const GroupChatScreen = () => {
                         ]}
                       >
                         Tin nhắn đã bị thu hồi
-                      </Text>
-                    </View>
+          </Text>
+        </View>
                   ) : msg.type === "text" ? (
                     <Text
                       style={[
@@ -939,7 +854,7 @@ const GroupChatScreen = () => {
                       ]}
                     >
                       {msg.content}
-                    </Text>
+          </Text>
                   ) : msg.type === "file" ? (
                     <TouchableOpacity
                       style={styles.fileContainer}
@@ -958,8 +873,8 @@ const GroupChatScreen = () => {
                         numberOfLines={1}
                       >
                         {msg.content}
-                      </Text>
-                    </TouchableOpacity>
+             </Text>
+          </TouchableOpacity>
                   ) : null}
                   <View style={styles.messageFooter}>
                     <Text
@@ -969,10 +884,10 @@ const GroupChatScreen = () => {
                       ]}
                     >
                       {formatTime(msg.createdAt)}
-                    </Text>
+          </Text>
                     {isMe && (
                       <Text
-                        style={[
+                style={[
                           styles.messageStatus,
                           isMe
                             ? styles.myMessageStatus
@@ -988,15 +903,15 @@ const GroupChatScreen = () => {
                           : msg.status === "recalled"
                           ? "Đã thu hồi"
                           : ""}
-                      </Text>
+            </Text>
                     )}
-                  </View>
+        </View>
                 </View>
               </TouchableOpacity>
             );
           })}
       </ScrollView>
-
+      
       {/* Message Input */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -1006,7 +921,7 @@ const GroupChatScreen = () => {
         <TouchableOpacity style={styles.attachButton}>
           <Ionicons name="attach-outline" size={24} color="#666" />
         </TouchableOpacity>
-
+        
         <TextInput
           style={styles.input}
           placeholder="Nhập tin nhắn..."
@@ -1015,7 +930,7 @@ const GroupChatScreen = () => {
           onChangeText={setMessage}
           multiline
         />
-
+        
         <TouchableOpacity
           style={styles.sendButton}
           onPress={handleSendMessage}
@@ -1057,7 +972,7 @@ const GroupChatScreen = () => {
                 >
                   <Ionicons name="arrow-undo" size={24} color="#1877f2" />
                   <Text style={styles.optionText}>Thu hồi</Text>
-                </TouchableOpacity>
+        </TouchableOpacity>
               )}
 
             <TouchableOpacity
