@@ -63,6 +63,7 @@ const GroupChatScreen = () => {
   const [loading, setLoading] = useState(true); // State loading
   const [error, setError] = useState(null); // State lỗi
   const [messages, setMessages] = useState([]);
+  const [recalledMessages, setRecalledMessages] = useState(new Set()); // Thêm state mới để theo dõi tin nhắn đã thu hồi
   const [isTyping, setIsTyping] = useState(false);
   const [socket, setSocket] = useState(null);
   const [selectedMessage, setSelectedMessage] = useState(null);
@@ -101,7 +102,7 @@ const GroupChatScreen = () => {
     itemVisiblePercentThreshold: 50,
     minimumViewTime: 300,
   };
-  
+
   useEffect(() => {
     const fetchGroupDetails = async () => {
       if (!groupId) {
@@ -109,14 +110,14 @@ const GroupChatScreen = () => {
         setLoading(false);
         return;
       }
-      
+
       console.log(`Fetching details for groupId: ${groupId}`);
       setLoading(true);
       setError(null);
       try {
         const response = await getGroupInfo(groupId);
         console.log("Fetched group details:", response);
-        if (response && response.groupId) { 
+        if (response && response.groupId) {
           setGroupDetails(response);
           // Thêm tin nhắn hệ thống vào messages khi có groupDetails
           const systemMessage = createSystemMessage(response);
@@ -171,21 +172,21 @@ const GroupChatScreen = () => {
   const createSystemMessage = (details) => {
     if (!details || !details.members || details.members.length === 0)
       return null;
-    
+
     const creator = details.members.find((m) => m.userId === details.createdBy);
     const creatorName = creator?.name || "Người tạo";
-    
+
     // Lấy tên của tối đa 2 thành viên khác (không phải người tạo)
     const otherMemberNames = details.members
       .filter((m) => m.userId !== details.createdBy)
       .slice(0, 2)
       .map((m) => m.name || "Thành viên");
-      
+
     let displayText = creatorName;
     if (otherMemberNames.length > 0) {
       displayText += `, ${otherMemberNames.join(", ")}`;
     }
-    
+
     // Lấy avatar của những người được hiển thị tên
     const displayUserIds = [
       creator?.userId,
@@ -447,24 +448,43 @@ const GroupChatScreen = () => {
         });
 
         newSocket.on("group-message-recalled", (recallData) => {
+          console.log("=== Socket Recall Event Debug ===");
+          console.log("Raw recall data:", recallData);
+          console.log("Message ID:", recallData.messageId);
+          console.log("Group ID:", recallData.groupId);
+          console.log("Current group ID:", groupId);
+
           if (recallData.groupId === groupId) {
-            console.log("Received recall event:", recallData);
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.groupMessageId === recallData.messageId
-                  ? {
-                      ...msg,
-                      content: "Tin nhắn đã bị thu hồi",
-                      status: "recalled",
-                      metadata: {
-                        ...msg.metadata,
-                        recalledBy: recallData.recalledBy,
-                        recalledAt: recallData.recalledAt,
-                      },
-                    }
-                  : msg
-              )
-            );
+            console.log("Processing recall for current group");
+
+            // Cập nhật recalledMessages
+            setRecalledMessages((prev) => {
+              const newSet = new Set(prev);
+              newSet.add(recallData.messageId);
+              return newSet;
+            });
+
+            // Cập nhật messages
+            setMessages((prevMessages) => {
+              const updatedMessages = prevMessages.map((msg) => {
+                if (msg.groupMessageId === recallData.messageId) {
+                  console.log("Found target message, updating...");
+                  return {
+                    ...msg,
+                    content: "Tin nhắn đã bị thu hồi",
+                    status: "recalled",
+                    metadata: {
+                      ...msg.metadata,
+                      recalledBy: recallData.recalledBy,
+                      recalledAt: recallData.recalledAt,
+                    },
+                  };
+                }
+                return msg;
+              });
+              console.log("Updated messages:", updatedMessages);
+              return updatedMessages;
+            });
           }
         });
 
@@ -506,7 +526,7 @@ const GroupChatScreen = () => {
     }
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!message.trim() && !selectedFiles.length) return;
 
     try {
@@ -582,12 +602,9 @@ const GroupChatScreen = () => {
         Alert.alert("Lỗi", "Tin nhắn không tồn tại");
         return;
       }
-      if (targetMessage.isTempId || targetMessage.status === "sending") {
-        Alert.alert("Lỗi", "Không thể thu hồi tin nhắn đang gửi");
-        return;
-      }
 
-      const messageAge = Date.now() - new Date(targetMessage.createdAt).getTime();
+      const messageAge =
+        Date.now() - new Date(targetMessage.createdAt).getTime();
       const MAX_RECALL_TIME = 24 * 60 * 60 * 1000; // 24h
 
       if (messageAge > MAX_RECALL_TIME) {
@@ -600,25 +617,36 @@ const GroupChatScreen = () => {
 
       const response = await recallGroupMessage(groupId, messageId);
       if (response.status === "success") {
-        console.log("Response:", response);
+        // Thêm messageId vào set recalledMessages
+        setRecalledMessages((prev) => new Set([...prev, messageId]));
 
         // Cập nhật UI ngay lập tức
         setMessages((prev) =>
-          prev.map((msg) =>
-            msg.groupMessageId === messageId
-              ? {
-                  ...msg,
-                  content: "Tin nhắn đã bị thu hồi",
-                  status: "recalled",
-                  metadata: {
-                    ...msg.metadata,
-                    recalledBy: response.data.recalledBy,
-                    recalledAt: response.data.recalledAt,
-                  },
-                }
-              : msg
-          )
+          prev.map((msg) => {
+            if (msg.groupMessageId === messageId) {
+              return {
+                ...msg,
+                content: "Tin nhắn đã bị thu hồi",
+                status: "recalled",
+                metadata: {
+                  ...msg.metadata,
+                  recalledBy: response.data.recalledBy,
+                  recalledAt: response.data.recalledAt,
+                },
+              };
+            }
+            return msg;
+          })
         );
+
+        // Gửi sự kiện socket để thông báo cho các thành viên khác
+        socket?.emit("recall-group-message", {
+          groupId,
+          messageId,
+          content: "Tin nhắn đã bị thu hồi",
+          recalledBy: response.data.recalledBy,
+          recalledAt: response.data.recalledAt,
+        });
       }
     } catch (error) {
       console.error("Error recalling message:", error);
@@ -722,6 +750,35 @@ const GroupChatScreen = () => {
     }
   };
 
+  const loadMoreMessages = async () => {
+    if (isLoadingMore || !hasMoreMessages) return;
+
+    try {
+      setIsLoadingMore(true);
+      console.log("Loading more messages...");
+
+      const response = await getGroupMessages(groupId, {
+        limit: 20,
+        lastEvaluatedKey: lastEvaluatedKey,
+      });
+
+      if (response.status === "success" && response.data.messages) {
+        const newMessages = response.data.messages;
+
+        if (newMessages.length > 0) {
+          setMessages((prevMessages) => [...newMessages, ...prevMessages]);
+          setLastEvaluatedKey(response.data.lastEvaluatedKey);
+        } else {
+          setHasMoreMessages(false);
+        }
+      }
+    } catch (error) {
+      console.error("Error loading more messages:", error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.containerCentered}>
@@ -741,24 +798,24 @@ const GroupChatScreen = () => {
       </SafeAreaView>
     );
   }
-  
+
   if (!groupDetails) {
-     return (
+    return (
       <SafeAreaView style={styles.containerCentered}>
         <Text>Không tìm thấy thông tin nhóm.</Text>
-         <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={{ color: "blue", marginTop: 10 }}>Quay lại</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
-  // --- Render UI với groupDetails --- 
+  // --- Render UI với groupDetails ---
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -767,7 +824,7 @@ const GroupChatScreen = () => {
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        
+
         <View style={styles.headerTitle}>
           <Text style={styles.title} numberOfLines={1}>
             {groupDetails.name}
@@ -776,142 +833,151 @@ const GroupChatScreen = () => {
             {groupDetails.members ? groupDetails.members.length : 0} thành viên
           </Text>
         </View>
-        
+
         <TouchableOpacity style={styles.headerButton}>
           <Ionicons name="menu" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
-      
-      {/* Chat Messages */}
-      <ScrollView 
-        style={styles.messagesContainer}
-        contentContainerStyle={styles.scrollContent}
-        ref={scrollViewRef}
-        onContentSizeChange={() =>
-          scrollViewRef.current?.scrollToEnd({ animated: true })
-        }
-      >
-        {messages &&
-          messages.length > 0 &&
-          messages.map((msg) => {
-            if (msg.type === "system") return null;
 
-            const isMe = msg.isMe || msg.senderId === currentUserId;
-            return (
-              <TouchableOpacity
-                key={msg.groupMessageId || msg.id}
-                onLongPress={() =>
-                  isMe && msg.status !== "recalled" && showMessageOptions(msg)
-                }
+      {/* Chat Messages */}
+      <FlatList
+        ref={flatListRef}
+        data={messages}
+        keyExtractor={(item) => item.groupMessageId || item.id}
+        renderItem={({ item }) => {
+          if (item.type === "system") return null;
+
+          const isMe = item.isMe || item.senderId === currentUserId;
+          const isRecalled =
+            item.status === "recalled" ||
+            recalledMessages.has(item.groupMessageId);
+
+          return (
+            <TouchableOpacity
+              key={item.groupMessageId || item.id}
+              onLongPress={() =>
+                isMe && !isRecalled && showMessageOptions(item)
+              }
+              style={[
+                styles.messageContainer,
+                isMe ? styles.myMessage : styles.otherMessage,
+              ]}
+              disabled={isRecalled}
+            >
+              {!isMe && (
+                <Image
+                  source={{
+                    uri: item.senderAvatar || "https://via.placeholder.com/50",
+                  }}
+                  style={styles.avatar}
+                />
+              )}
+              <View
                 style={[
-                  styles.messageContainer,
-                  isMe ? styles.myMessage : styles.otherMessage,
+                  styles.messageBubble,
+                  isMe ? styles.myMessageBubble : styles.otherMessageBubble,
                 ]}
-                disabled={msg.status === "recalled"}
               >
                 {!isMe && (
-              <Image 
-                    source={{
-                      uri: msg.senderAvatar || "https://via.placeholder.com/50",
-                    }}
-                    style={styles.avatar}
-                  />
+                  <Text style={styles.senderName}>
+                    {item.senderName || "Người dùng"}
+                  </Text>
                 )}
-                <View
-                  style={[
-                    styles.messageBubble,
-                    isMe ? styles.myMessageBubble : styles.otherMessageBubble,
-                  ]}
-                >
-                  {!isMe && (
-                    <Text style={styles.senderName}>
-                      {msg.senderName || "Người dùng"}
-                    </Text>
-                  )}
-                  {msg.status === "recalled" || msg.isRecalled ? (
-                    <View style={styles.recalledMessageContainer}>
-                      <Ionicons
-                        name="refresh"
-                        size={16}
-                        color={isMe ? "rgba(255,255,255,0.6)" : "#999"}
-                        style={styles.recalledIcon}
-                      />
-                      <Text
-                        style={[
-                          styles.messageText,
-                          isMe ? styles.myMessageText : styles.otherMessageText,
-                          styles.recalledMessage,
-                        ]}
-                      >
-                        Tin nhắn đã bị thu hồi
-          </Text>
-        </View>
-                  ) : msg.type === "text" ? (
+                {isRecalled ? (
+                  <View style={styles.recalledMessageContainer}>
+                    <Ionicons
+                      name="refresh"
+                      size={16}
+                      color={isMe ? "rgba(255,255,255,0.6)" : "#999"}
+                      style={styles.recalledIcon}
+                    />
                     <Text
                       style={[
                         styles.messageText,
                         isMe ? styles.myMessageText : styles.otherMessageText,
+                        styles.recalledMessage,
                       ]}
                     >
-                      {msg.content}
-          </Text>
-                  ) : msg.type === "file" ? (
-                    <TouchableOpacity
-                      style={styles.fileContainer}
-                      onPress={() => handleFilePress(msg)}
-                    >
-                      <Ionicons
-                        name={getFileIcon(msg.fileType)}
-                        size={24}
-                        color={isMe ? "white" : "#666"}
-                      />
-                      <Text
-                        style={[
-                          styles.fileName,
-                          isMe ? styles.myMessageText : styles.otherMessageText,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {msg.content}
-             </Text>
-          </TouchableOpacity>
-                  ) : null}
-                  <View style={styles.messageFooter}>
+                      Tin nhắn đã bị thu hồi
+                    </Text>
+                  </View>
+                ) : item.type === "text" ? (
+                  <Text
+                    style={[
+                      styles.messageText,
+                      isMe ? styles.myMessageText : styles.otherMessageText,
+                    ]}
+                  >
+                    {item.content}
+                  </Text>
+                ) : item.type === "file" ? (
+                  <TouchableOpacity
+                    style={styles.fileContainer}
+                    onPress={() => handleFilePress(item)}
+                  >
+                    <Ionicons
+                      name={getFileIcon(item.fileType)}
+                      size={24}
+                      color={isMe ? "white" : "#666"}
+                    />
                     <Text
                       style={[
-                        styles.messageTime,
-                        isMe ? styles.myMessageTime : styles.otherMessageTime,
+                        styles.fileName,
+                        isMe ? styles.myMessageText : styles.otherMessageText,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.content}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+                <View style={styles.messageFooter}>
+                  <Text
+                    style={[
+                      styles.messageTime,
+                      isMe ? styles.myMessageTime : styles.otherMessageTime,
+                    ]}
+                  >
+                    {formatTime(item.createdAt)}
+                  </Text>
+                  {isMe && (
+                    <Text
+                      style={[
+                        styles.messageStatus,
+                        isMe
+                          ? styles.myMessageStatus
+                          : styles.otherMessageStatus,
                       ]}
                     >
-                      {formatTime(msg.createdAt)}
-          </Text>
-                    {isMe && (
-                      <Text
-                style={[
-                          styles.messageStatus,
-                          isMe
-                            ? styles.myMessageStatus
-                            : styles.otherMessageStatus,
-                        ]}
-                      >
-                        {msg.status === "sending"
-                          ? "Đang gửi..."
-                          : msg.status === "sent"
-                          ? "✓"
-                          : msg.status === "error"
-                          ? "✕"
-                          : msg.status === "recalled"
-                          ? "Đã thu hồi"
-                          : ""}
-            </Text>
-                    )}
-        </View>
+                      {item.status === "sending"
+                        ? "Đang gửi..."
+                        : item.status === "sent"
+                        ? "✓"
+                        : item.status === "error"
+                        ? "✕"
+                        : item.status === "recalled"
+                        ? "Đã thu hồi"
+                        : ""}
+                    </Text>
+                  )}
                 </View>
-              </TouchableOpacity>
-            );
-          })}
-      </ScrollView>
-      
+              </View>
+            </TouchableOpacity>
+          );
+        }}
+        onEndReached={loadMoreMessages}
+        onEndReachedThreshold={0.5}
+        inverted={false}
+        contentContainerStyle={styles.scrollContent}
+        ListFooterComponent={() =>
+          isLoadingMore ? (
+            <View style={styles.loadingMoreContainer}>
+              <ActivityIndicator size="small" color="#2196F3" />
+            </View>
+          ) : null
+        }
+      />
+
       {/* Message Input */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -921,7 +987,7 @@ const GroupChatScreen = () => {
         <TouchableOpacity style={styles.attachButton}>
           <Ionicons name="attach-outline" size={24} color="#666" />
         </TouchableOpacity>
-        
+
         <TextInput
           style={styles.input}
           placeholder="Nhập tin nhắn..."
@@ -930,7 +996,7 @@ const GroupChatScreen = () => {
           onChangeText={setMessage}
           multiline
         />
-        
+
         <TouchableOpacity
           style={styles.sendButton}
           onPress={handleSendMessage}
@@ -972,7 +1038,7 @@ const GroupChatScreen = () => {
                 >
                   <Ionicons name="arrow-undo" size={24} color="#1877f2" />
                   <Text style={styles.optionText}>Thu hồi</Text>
-        </TouchableOpacity>
+                </TouchableOpacity>
               )}
 
             <TouchableOpacity
@@ -1226,6 +1292,10 @@ const styles = StyleSheet.create({
   recalledMessage: {
     fontStyle: "italic",
     opacity: 0.7,
+  },
+  loadingMoreContainer: {
+    padding: 10,
+    alignItems: "center",
   },
 });
 
