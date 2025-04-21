@@ -3,6 +3,9 @@ import { getAccessToken } from '../../services/storage';
 import { getApiUrlAsync } from '../../config/api';
 import { AuthContext } from '../../App';
 import { useContext } from 'react';
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 
 // Khởi tạo API cho group
 export const initGroupApi = async () => {
@@ -223,6 +226,87 @@ export const getRecentContacts = async () => {
     };
   } catch (error) {
     console.error('Get recent contacts error:', error);
+    throw error;
+  }
+};
+
+// Cập nhật avatar nhóm
+export const updateGroupAvatar = async (groupId, avatar) => {
+  try {
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Không tìm thấy token xác thực');
+    }
+
+    if (!avatar || !avatar.uri) {
+      throw new Error('Không tìm thấy file ảnh');
+    }
+
+    console.log('Updating group avatar with data:', {
+      uri: avatar.uri,
+      type: avatar.type,
+      name: avatar.fileName
+    });
+
+    const formData = new FormData();
+    
+    // Xử lý file ảnh
+    const fileType = avatar.type || 'image/jpeg';
+    const fileName = avatar.fileName || 'avatar.jpg';
+    
+    // Nếu uri là base64
+    if (avatar.uri.startsWith('data:')) {
+      // Convert base64 to blob
+      const response = await fetch(avatar.uri);
+      const blob = await response.blob();
+      formData.append('avatar', blob, fileName);
+    } else {
+      // Nếu là file từ thư viện
+      formData.append('avatar', {
+        uri: avatar.uri,
+        type: fileType,
+        name: fileName
+      });
+    }
+
+    console.log('Sending form data with file name:', fileName);
+
+    const response = await api.put(`/groups/${groupId}/avatar`, formData, {
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+
+    console.log('Update avatar response:', response.data);
+    
+    if (!response.data || !response.data.data?.avatarUrl) {
+      throw new Error('Không nhận được URL ảnh từ server');
+    }
+    
+    return response.data.data.avatarUrl;
+  } catch (error) {
+    console.error('Avatar update error:', error);
+    if (error.response) {
+      console.error('Server error details:', {
+        status: error.response.status,
+        data: error.response.data,
+        headers: error.response.headers
+      });
+      throw new Error(error.response.data.message || 'Không thể cập nhật ảnh nhóm');
+    }
+    throw error;
+  }
+};
+
+export const updateGroupName = async (groupId, newName) => {
+  try {
+    const response = await api.put(`/groups/${groupId}/name`, {
+      name: newName
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Update group name error:', error);
     throw error;
   }
 }; 

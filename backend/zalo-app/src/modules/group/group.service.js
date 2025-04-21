@@ -127,6 +127,55 @@ class GroupService {
      return groups;
   }
 
+  // Cập nhật avatar nhóm
+  async updateGroupAvatar(groupId, avatarUrl) {
+    try {
+      const command = new UpdateCommand({
+        TableName: GROUPS_TABLE,
+        Key: {
+          groupId
+        },
+        UpdateExpression: 'SET avatar = :avatar',
+        ExpressionAttributeValues: {
+          ':avatar': avatarUrl
+        },
+        ReturnValues: 'ALL_NEW'
+      });
+
+      const result = await dynamodb.send(command);
+      return result.Attributes;
+    } catch (error) {
+      console.error('Update group avatar error:', error);
+      throw error;
+    }
+  }
+
+  // Cập nhật tên nhóm
+  async updateGroupName(groupId, name) {
+    try {
+      const command = new UpdateCommand({
+        TableName: GROUPS_TABLE,
+        Key: {
+          groupId
+        },
+        UpdateExpression: 'SET #name = :name',
+        ExpressionAttributeNames: {
+          '#name': 'name'
+        },
+        ExpressionAttributeValues: {
+          ':name': name
+        },
+        ReturnValues: 'ALL_NEW'
+      });
+
+      const result = await dynamodb.send(command);
+      return result.Attributes;
+    } catch (error) {
+      console.error('Update group name error:', error);
+      throw error;
+    }
+  }
+
 }
 
 module.exports = new GroupService(); 

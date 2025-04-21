@@ -58,6 +58,23 @@ const GroupChatScreen = () => {
       setLoading(false);
     }
   }, [groupId]);
+  
+
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      navigation.getParent()?.setOptions({
+        tabBarStyle: { display: 'none' },
+        tabBarVisible: false
+      });
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [navigation]);
+
+  
 
   // Fetch data when the screen comes into focus
   useFocusEffect(
