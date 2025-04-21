@@ -11,6 +11,7 @@ import {
   Switch,
   Modal,
   Alert,
+
   ActivityIndicator,
   FlatList,
   TextInput
@@ -33,10 +34,12 @@ import { AuthContext } from '../App';
 import COLORS from '../components/colors';
 import { socketService } from '../services/socketService';
 
+
 const GroupSettingsScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { groupId } = route.params;
+
   const { user } = useContext(AuthContext);
   console.log('Thông tin user để biet ai tạo nhóm, ', user);
   const [showLeaveGroupModal, setShowLeaveGroupModal] = useState(false);
@@ -161,10 +164,12 @@ const GroupSettingsScreen = () => {
     } catch (error) {
       console.error('Transfer admin error:', error);
       Alert.alert('Lỗi', 'Không thể chuyển quyền trưởng nhóm');
+
     } finally {
       setLoading(false);
     }
   };
+
 
   const handleLeaveGroup = async () => {
     try {
@@ -197,6 +202,7 @@ const GroupSettingsScreen = () => {
     } catch (error) {
       console.error('Leave group error:', error);
       Alert.alert('Lỗi', error.message || 'Không thể rời nhóm. Vui lòng thử lại.');
+
     } finally {
       setLoading(false);
     }
@@ -412,6 +418,7 @@ const GroupSettingsScreen = () => {
               style={[styles.modalButton, styles.confirmButton]}
               onPress={onConfirm}
               disabled={loading}
+
             >
               {loading ? (
                 <ActivityIndicator color="white" size="small" />
@@ -493,6 +500,7 @@ const GroupSettingsScreen = () => {
                 <ActivityIndicator color="white" size="small" />
               ) : (
                 <Text style={styles.confirmButtonText}>Lưu</Text>
+
               )}
             </TouchableOpacity>
           </View>
@@ -661,6 +669,7 @@ const GroupSettingsScreen = () => {
             </Text>
           </TouchableOpacity>
 
+
           {groupInfo && groupInfo.createdBy === user.userId && (
             <TouchableOpacity 
               style={[styles.menuItem, styles.dangerItem]}
@@ -673,6 +682,7 @@ const GroupSettingsScreen = () => {
               </Text>
             </TouchableOpacity>
           )}
+
         </View>
       </ScrollView>
 

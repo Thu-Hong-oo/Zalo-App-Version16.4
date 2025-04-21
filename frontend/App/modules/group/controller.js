@@ -124,10 +124,16 @@ export const removeGroupMember = async (groupId, userId) => {
 // Rời nhóm
 export const leaveGroup = async (groupId, userId) => {
   try {
-    const token = await getAccessToken();
-    if (!token) {
-      throw new Error('Không tìm thấy token xác thực');
+    const response = await fetch(`${API_URL}/api/groups/${groupId}/leave`, {
+      method: 'POST',
+      headers: await getAuthHeader(),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Không thể rời nhóm');
     }
+
 
     if (!userId) {
       throw new Error('Không tìm thấy thông tin người dùng');
@@ -135,6 +141,7 @@ export const leaveGroup = async (groupId, userId) => {
 
     const response = await api.delete(`/groups/${groupId}/members/${userId}`);
     return response.data;
+
   } catch (error) {
     console.error('Leave group error:', error);
     throw error;
@@ -144,13 +151,17 @@ export const leaveGroup = async (groupId, userId) => {
 // Giải tán nhóm
 export const dissolveGroup = async (groupId) => {
   try {
-    const token = await getAccessToken();
-    if (!token) {
-      throw new Error('Không tìm thấy token xác thực');
+    const response = await fetch(`${API_URL}/api/groups/${groupId}`, {
+      method: 'DELETE',
+      headers: await getAuthHeader(),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Không thể giải tán nhóm');
     }
 
-    const response = await api.delete(`/groups/${groupId}`);
-    return response.data;
+    return await response.json();
   } catch (error) {
     console.error('Dissolve group error:', error);
     throw error;
