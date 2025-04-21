@@ -133,7 +133,7 @@ export default function ChatListScreen({ navigation }) {
           isGroup: true,
           memberCount: group.memberCount,
           members: group.members || [],
-          avatar: null,
+          avatar: group.avatar|| null,
           unreadCount: 0,
           lastMessageAt: group.lastMessageAt || group.createdAt,
           memberRole: group.memberRole
@@ -370,9 +370,13 @@ export default function ChatListScreen({ navigation }) {
     >
       <View style={styles.avatarContainer}>
         {item.isGroup ? (
-          <View style={[styles.avatarTextContainer, { backgroundColor: '#1877f2' }]}>
-            <Ionicons name="people" size={24} color="#fff" />
-          </View>
+          item.avatar ? (
+            <Image source={{ uri: item.avatar }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatarTextContainer, { backgroundColor: '#1877f2' }]}>
+              <Ionicons name="people" size={24} color="#fff" />
+            </View>
+          )
         ) : item.avatar ? (
           <Image source={{ uri: item.avatar }} style={styles.avatar} />
         ) : (

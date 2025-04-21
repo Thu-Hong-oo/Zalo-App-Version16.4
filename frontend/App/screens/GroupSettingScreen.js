@@ -12,10 +12,12 @@ import {
   Modal,
   Alert,
   ActivityIndicator,
-  FlatList
+  FlatList,
+  TextInput
 } from 'react-native';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
 import { 
   leaveGroup, 
   dissolveGroup, 
@@ -23,7 +25,9 @@ import {
   getGroupMembers,
   updateMemberRole,
   addGroupMember,
-  removeGroupMember
+  removeGroupMember,
+  updateGroupAvatar,
+  updateGroupName
 } from '../modules/group/controller';
 import { AuthContext } from '../App';
 import COLORS from '../components/colors';
@@ -45,6 +49,9 @@ const GroupSettingsScreen = () => {
   const [selectedMember, setSelectedMember] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showEditNameModal, setShowEditNameModal] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [isEditingName, setIsEditingName] = useState(false);
 
   // Fetch group info and members
   const fetchGroupInfo = useCallback(async () => {
@@ -225,6 +232,79 @@ const GroupSettingsScreen = () => {
     }
   };
 
+  const handlePickImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Lỗi', 'Cần cấp quyền truy cập thư viện ảnh');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setLoading(true);
+        try {
+          const selectedImage = result.assets[0];
+          
+          // Format file object for multer
+          const file = {
+            uri: selectedImage.uri,
+            type: selectedImage.type || 'image/jpeg',
+            fileName: selectedImage.uri.split('/').pop() || 'avatar.jpg',
+            width: selectedImage.width,
+            height: selectedImage.height
+          };
+
+          console.log('Selected image:', selectedImage);
+          console.log('Formatted file:', file);
+          
+          const uploadResponse = await updateGroupAvatar(groupId, file);
+          console.log('Upload avatar response:', uploadResponse);
+          
+          // Refresh group info to get new avatar
+          await fetchGroupInfo();
+          Alert.alert('Thành công', 'Đã cập nhật ảnh nhóm');
+        } catch (error) {
+          console.error('Upload avatar error:', error);
+          if (error.response) {
+            console.error('Error response:', error.response.data);
+          }
+          Alert.alert('Lỗi', error.message || 'Không thể cập nhật ảnh nhóm');
+        } finally {
+          setLoading(false);
+        }
+      }
+    } catch (error) {
+      console.error('Pick image error:', error);
+      Alert.alert('Lỗi', 'Không thể chọn ảnh');
+    }
+  };
+
+  const handleUpdateGroupName = async () => {
+    if (!newGroupName.trim()) {
+      Alert.alert('Lỗi', 'Tên nhóm không được để trống');
+      return;
+    }
+
+    setIsEditingName(true);
+    try {
+      await updateGroupName(groupId, newGroupName.trim());
+      await fetchGroupInfo(); // Refresh group info
+      setShowEditNameModal(false);
+      Alert.alert('Thành công', 'Đã cập nhật tên nhóm');
+    } catch (error) {
+      Alert.alert('Lỗi', 'Không thể cập nhật tên nhóm');
+    } finally {
+      setIsEditingName(false);
+    }
+  };
+
   const renderMemberItem = ({ item }) => (
     <TouchableOpacity 
       style={styles.memberItem}
@@ -379,6 +459,48 @@ const GroupSettingsScreen = () => {
     </Modal>
   );
 
+  const renderEditNameModal = () => (
+    <Modal
+      visible={showEditNameModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowEditNameModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Đổi tên nhóm</Text>
+          <TextInput
+            style={styles.input}
+            value={newGroupName}
+            onChangeText={setNewGroupName}
+            placeholder="Nhập tên nhóm mới"
+            maxLength={50}
+          />
+          <View style={styles.modalButtons}>
+            <TouchableOpacity 
+              style={[styles.modalButton, styles.cancelButton]}
+              onPress={() => setShowEditNameModal(false)}
+              disabled={isEditingName}
+            >
+              <Text style={styles.cancelButtonText}>Hủy</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.modalButton, styles.confirmButton]}
+              onPress={handleUpdateGroupName}
+              disabled={isEditingName}
+            >
+              {isEditingName ? (
+                <ActivityIndicator color="white" size="small" />
+              ) : (
+                <Text style={styles.confirmButtonText}>Lưu</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0091FF" />
@@ -399,15 +521,34 @@ const GroupSettingsScreen = () => {
         <View style={styles.profileSection}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
-              <Ionicons name="people" size={40} color="#ccc" />
+              {groupInfo?.avatar ? (
+                <Image 
+                  source={{ uri: groupInfo.avatar }}
+                  style={styles.avatarImage}
+                />
+              ) : (
+                <Ionicons name="people" size={40} color="#ccc" />
+              )}
             </View>
-            <TouchableOpacity style={styles.cameraButton}>
+            <TouchableOpacity 
+              style={styles.cameraButton}
+              onPress={handlePickImage}
+              disabled={loading}
+            >
               <Ionicons name="camera" size={20} color="#666" />
             </TouchableOpacity>
           </View>
           
-          <TouchableOpacity style={styles.groupNameContainer}>
-            <Text style={styles.groupNameText}>Đặt tên nhóm</Text>
+          <TouchableOpacity 
+            style={styles.groupNameContainer}
+            onPress={() => {
+              setNewGroupName(groupInfo?.name || '');
+              setShowEditNameModal(true);
+            }}
+          >
+            <Text style={styles.groupNameText}>
+              {groupInfo?.name || 'Đặt tên nhóm'}
+            </Text>
             <Ionicons name="pencil" size={16} color="#666" />
           </TouchableOpacity>
         </View>
@@ -556,6 +697,7 @@ const GroupSettingsScreen = () => {
         'danger'
       )}
       {renderSuccessModal()}
+      {renderEditNameModal()}
     </SafeAreaView>
   );
 };
@@ -840,6 +982,19 @@ const styles = StyleSheet.create({
   },
   radioCircleSelected: {
     backgroundColor: COLORS.primary,
+  },
+  avatarImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 20,
+    fontSize: 16,
   },
 });
 
