@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,8 +15,9 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { Ionicons, FontAwesome, MaterialIcons, Feather } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { getGroupInfo } from '../modules/group/controller'; // Import hàm gọi API
+import { socketService } from '../services/socketService'; // Import socketService
 
 const GroupChatScreen = () => {
   const navigation = useNavigation();
@@ -28,36 +29,85 @@ const GroupChatScreen = () => {
   const [groupDetails, setGroupDetails] = useState(null); // State lưu chi tiết nhóm
   const [loading, setLoading] = useState(true); // State loading
   const [error, setError] = useState(null); // State lỗi
-  
-  useEffect(() => {
-    const fetchGroupDetails = async () => {
-      if (!groupId) {
-        setError('Không tìm thấy ID nhóm.');
-        setLoading(false);
-        return;
+
+  const fetchGroupDetails = useCallback(async () => {
+    if (!groupId) {
+      setError('Không tìm thấy ID nhóm.');
+      setLoading(false);
+      return;
+    }
+    
+    console.log(`Fetching details for groupId: ${groupId}`);
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await getGroupInfo(groupId);
+      console.log('Fetched group details:', response);
+      if (response && response.groupId) {
+        setGroupDetails(response);
+      } else {
+        // Handle case where group might not exist anymore or API error
+        setGroupDetails(null); // Clear details if group not found or invalid
+        setError('Không thể tải thông tin nhóm hoặc nhóm không tồn tại.');
       }
-      
-      console.log(`Fetching details for groupId: ${groupId}`);
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await getGroupInfo(groupId);
-        console.log('Fetched group details:', response);
-        if (response && response.groupId) { 
-          setGroupDetails(response); // Lấy trực tiếp từ response
-        } else {
-          throw new Error('Dữ liệu nhóm không hợp lệ từ API');
-        }
-      } catch (err) {
-        console.error('Error fetching group details:', err);
-        setError(err.message || 'Không thể tải thông tin nhóm.');
-      } finally {
-        setLoading(false);
+    } catch (err) {
+      console.error('Error fetching group details:', err);
+      setError(err.message || 'Không thể tải thông tin nhóm.');
+      setGroupDetails(null); // Clear details on error
+    } finally {
+      setLoading(false);
+    }
+  }, [groupId]);
+
+  // Fetch data when the screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchGroupDetails();
+    }, [fetchGroupDetails])
+  );
+
+  useEffect(() => {
+    // Setup socket listeners
+    const handleMemberAdded = (data) => {
+      if (data.groupId === groupId) {
+        console.log('Socket event: Member added', data);
+        fetchGroupDetails(); // Re-fetch group details
       }
     };
 
-    fetchGroupDetails();
-  }, [groupId]); // Chạy lại khi groupId thay đổi
+    const handleMemberRemoved = (data) => {
+      if (data.groupId === groupId) {
+        console.log('Socket event: Member removed', data);
+        fetchGroupDetails(); // Re-fetch group details
+      }
+    };
+
+    const handleGroupUpdated = (data) => {
+      if (data.groupId === groupId) {
+        console.log('Socket event: Group updated', data);
+        fetchGroupDetails(); // Re-fetch group details
+      }
+    };
+
+    socketService.addListener('group:memberAdded', handleMemberAdded);
+    socketService.addListener('group:memberRemoved', handleMemberRemoved);
+    socketService.addListener('group:updated', handleGroupUpdated);
+    socketService.joinGroup(groupId); // Join the group room
+
+    // Cleanup listeners on unmount
+    return () => {
+      socketService.removeListener('group:memberAdded', handleMemberAdded);
+      socketService.removeListener('group:memberRemoved', handleMemberRemoved);
+      socketService.removeListener('group:updated', handleGroupUpdated);
+      socketService.leaveGroup(groupId); // Leave the group room
+    };
+  }, [groupId, fetchGroupDetails]);
+
+  useEffect(() => {
+    navigation.setOptions({
+      tabBarVisible: false,
+    });
+  }, [navigation]);
 
   // Tạo tin nhắn hệ thống dựa trên dữ liệu nhóm
   const createSystemMessage = (details) => {
@@ -158,7 +208,7 @@ const GroupChatScreen = () => {
             {groupDetails.name} {/* Sử dụng tên từ API */}
           </Text>
           <Text style={styles.subtitle}>
-            {groupDetails.members ? groupDetails.members.length : initialMemberCount} thành viên {/* Sử dụng số lượng từ API nếu có */}
+            {groupDetails.members ? `${groupDetails.members.length} thành viên` : `${initialMemberCount} thành viên`} {/* Cập nhật số lượng từ API */}
           </Text>
         </View>
         

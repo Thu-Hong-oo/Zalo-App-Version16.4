@@ -9,8 +9,7 @@ router.get('/request/received/:userId', friendController.getReceivedRequests);
 router.post('/request/accept', friendController.acceptFriendRequest);
 router.post('/request/reject', friendController.rejectFriendRequest);
 router.post('/request/cancel', friendController.cancelFriendRequest);
-router.get('/friends/:userId', friendController.getFriendsList); 
-router.get('/:userId', friendController.getFriendsList);
+router.get('/list/:userId', friendController.getFriendsList);
 router.post("/delete", friendController.deleteFriend);
 
 

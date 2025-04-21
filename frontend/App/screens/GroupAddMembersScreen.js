@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { getFriendsList, getRecentContacts, addGroupMember, getGroupMembers, searchUserByPhone } from '../modules/group/controller';
+import { socketService } from '../services/socketService';
 
 const AddMembersScreen = () => {
   const navigation = useNavigation();
@@ -33,7 +34,36 @@ const AddMembersScreen = () => {
   useEffect(() => {
     loadContacts();
     loadGroupMembers();
+    setupSocketListeners();
+
+    return () => {
+      cleanupSocketListeners();
+    };
   }, [activeTab]);
+
+  const setupSocketListeners = () => {
+    socketService.addListener('group:memberAdded', handleMemberAdded);
+    socketService.addListener('group:memberRemoved', handleMemberRemoved);
+    socketService.joinGroup(groupId);
+  };
+
+  const cleanupSocketListeners = () => {
+    socketService.removeListener('group:memberAdded', handleMemberAdded);
+    socketService.removeListener('group:memberRemoved', handleMemberRemoved);
+    socketService.leaveGroup(groupId);
+  };
+
+  const handleMemberAdded = (data) => {
+    if (data.groupId === groupId) {
+      setGroupMembers(prev => [...prev, data.userId]);
+    }
+  };
+
+  const handleMemberRemoved = (data) => {
+    if (data.groupId === groupId) {
+      setGroupMembers(prev => prev.filter(id => id !== data.userId));
+    }
+  };
 
   const loadGroupMembers = async () => {
     try {
@@ -95,7 +125,7 @@ const AddMembersScreen = () => {
   const handleSearch = async (query) => {
     setSearchQuery(query);
     
-    if (query.length >= 10 && /^\d+$/.test(query)) { // Kiểm tra nếu là số điện thoại
+    if (query.length >= 10 && /^\d+$/.test(query)) {
       setIsSearching(true);
       try {
         const result = await searchUserByPhone(query);
@@ -129,7 +159,7 @@ const AddMembersScreen = () => {
       setLoading(true);
       await addGroupMember(groupId, contact.userId);
       Alert.alert('Thành công', 'Đã thêm thành viên vào nhóm');
-      await loadGroupMembers(); // Reload group members
+      await loadGroupMembers();
     
     } catch (error) {
       console.error('Error adding member:', error);
@@ -164,7 +194,7 @@ const AddMembersScreen = () => {
         />
         <View style={styles.contactInfo}>
           <Text style={styles.contactName}>{item.name || 'Không có tên'}</Text>
-
+          <Text style={styles.contactPhone}>{item.phone || 'Không có số điện thoại'}</Text>
         </View>
         {isExistingMember ? (
           <View style={styles.memberBadge}>

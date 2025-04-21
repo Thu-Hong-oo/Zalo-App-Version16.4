@@ -56,8 +56,8 @@ const NewGroupScreen = () => {
   };
 
   const handleCreateGroup = async () => {
-    if (selectedContacts.length < 2) {
-      Alert.alert('Thông báo', 'Vui lòng chọn ít nhất 2 thành viên');
+    if (selectedContacts.length < 1) {
+      Alert.alert('Thông báo', 'Vui lòng chọn ít nhất 1 thành viên khác để tạo nhóm');
       return;
     }
 
@@ -74,24 +74,37 @@ const NewGroupScreen = () => {
       if (!userData || !userData.userId) {
         throw new Error('Vui lòng đăng nhập lại');
       }
+      
+      const creatorUserId = userData.userId;
 
       let finalGroupName = groupName.trim();
       if (!finalGroupName) {
-        const memberNames = selectedContacts.map(c => c.name.split(' ')[0]).slice(0, 3);
-        finalGroupName = memberNames.join(', ');
+          const memberNames = [
+              userData.name?.split(' ')[0] || 'Bạn',
+              ...selectedContacts.map(c => c.name.split(' ')[0]).slice(0, 2)
+          ];
+          finalGroupName = memberNames.join(', ');
       }
+
+      const memberIds = [
+        creatorUserId,
+        ...selectedContacts.map(c => c.userId)
+      ];
 
       const groupData = {
         name: finalGroupName,
-        members: selectedContacts.map(c => c.userId),
-        createdBy: userData.userId
+        members: memberIds,
+        createdBy: creatorUserId
       };
 
-      console.log('Creating group with data:', groupData);
+      console.log('Creating group with data (including creator):', groupData);
       const response = await createGroup(groupData);
 
       if (response && response.groupId) {
-        navigation.goBack();
+        navigation.replace('GroupChat', {
+          groupId: response.groupId,
+          title: finalGroupName,
+        });
       } else {
         throw new Error('Không nhận được thông tin nhóm từ server');
       }

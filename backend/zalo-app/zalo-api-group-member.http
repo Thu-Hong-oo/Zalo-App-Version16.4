@@ -19,7 +19,7 @@ Authorization: Bearer {{authToken}}
     "eb6cab14-054b-4ab3-8e69-21b394ff75fd"
   ],
   "createdBy": "463850a1-75ba-4f09-bf7e-c0ca62b0ea18",
-  "name": "Nhóm jjk"
+  "name": "backend group bình thường"
 }
 
 ### Update group info
@@ -37,7 +37,7 @@ GET http://localhost:3000/api/groups/{{group_id}}
 Authorization: Bearer {{authToken}}
 
 ### Delete group
-DELETE http://localhost:3000/api/groups/{{group_id}}
+DELETE http://localhost:3000/api/groups/d8a5f5b9-ea1f-47cf-a1fd-b5ce9742fdc9
 Authorization: Bearer {{authToken}}
 
 ### Add member

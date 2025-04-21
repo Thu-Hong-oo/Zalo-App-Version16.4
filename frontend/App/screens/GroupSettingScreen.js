@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ import {
   FlatList
 } from 'react-native';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { 
   leaveGroup, 
   dissolveGroup, 
@@ -27,6 +27,7 @@ import {
 } from '../modules/group/controller';
 import { AuthContext } from '../App';
 import COLORS from '../components/colors';
+import { socketService } from '../services/socketService';
 
 const GroupSettingsScreen = () => {
   const navigation = useNavigation();
@@ -46,24 +47,77 @@ const GroupSettingsScreen = () => {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // Fetch group info and members
-  useEffect(() => {
-    fetchGroupInfo();
-  }, [groupId]);
-
-  const fetchGroupInfo = async () => {
+  const fetchGroupInfo = useCallback(async () => {
+    setLoading(true);
     try {
+      console.log(`Fetching group info for groupId: ${groupId}`);
       const info = await getGroupInfo(groupId);
-      setGroupInfo(info);
-      // Update members list from group info
-      setMembers(info.members);
-      // Check if current user is admin
-      const currentMember = info.members.find(m => m.userId === user.userId);
-      setIsAdmin(currentMember?.role === 'ADMIN');
+      console.log('Fetched group info:', info);
+      if (info && info.groupId) {
+        setGroupInfo(info);
+        setMembers(info.members || []);
+        const currentMember = info.members?.find(m => m.userId === user?.userId);
+        setIsAdmin(currentMember?.role === 'ADMIN');
+      } else {
+        // Handle group not found or invalid data
+        setGroupInfo(null);
+        setMembers([]);
+        setIsAdmin(false);
+        Alert.alert('Lỗi', 'Không thể tải thông tin nhóm hoặc nhóm không tồn tại.');
+        // Consider navigating back if group doesn't exist
+        // navigation.goBack();
+      }
     } catch (error) {
       console.error('Error fetching group info:', error);
       Alert.alert('Lỗi', 'Không thể tải thông tin nhóm');
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [groupId, user?.userId]);
+
+  // Fetch data when the screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchGroupInfo();
+    }, [fetchGroupInfo])
+  );
+
+  useEffect(() => {
+    // Setup socket listeners
+    const handleMemberAdded = (data) => {
+      if (data.groupId === groupId) {
+        console.log('Socket event (Settings): Member added', data);
+        fetchGroupInfo(); // Re-fetch group info
+      }
+    };
+
+    const handleMemberRemoved = (data) => {
+      if (data.groupId === groupId) {
+        console.log('Socket event (Settings): Member removed', data);
+        fetchGroupInfo(); // Re-fetch group info
+      }
+    };
+
+    const handleGroupUpdated = (data) => {
+      if (data.groupId === groupId) {
+        console.log('Socket event (Settings): Group updated', data);
+        fetchGroupInfo(); // Re-fetch group info
+      }
+    };
+
+    socketService.addListener('group:memberAdded', handleMemberAdded);
+    socketService.addListener('group:memberRemoved', handleMemberRemoved);
+    socketService.addListener('group:updated', handleGroupUpdated);
+    socketService.joinGroup(groupId); // Join the group room
+
+    // Cleanup listeners on unmount
+    return () => {
+      socketService.removeListener('group:memberAdded', handleMemberAdded);
+      socketService.removeListener('group:memberRemoved', handleMemberRemoved);
+      socketService.removeListener('group:updated', handleGroupUpdated);
+      socketService.leaveGroup(groupId); // Leave the group room
+    };
+  }, [groupId, fetchGroupInfo]);
 
   const handleTransferAdmin = async () => {
     if (!selectedMember) {
@@ -242,7 +296,7 @@ const GroupSettingsScreen = () => {
               (!selectedMember || loading) && styles.confirmTextDisabled
             ]}>
               {loading ? 'Đang xử lý...' : 'Xong'}
-            </Text>
+    </Text>
           </TouchableOpacity>
         </View>
         <FlatList
@@ -367,17 +421,17 @@ const GroupSettingsScreen = () => {
             <Text style={styles.actionText}>Tìm{'\n'}tin nhắn</Text>
           </TouchableOpacity>
 
-          {isAdmin && (
+         
             <TouchableOpacity 
               style={styles.actionButton}
               onPress={() => navigation.navigate('GroupAddMembers', { groupId })}
             >
-              <View style={styles.actionIconContainer}>
+            <View style={styles.actionIconContainer}>
                 <Ionicons name="person-add" size={24} color="#666" />
-              </View>
-              <Text style={styles.actionText}>Thêm{'\n'}thành viên</Text>
-            </TouchableOpacity>
-          )}
+            </View>
+            <Text style={styles.actionText}>Thêm{'\n'}thành viên</Text>
+          </TouchableOpacity>
+
 
           <TouchableOpacity style={styles.actionButton}>
             <View style={styles.actionIconContainer}>
@@ -396,38 +450,38 @@ const GroupSettingsScreen = () => {
               <Text style={styles.menuSubText}>https://zalo.me/g/dcjntb992</Text>
             </View>
           </TouchableOpacity>
-
+          
           <TouchableOpacity style={styles.menuItem}>
             <Ionicons name="images-outline" size={24} color="#666" style={styles.menuIcon} />
             <View style={styles.menuContent}>
-              <Text style={styles.menuText}>Ảnh, file, link</Text>
+            <Text style={styles.menuText}>Ảnh, file, link</Text>
               <View style={styles.mediaPreview}>
                 <Text style={styles.mediaPreviewText}>
-                  Hình mới nhất của trò chuyện sẽ xuất hiện tại đây
-                </Text>
-              </View>
+                Hình mới nhất của trò chuyện sẽ xuất hiện tại đây
+              </Text>
             </View>
+          </View>
           </TouchableOpacity>
-
+          
           <TouchableOpacity style={styles.menuItem}>
             <Ionicons name="calendar-outline" size={24} color="#666" style={styles.menuIcon} />
             <Text style={styles.menuText}>Lịch nhóm</Text>
           </TouchableOpacity>
-
+          
           <TouchableOpacity style={styles.menuItem}>
             <Ionicons name="bookmark-outline" size={24} color="#666" style={styles.menuIcon} />
             <Text style={styles.menuText}>Tin nhắn đã ghim</Text>
           </TouchableOpacity>
-
+          
           <TouchableOpacity style={styles.menuItem}>
             <Ionicons name="bar-chart-outline" size={24} color="#666" style={styles.menuIcon} />
             <Text style={styles.menuText}>Bình chọn</Text>
           </TouchableOpacity>
-
+          
           <TouchableOpacity style={styles.menuItem}>
             <Ionicons name="settings-outline" size={24} color="#666" style={styles.menuIcon} />
             <View style={styles.menuContent}>
-              <Text style={styles.menuText}>Cài đặt nhóm</Text>
+            <Text style={styles.menuText}>Cài đặt nhóm</Text>
             </View>
           </TouchableOpacity>
 

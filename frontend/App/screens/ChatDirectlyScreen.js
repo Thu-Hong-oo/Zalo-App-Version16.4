@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
   Dimensions,
   Linking,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { io } from "socket.io-client";
@@ -34,6 +35,16 @@ import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import ForwardMessageModal from "./ForwardMessageModal";
 import { getApiUrl, getBaseUrl,api } from "../config/api";
+import {
+  getFriendsList,
+  sendFriendRequest,
+  getSentFriendRequests,
+  getReceivedFriendRequests,
+  getUserInfoByPhone,
+  acceptFriendRequest,
+  rejectFriendRequest,
+} from "../modules/friend/controller";
+import { useFocusEffect } from '@react-navigation/native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -58,21 +69,77 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   const [showVideoPreview, setShowVideoPreview] = useState(false);
   const [forwardModalVisible, setForwardModalVisible] = useState(false);
   const flatListRef = useRef(null);
-  const { title = 'Chat', otherParticipantPhone, avatar } = route.params || {};
+  const { title: initialTitle = 'Chat', otherParticipantPhone, avatar: initialAvatar } = route.params || {};
 
-  useEffect(() => {
-    if (!otherParticipantPhone) {
-      Alert.alert('Lỗi', 'Không tìm thấy thông tin người dùng');
-      navigation.goBack();
-      return;
+  // State mới cho chức năng bạn bè
+  const [otherParticipantInfo, setOtherParticipantInfo] = useState(null);
+  const [friendshipStatus, setFriendshipStatus] = useState('loading'); // 'loading', 'not_friend', 'request_sent', 'request_received', 'friend'
+  const [headerTitle, setHeaderTitle] = useState(initialTitle);
+  const [headerAvatar, setHeaderAvatar] = useState(initialAvatar);
+  const [receivedRequestId, setReceivedRequestId] = useState(null);
+  const [isProcessingRequest, setIsProcessingRequest] = useState(false);
+
+  // Hàm kiểm tra trạng thái bạn bè
+  const checkFriendship = useCallback(async () => {
+    if (!otherParticipantPhone) return;
+    setFriendshipStatus('loading');
+    setReceivedRequestId(null);
+    try {
+      const userInfo = await getUserInfoByPhone(otherParticipantPhone);
+      if (!userInfo) {
+        console.warn('Could not get other participant info by phone');
+        setFriendshipStatus('not_friend');
+        setHeaderTitle(initialTitle);
+        setHeaderAvatar(initialAvatar);
+        setOtherParticipantInfo(null);
+        return;
+      }
+      setOtherParticipantInfo(userInfo);
+      setHeaderTitle(userInfo.name || initialTitle);
+      setHeaderAvatar(userInfo.avatar || initialAvatar);
+
+      const friends = await getFriendsList();
+      const isFriend = friends.some(friend => friend.userId === userInfo.userId);
+
+      if (isFriend) {
+        setFriendshipStatus('friend');
+        return;
+      }
+
+      const [sentRequests, receivedRequests] = await Promise.all([
+        getSentFriendRequests(),
+        getReceivedFriendRequests(),
+      ]);
+
+      const receivedRequestFromThisUser = receivedRequests.find(req => req.from === userInfo.userId);
+      const hasSentRequest = sentRequests.some(req => req.to === userInfo.userId);
+
+      if (receivedRequestFromThisUser) {
+        setFriendshipStatus('request_received');
+        setReceivedRequestId(receivedRequestFromThisUser.requestId);
+      } else if (hasSentRequest) {
+        setFriendshipStatus('request_sent');
+      } else {
+        setFriendshipStatus('not_friend');
+      }
+
+    } catch (error) {
+      console.error("Error checking friendship status:", error);
+      setFriendshipStatus('not_friend');
     }
+  }, [otherParticipantPhone, initialTitle, initialAvatar]);
 
-    initializeSocket();
-    loadChatHistory();
-    return () => {
-      if (socket) socket.disconnect();
-    };
-  }, []);
+  // Sử dụng useFocusEffect để load lại khi màn hình được focus
+  useFocusEffect(
+    useCallback(() => {
+      checkFriendship();
+      initializeSocket();
+      loadChatHistory();
+      return () => {
+        if (socket) socket.disconnect();
+      };
+    }, [checkFriendship])
+  );
 
   useEffect(() => {
     navigation.setOptions({
@@ -381,7 +448,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       const response = await deleteMessage(messageId);
       if (response.status === "success") {
         setMessages((prev) =>
-          prev.filter((msg) => msg.messageId !== messageId) // Remove deleted message from UI
+          prev.filter((msg) => msg.messageId !== messageId)
         );
         socket?.emit("message-deleted", {
           messageId,
@@ -533,7 +600,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
     if (isMyMessage && item.status === "deleted") return null;
 
     const handleFilePress = async () => {
-      if (item.status === "recalled") return; // Prevent interaction with recalled messages
+      if (item.status === "recalled") return;
       if (item.fileType?.startsWith("image/")) {
         setPreviewImage(item.content);
         setShowImagePreview(true);
@@ -670,6 +737,58 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
+  // Hàm xử lý gửi lời mời kết bạn
+  const handleAddFriend = async () => {
+    if (!otherParticipantInfo || !otherParticipantInfo.userId) {
+      Alert.alert("Lỗi", "Không thể lấy thông tin người dùng này.");
+      return;
+    }
+    try {
+      setFriendshipStatus('loading');
+      await sendFriendRequest(otherParticipantInfo.userId);
+      setFriendshipStatus('request_sent');
+      Alert.alert("Thành công", "Đã gửi lời mời kết bạn.");
+    } catch (error) {
+      console.error("Error sending friend request:", error);
+      Alert.alert("Lỗi", error.message || "Không thể gửi lời mời kết bạn.");
+      setFriendshipStatus('not_friend');
+    }
+  };
+
+  // Hàm xử lý chấp nhận lời mời
+  const handleAcceptRequest = async () => {
+    if (!receivedRequestId) return;
+    setIsProcessingRequest(true);
+    try {
+      await acceptFriendRequest(receivedRequestId);
+      setFriendshipStatus('friend');
+      setReceivedRequestId(null);
+      Alert.alert("Thành công", "Đã đồng ý kết bạn.");
+    } catch (error) {
+      console.error("Error accepting friend request:", error);
+      Alert.alert("Lỗi", error.message || "Không thể đồng ý kết bạn.");
+    } finally {
+      setIsProcessingRequest(false);
+    }
+  };
+
+  // Hàm xử lý từ chối lời mời
+  const handleRejectRequest = async () => {
+    if (!receivedRequestId) return;
+    setIsProcessingRequest(true);
+    try {
+      await rejectFriendRequest(receivedRequestId);
+      setFriendshipStatus('not_friend');
+      setReceivedRequestId(null);
+      Alert.alert("Thông báo", "Đã từ chối lời mời kết bạn.");
+    } catch (error) {
+      console.error("Error rejecting friend request:", error);
+      Alert.alert("Lỗi", error.message || "Không thể từ chối lời mời kết bạn.");
+    } finally {
+      setIsProcessingRequest(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1877f2" />
@@ -677,13 +796,72 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{title}</Text>
+        <Image source={{ uri: headerAvatar || 'https://via.placeholder.com/40' }} style={styles.headerAvatar} />
+        <View style={styles.headerUserInfo}>
+          <Text style={styles.headerTitle}>{headerTitle}</Text>
+          {friendshipStatus === 'not_friend' && (
+            <Text style={styles.strangerLabel}>Người lạ</Text>
+          )}
+        </View>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.headerActionButton}>
+            <Ionicons name="call-outline" size={24} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerActionButton}>
+            <Ionicons name="videocam-outline" size={24} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerActionButton}>
+            <Ionicons name="ellipsis-vertical" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {friendshipStatus === 'not_friend' && (
+        <View style={styles.friendRequestBanner}>
+          <Text style={styles.friendRequestText}>Bạn và người này chưa phải là bạn bè.</Text>
+          <TouchableOpacity style={styles.addFriendButton} onPress={handleAddFriend}>
+            <Ionicons name="person-add-outline" size={18} color="#fff" />
+            <Text style={styles.addFriendButtonText}>Kết bạn</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {friendshipStatus === 'request_sent' && (
+        <View style={[styles.friendRequestBanner, styles.requestSentBanner]}>
+          <Ionicons name="checkmark-circle-outline" size={20} color="#666" style={{ marginRight: 5 }}/>
+          <Text style={styles.requestSentText}>Đã gửi lời mời kết bạn</Text>
+        </View>
+      )}
+      {friendshipStatus === 'request_received' && receivedRequestId && (
+        <View style={styles.friendRequestBanner}> 
+          <Text style={styles.friendRequestText}>
+            {otherParticipantInfo?.name || 'Người này'} muốn kết bạn.
+          </Text>
+          <View style={styles.requestReceivedActions}>
+            <TouchableOpacity 
+              style={[styles.requestActionButton, styles.rejectButton]}
+              onPress={handleRejectRequest}
+              disabled={isProcessingRequest}
+            >
+              <Text style={styles.requestActionButtonText}>Từ chối</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.requestActionButton, styles.acceptButton]}
+              onPress={handleAcceptRequest}
+              disabled={isProcessingRequest}
+            >
+              {isProcessingRequest 
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={[styles.requestActionButtonText, styles.acceptButtonText]}>Đồng ý</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-   
       >
         <View style={styles.chatContainer}>
           <FlatList
@@ -853,15 +1031,81 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: "#1877f2",
-    padding: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
     flexDirection: "row",
     alignItems: "center",
   },
+  headerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginHorizontal: 10,
+  },
+  headerUserInfo: {
+    flex: 1,
+  },
   headerTitle: {
     color: "#FFFFFF",
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "bold",
-    marginLeft: 10,
+  },
+  strangerLabel: {
+    color: "rgba(255, 255, 255, 0.8)",
+    fontSize: 12,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginTop: 2,
+    overflow: 'hidden',
+  },
+  headerActions: {
+    flexDirection: 'row',
+  },
+  headerActionButton: {
+    marginLeft: 15,
+  },
+  friendRequestBanner: {
+    backgroundColor: '#fff',
+    padding: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  friendRequestText: {
+    fontSize: 14,
+    color: '#333',
+    flex: 1,
+    marginRight: 10,
+  },
+  addFriendButton: {
+    backgroundColor: '#1877f2',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  addFriendButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+    marginLeft: 5,
+  },
+  requestSentBanner: {
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  requestSentText: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
   },
   chatContainer: {
     flex: 1,
@@ -1051,6 +1295,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+  },
+  requestReceivedActions: {
+    flexDirection: 'row',
+  },
+  requestActionButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 5,
+    marginLeft: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 80,
+  },
+  rejectButton: {
+    backgroundColor: '#e0e0e0',
+  },
+  acceptButton: {
+    backgroundColor: '#1877f2',
+  },
+  requestActionButtonText: {
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  acceptButtonText: {
+    color: '#fff',
   },
 });
 
