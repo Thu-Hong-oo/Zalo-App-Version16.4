@@ -10,26 +10,50 @@ import {
   Image,
   Switch,
   Modal,
-  Alert
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { leaveGroup, dissolveGroup } from '../modules/group/controller';
+import COLORS from '../components/colors';
 
 const GroupSettingsScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
+  const { groupId } = route.params;
   const [showLeaveGroupModal, setShowLeaveGroupModal] = useState(false);
   const [showDissolveGroupModal, setShowDissolveGroupModal] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleLeaveGroup = () => {
-    setShowLeaveGroupModal(false);
-    // TODO: Implement leave group API call
-    navigation.goBack();
+  const handleLeaveGroup = async () => {
+    try {
+      setLoading(true);
+      await leaveGroup(groupId);
+      setShowLeaveGroupModal(false);
+      Alert.alert('Thành công', 'Bạn đã rời khỏi nhóm');
+      navigation.goBack();
+    } catch (error) {
+      console.error('Leave group error:', error);
+      Alert.alert('Lỗi', error.message || 'Không thể rời nhóm. Vui lòng thử lại.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDissolveGroup = () => {
-    setShowDissolveGroupModal(false);
-    // TODO: Implement dissolve group API call
-    navigation.goBack();
+  const handleDissolveGroup = async () => {
+    try {
+      setLoading(true);
+      await dissolveGroup(groupId);
+      setShowDissolveGroupModal(false);
+      Alert.alert('Thành công', 'Nhóm đã được giải tán');
+      navigation.goBack();
+    } catch (error) {
+      console.error('Dissolve group error:', error);
+      Alert.alert('Lỗi', error.message || 'Không thể giải tán nhóm. Vui lòng thử lại.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderConfirmationModal = (visible, title, message, onCancel, onConfirm, confirmText, type = 'normal') => (
@@ -47,14 +71,20 @@ const GroupSettingsScreen = () => {
             <TouchableOpacity 
               style={[styles.modalButton, styles.cancelButton]}
               onPress={onCancel}
+              disabled={loading}
             >
               <Text style={styles.cancelButtonText}>Hủy</Text>
             </TouchableOpacity>
             <TouchableOpacity 
               style={[styles.modalButton, styles.confirmButton]}
               onPress={onConfirm}
+              disabled={loading}
             >
-              <Text style={styles.confirmButtonText}>{confirmText}</Text>
+              {loading ? (
+                <ActivityIndicator color="white" size="small" />
+              ) : (
+                <Text style={styles.confirmButtonText}>{confirmText}</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -192,17 +222,23 @@ const GroupSettingsScreen = () => {
           <TouchableOpacity 
             style={[styles.menuItem, styles.dangerItem]}
             onPress={() => setShowLeaveGroupModal(true)}
+            disabled={loading}
           >
             <Ionicons name="exit-outline" size={24} color="#ff3b30" style={styles.menuIcon} />
-            <Text style={[styles.menuText, styles.dangerText]}>Rời nhóm</Text>
+            <Text style={[styles.menuText, styles.dangerText]}>
+              {loading ? 'Đang xử lý...' : 'Rời nhóm'}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
             style={[styles.menuItem, styles.dangerItem]}
             onPress={() => setShowDissolveGroupModal(true)}
+            disabled={loading}
           >
-            <Ionicons name="close-circle-outline" size={24} color="#ff3b30" style={styles.menuIcon} />
-            <Text style={[styles.menuText, styles.dangerText]}>Giải tán nhóm</Text>
+            <Ionicons name="trash-outline" size={24} color="#ff3b30" style={styles.menuIcon} />
+            <Text style={[styles.menuText, styles.dangerText]}>
+              {loading ? 'Đang xử lý...' : 'Giải tán nhóm'}
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
