@@ -1,17 +1,17 @@
-"use client";
-
 import React, { useState, useEffect } from "react";
 import { X, Search, Camera, Check, Users, UserPlus } from "lucide-react";
-import api from "../config/api";
+import { createGroup, getRecentContacts } from "../services/group";
 import './css/CreateGroupModal.css';
 
-const CreateGroupModal = ({ isOpen, onClose }) => {
+const CreateGroupModal = ({ isOpen, onClose, onGroupCreated }) => {
   const [groupName, setGroupName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedContacts, setSelectedContacts] = useState([]);
   const [recentChats, setRecentChats] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [fetchingContacts, setFetchingContacts] = useState(false);
   const [activeTab, setActiveTab] = useState("recent");
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -21,35 +21,84 @@ const CreateGroupModal = ({ isOpen, onClose }) => {
 
   const fetchRecentContacts = async () => {
     try {
-      const response = await api.get("/users/recent-contacts");
-      if (response.data.status === "success") {
-        setRecentChats(response.data.data);
+      setFetchingContacts(true);
+      setError(null);
+      console.log("Fetching recent contacts...");
+      
+      const response = await getRecentContacts();
+      console.log("Recent contacts response:", response);
+      
+      if (response.status === 'success' && response.data?.contacts) {
+        console.log("Setting recent chats:", response.data.contacts);
+        setRecentChats(response.data.contacts);
+      } else {
+        console.error("API response not in expected format:", response);
+        setRecentChats([]);
+        setError("Không thể tải danh sách liên hệ");
       }
     } catch (error) {
       console.error("Error fetching recent contacts:", error);
+      setRecentChats([]);
+      setError("Không thể tải danh sách liên hệ: " + (error.message || "Lỗi không xác định"));
+    } finally {
+      setFetchingContacts(false);
     }
   };
 
   const handleCreateGroup = async () => {
     if (selectedContacts.length < 2) {
-      alert("Vui lòng chọn ít nhất 2 thành viên");
+      setError("Vui lòng chọn ít nhất 2 thành viên");
       return;
     }
 
     try {
       setLoading(true);
-      const response = await api.post("/chat/groups", {
-        name: groupName || `Nhóm của ${selectedContacts.map(c => c.name).join(", ")}`,
-        members: selectedContacts.map(c => c.id)
-      });
+      setError(null);
+      console.log("Creating group with contacts:", selectedContacts);
+      
+      // Check if user is logged in
+      const userStr = localStorage.getItem('user');
+      if (!userStr) {
+        setError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        setTimeout(() => {
+          window.location.href = "/login";
+        }, 2000);
+        return;
+      }
+      
+      const groupData = {
+        name: groupName,
+        members: selectedContacts
+      };
+      
+      const response = await createGroup(groupData);
+      console.log("Group creation response:", response);
 
-      if (response.data.status === "success") {
+      if (response.status === 'success' && response.data) {
         alert("Tạo nhóm thành công!");
+        if (onGroupCreated) {
+          // Make sure we pass the complete group data
+          console.log("Calling onGroupCreated with:", response.data);
+          onGroupCreated(response.data);
+        }
         onClose();
+      } else {
+        console.error("Group creation not successful:", response);
+        setError("Có lỗi xảy ra khi tạo nhóm");
       }
     } catch (error) {
       console.error("Error creating group:", error);
-      alert("Có lỗi xảy ra khi tạo nhóm");
+      
+      // Handle specific error cases
+      if (error.message === "Vui lòng đăng nhập lại") {
+        setError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        // Optionally redirect to login page after a delay
+        setTimeout(() => {
+          window.location.href = "/login";
+        }, 2000);
+      } else {
+        setError(error.message || "Có lỗi xảy ra khi tạo nhóm");
+      }
     } finally {
       setLoading(false);
     }
@@ -57,9 +106,9 @@ const CreateGroupModal = ({ isOpen, onClose }) => {
 
   const toggleContactSelection = (contact) => {
     setSelectedContacts(prev => {
-      const isSelected = prev.some(c => c.id === contact.id);
+      const isSelected = prev.some(c => c.userId === contact.userId);
       if (isSelected) {
-        return prev.filter(c => c.id !== contact.id);
+        return prev.filter(c => c.userId !== contact.userId);
       } else {
         return [...prev, contact];
       }
@@ -67,8 +116,12 @@ const CreateGroupModal = ({ isOpen, onClose }) => {
   };
 
   const removeSelectedContact = (contactId) => {
-    setSelectedContacts(prev => prev.filter(c => c.id !== contactId));
+    setSelectedContacts(prev => prev.filter(c => c.userId !== contactId));
   };
+
+  const filteredContacts = recentChats.filter(contact => 
+    contact.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   if (!isOpen) return null;
 
@@ -120,31 +173,48 @@ const CreateGroupModal = ({ isOpen, onClose }) => {
             </button>
           </div>
 
+          {error && (
+            <div className="error-message">
+              {error}
+            </div>
+          )}
+
           <div className="contacts-list">
-            {recentChats.map((contact) => (
-              <div
-                key={contact.id}
-                className={`contact-item ${selectedContacts.some(c => c.id === contact.id) ? "selected" : ""}`}
-                onClick={() => toggleContactSelection(contact)}
-              >
-                <div className="contact-avatar">
-                  {contact.avatar ? (
-                    <img src={contact.avatar} alt={contact.name} />
-                  ) : (
-                    <div className="avatar-placeholder">
-                      {contact.name.charAt(0)}
-                    </div>
+            {fetchingContacts ? (
+              <div className="loading-contacts">
+                <div className="loading-spinner"></div>
+                <p>Đang tải danh sách liên hệ...</p>
+              </div>
+            ) : filteredContacts.length > 0 ? (
+              filteredContacts.map((contact) => (
+                <div
+                  key={contact.userId}
+                  className={`contact-item ${selectedContacts.some(c => c.userId === contact.userId) ? "selected" : ""}`}
+                  onClick={() => toggleContactSelection(contact)}
+                >
+                  <div className="contact-avatar">
+                    {contact.avatar ? (
+                      <img src={contact.avatar} alt={contact.name} />
+                    ) : (
+                      <div className="avatar-placeholder">
+                        {contact.name.charAt(0)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="contact-info">
+                    <span className="contact-name">{contact.name}</span>
+                    <span className="contact-phone">{contact.lastActive}</span>
+                  </div>
+                  {selectedContacts.some(c => c.userId === contact.userId) && (
+                    <Check className="check-icon" size={20} />
                   )}
                 </div>
-                <div className="contact-info">
-                  <span className="contact-name">{contact.name}</span>
-                  <span className="contact-phone">{contact.phone}</span>
-                </div>
-                {selectedContacts.some(c => c.id === contact.id) && (
-                  <Check className="check-icon" size={20} />
-                )}
+              ))
+            ) : (
+              <div className="no-contacts">
+                <p>Không có liên hệ gần đây</p>
               </div>
-            ))}
+            )}
           </div>
 
           {selectedContacts.length > 0 && (
@@ -152,11 +222,11 @@ const CreateGroupModal = ({ isOpen, onClose }) => {
               <h3>Đã chọn ({selectedContacts.length})</h3>
               <div className="selected-contacts-list">
                 {selectedContacts.map((contact) => (
-                  <div key={contact.id} className="selected-contact">
+                  <div key={contact.userId} className="selected-contact">
                     <span>{contact.name}</span>
                     <button
                       className="remove-button"
-                      onClick={() => removeSelectedContact(contact.id)}
+                      onClick={() => removeSelectedContact(contact.userId)}
                     >
                       <X size={16} />
                     </button>
