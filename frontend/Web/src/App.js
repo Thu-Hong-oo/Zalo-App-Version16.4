@@ -26,11 +26,18 @@ import {
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./App.css";
 
-import { io } from "socket.io-client";
-import Login from "./components/Login";
-import ChatDirectly from "./components/ChatDirectly";
-import ChatGroup from "./components/ChatGroup";
-import api, { getBaseUrl, getApiUrl } from "./config/api";
+
+import { io } from "socket.io-client"
+import Login from "./components/Login"
+import ChatDirectly from "./components/ChatDirectly"
+import GroupChat from "./components/GroupChat"
+import api, { getBaseUrl, getApiUrl, getSocketUrl } from "./config/api"
+import FriendList from "./components/FriendList";
+import FriendPanel from "./components/FriendPanel";
+import FriendRequests from "./components/FriendRequests";
+import AddFriendModal from "./components/AddFriendModal";
+import CreateGroupModal from "./components/CreateGroupModal";
+
 
 // Create socket context
 export const SocketContext = createContext(null);
@@ -49,19 +56,31 @@ const debounce = (func, wait) => {
 };
 
 function MainApp({ setIsAuthenticated }) {
-  const { socket, socketConnected } = useContext(SocketContext);
-  const [activeTab, setActiveTab] = useState("Ưu tiên");
-  const [currentSlide, setCurrentSlide] = useState(0);
-  const [user, setUser] = useState(null);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [chats, setChats] = useState([]);
+
+  const { socket, socketConnected } = useContext(SocketContext)
+  const [activeTab, setActiveTab] = useState("Ưu tiên")
+  const [currentSlide, setCurrentSlide] = useState(0)
+  const [user, setUser] = useState(null)
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const [chats, setChats] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [userCache, setUserCache] = useState({})
+  const [selectedChat, setSelectedChat] = useState(null)
+  const [lastUpdate, setLastUpdate] = useState(Date.now())
+  const [sidebarTab, setSidebarTab] = useState("chat"); // mặc định là chat
+  const [showAddFriendModal, setShowAddFriendModal] = useState(false);
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [groups, setGroups] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [userCache, setUserCache] = useState({});
-  const [selectedChat, setSelectedChat] = useState(null);
-  const [lastUpdate, setLastUpdate] = useState(Date.now());
-  const navigate = useNavigate();
+
+  const navigate = useNavigate()
+
+  const fetchUserInfo = async (phone) => {
+    try {
+      if (userCache[phone]) {
+        return userCache[phone]
+      }
+
 
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
@@ -113,11 +132,10 @@ function MainApp({ setIsAuthenticated }) {
       const response = await api.get("/chat/conversations");
       console.log("Conversations response:", response.data);
 
-      if (
-        response.data.status === "success" &&
-        response.data.data?.conversations
-      ) {
-        const newChats = await Promise.all(
+      
+      if (response.data.status === 'success' && response.data.data?.conversations) {
+        const directChats = await Promise.all(
+
           response.data.data.conversations.map(async (conv) => {
             try {
               const otherParticipant = conv.participant.isCurrentUser
@@ -136,16 +154,18 @@ function MainApp({ setIsAuthenticated }) {
                 id: conv.conversationId,
                 title: userInfo?.name || otherParticipant.phone,
                 message: conv.lastMessage?.content || "",
-                time: conv.lastMessage?.timestamp
-                  ? formatTime(conv.lastMessage.timestamp)
-                  : "",
+
+                time: formatTime(conv.lastMessage?.timestamp),
+
                 avatar: userInfo?.avatar,
                 isFromMe: conv.lastMessage?.isFromMe || false,
                 unreadCount: conv.unreadCount || 0,
                 otherParticipantPhone: otherParticipant.phone,
-                senderName: conv.lastMessage?.isFromMe
-                  ? "Bạn"
-                  : userInfo?.name || otherParticipant.phone,
+
+                lastMessageAt: conv.lastMessage?.timestamp,
+                type: 'direct',
+                senderName: conv.lastMessage?.isFromMe ? 'Bạn' : (userInfo?.name || otherParticipant.phone)
+
               };
             } catch (error) {
               console.error("Error processing conversation:", error);
@@ -154,11 +174,45 @@ function MainApp({ setIsAuthenticated }) {
           })
         );
 
-        const validChats = newChats.filter((chat) => chat !== null);
-        const isEqual = JSON.stringify(validChats) === JSON.stringify(chats);
-        if (!isEqual) {
-          setChats(validChats);
+
+        // Fetch groups
+        const userStr = localStorage.getItem('user');
+        if (!userStr) {
+          console.error('User not found in localStorage');
+          return;
         }
+        
+        const user = JSON.parse(userStr);
+        const groupsResponse = await api.get(`/users/${user.userId}/groups`);
+        console.log("Groups response:", groupsResponse.data);
+
+        let groupChats = [];
+        if (groupsResponse.data?.groups) {
+          groupChats = groupsResponse.data.groups.map(group => ({
+            id: group.groupId,
+            title: group.name,
+            message: group.lastMessage?.content || "Chưa có tin nhắn",
+            time: formatTime(group.lastMessageAt || group.createdAt),
+            avatar: group.avatar,
+            unreadCount: group.unreadCount || 0,
+            lastMessageAt: group.lastMessageAt || group.createdAt,
+            type: 'group',
+            memberCount: group.memberCount,
+            members: group.members || []
+          }));
+        }
+  
+        // Filter out any null conversations
+        const validDirectChats = directChats.filter(chat => chat !== null);
+        
+        // Combine and sort all chats by last message time
+        const allChats = [...validDirectChats, ...groupChats].sort((a, b) => {
+          const timeA = new Date(a.lastMessageAt || 0);
+          const timeB = new Date(b.lastMessageAt || 0);
+          return timeB - timeA;
+        });
+        
+        setChats(allChats);
 
         setError(null);
       } else {
@@ -240,8 +294,10 @@ function MainApp({ setIsAuthenticated }) {
       }
     }
     fetchConversations();
-    fetchGroups();
-  }, []); // Run only once on mount
+
+  }, []);
+   // Run only once on mount
+
 
   // Socket event handlers
   useEffect(() => {
@@ -329,7 +385,6 @@ function MainApp({ setIsAuthenticated }) {
     socket.on("message_read", handleMessageRead);
     socket.on("new_conversation", handleNewConversation);
 
-    // ✅ Dùng Page Visibility API để load lại khi user quay lại tab
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         fetchConversations();
@@ -431,14 +486,22 @@ function MainApp({ setIsAuthenticated }) {
   };
 
   const handleChatClick = (chat) => {
-    setSelectedChat(chat.otherParticipantPhone);
-    navigate(`/app/chat/${chat.otherParticipantPhone}`);
-  };
 
-  const handleGroupClick = (group) => {
-    setSelectedChat(group.id);
-    navigate(`/app/group/${group.id}`);
+    if (chat.type === 'group') {
+      setSelectedChat(chat.id);
+      navigate(`/app/groups/${chat.id}`);
+    } else {
+      setSelectedChat(chat.otherParticipantPhone);
+      navigate(`/app/chat/${chat.otherParticipantPhone}`);
+    }
+  }
+  const handleRefreshConversations = (conversationId) => {
+    fetchConversations(); // load lại toàn bộ danh sách chat
+    setSelectedChat(conversationId); // chuyển đến đoạn chat vừa tạo
+    navigate(`/app/chat/${conversationId}`);
   };
+  
+  
 
   const slides = [
     {
@@ -506,6 +569,38 @@ function MainApp({ setIsAuthenticated }) {
 
     return () => clearInterval(intervalId);
   }, [chats]);
+  const handleSearchPhone = async (phone) => {
+    try {
+      const res = await api.get(`/users/${phone}`);
+      console.log("Kết quả tìm kiếm:", res.data);
+      // Xử lý hiển thị kết quả hoặc gửi lời mời tại đây
+    } catch (err) {
+      console.error("Không tìm thấy người dùng");
+    }
+  };
+ 
+  const fetchGroups = async () => {
+    try {
+      // Get current user from localStorage
+      const userStr = localStorage.getItem('user');
+      if (!userStr) {
+        console.error('User not found in localStorage');
+        return;
+      }
+      
+      const user = JSON.parse(userStr);
+      const response = await api.get(`/users/${user.userId}/groups`);
+      if (response.data && response.data.groups) {
+        setGroups(response.data.groups);
+      }
+    } catch (error) {
+      console.error('Error fetching groups:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchGroups();
+  }, []);
 
   // Add this useEffect to force re-render when groups change
   useEffect(() => {
@@ -573,10 +668,13 @@ function MainApp({ setIsAuthenticated }) {
           <div className="nav-items">
             <button className="nav-item active">
               <MessageCircle size={24} />
-            </button>
-            <button className="nav-item">
-              <Users size={24} />
-            </button>
+            </button>        
+            <button
+                className="nav-item"
+                onClick={() => navigate("/app/contacts")}
+            >
+                <User size={24} />
+              </button>
             <button className="nav-item">
               <FileText size={24} />
             </button>
@@ -629,10 +727,15 @@ function MainApp({ setIsAuthenticated }) {
                 className="search-input"
               />
             </div>
-            <button className="action-button" title="Thêm bạn">
+            <button className="action-button" title="Thêm bạn" onClick={() => setShowAddFriendModal(true)}>
               <User size={20} />
             </button>
-            <button className="action-button" title="Tạo nhóm chat">
+
+            <button 
+              className="action-button" 
+              title="Tạo nhóm chat"
+              onClick={() => setShowCreateGroupModal(true)}
+            >
               <Users size={20} />
             </button>
           </div>
@@ -661,47 +764,34 @@ function MainApp({ setIsAuthenticated }) {
               <p>{error}</p>
               <button onClick={fetchConversations}>Thử lại</button>
             </div>
-          ) : activeTab === "Ưu tiên" ? (
-            <>
-              {/* Groups section */}
-              {groups.length > 0 && (
-                <div className="section-header">
-                  <h3>Nhóm chat</h3>
-                </div>
-              )}
-              {groups.map((group) => (
-                <div
-                  key={group.id}
-                  className={`chat-item ${
-                    selectedChat === group.id ? "active" : ""
-                  }`}
-                  onClick={() => handleGroupClick(group)}
-                >
-                  <div className="chat-avatar">
-                    {group.avatar ? (
-                      <img
-                        src={group.avatar}
-                        alt={group.title}
-                        onError={(e) => {
-                          e.target.onerror = null;
-                          e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                            group.title
-                          )}&background=random`;
-                        }}
-                      />
-                    ) : (
-                      <div className="avatar-placeholder">
-                        {group.title.slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                    {group.unreadCount > 0 && (
-                      <span className="unread-badge">{group.unreadCount}</span>
-                    )}
-                  </div>
-                  <div className="chat-info">
-                    <div className="chat-header">
-                      <h3 className="chat-title">{group.title}</h3>
-                      <span className="chat-time">{group.time}</span>
+
+          ) : chats.length === 0 ? (
+            <div className="empty-state">Không có cuộc trò chuyện nào</div>
+          ) : (
+            chats.map((chat) => (
+              <div
+                key={chat.id}
+                className={`chat-item ${selectedChat === (chat.type === 'group' ? chat.id : chat.otherParticipantPhone) ? 'active' : ''}`}
+                onClick={() => handleChatClick(chat)}
+              >
+                <div className="chat-avatar">
+                  {chat.avatar ? (
+                    <img 
+                      src={chat.avatar} 
+                      alt={chat.title} 
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(chat.title)}&background=random`;
+                      }}
+                    />
+                  ) : (
+                    <div className="avatar-placeholder">
+                      {chat.type === 'group' ? (
+                        <Users size={24} className="group-icon" />
+                      ) : (
+                        chat.title.slice(0, 2).toUpperCase()
+                      )}
+
                     </div>
                     <p
                       className={`chat-message ${
@@ -720,56 +810,18 @@ function MainApp({ setIsAuthenticated }) {
                     </div>
                   </div>
                 </div>
-              ))}
 
-              {/* Direct messages section */}
-              {chats.length > 0 && (
-                <div className="section-header">
-                  <h3>Tin nhắn trực tiếp</h3>
-                </div>
-              )}
-              {chats.map((chat) => (
-                <div
-                  key={chat.id}
-                  className={`chat-item ${
-                    selectedChat === chat.otherParticipantPhone ? "active" : ""
-                  }`}
-                  onClick={() => handleChatClick(chat)}
-                >
-                  <div className="chat-avatar">
-                    {chat.avatar ? (
-                      <img
-                        src={chat.avatar}
-                        alt={chat.title}
-                        onError={(e) => {
-                          e.target.onerror = null;
-                          e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                            chat.title
-                          )}&background=random`;
-                        }}
-                      />
-                    ) : (
-                      <div className="avatar-placeholder">
-                        {chat.title.slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                    {chat.unreadCount > 0 && (
-                      <span className="unread-badge">{chat.unreadCount}</span>
-                    )}
-                  </div>
-                  <div className="chat-info">
-                    <div className="chat-header">
-                      <h3 className="chat-title">{chat.title}</h3>
-                      <span className="chat-time">{chat.time}</span>
-                    </div>
-                    <p
-                      className={`chat-message ${
-                        chat.unreadCount > 0 ? "unread" : ""
-                      }`}
-                    >
-                      {chat.isFromMe ? "Bạn: " : ""}
-                      {chat.message}
-                    </p>
+                <div className="chat-info">
+                  <div className="chat-header">
+                    <h3 className="chat-title">
+                      {chat.type === 'group' && <Users size={16} className="me-1" />}
+                      {chat.title}
+                      {chat.type === 'group' && chat.memberCount && (
+                        <span className="member-count"> · {chat.memberCount}</span>
+                      )}
+                    </h3>
+                    <span className="chat-time">{chat.time}</span>
+
                   </div>
                 </div>
               ))}
@@ -783,13 +835,36 @@ function MainApp({ setIsAuthenticated }) {
       {/* Main Content */}
       <div className="main-content">
         <Routes>
-          <Route path="chat/:phone" element={<ChatDirectly />} />
-          <Route path="group/:groupId" element={<ChatGroup />} />
-          <Route
-            path="/"
-            element={
-              <div className="welcome-screen">
-                <div className="carousel-container">
+
+          <Route path="/" element={
+            <div className="welcome-screen">
+              <div className="carousel-container">
+                <button className="carousel-btn prev" onClick={handlePrevSlide}>
+                  <ChevronLeft size={24} />
+                </button>
+                <div className="carousel-content">
+                  {slides[currentSlide] && (
+                    <>
+                      <img
+                        src={slides[currentSlide].image}
+                        alt={slides[currentSlide].title}
+                        className="carousel-image"
+                      />
+                      <div className="welcome-text">
+                        <h2>{slides[currentSlide].title}</h2>
+                        <p>{slides[currentSlide].description}</p>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <button className="carousel-btn next" onClick={handleNextSlide}>
+                  <ChevronRight size={24} />
+                </button>
+              </div>
+              
+              <div className="carousel-indicators">
+                {slides.map((slide, index) => (
+
                   <button
                     className="carousel-btn prev"
                     onClick={handlePrevSlide}
@@ -831,10 +906,78 @@ function MainApp({ setIsAuthenticated }) {
                   ))}
                 </div>
               </div>
-            }
-          />
+
+            </div>
+          } />
+          <Route path="chat/:phone" element={<ChatDirectly />} />
+          <Route path="friends" element={<FriendList />} />
+          <Route path="contacts" element={<FriendPanel />} />
+          <Route path="chat/:conversationId" element={<ChatDirectly />} />
+          <Route path="chat/id/:userId" element={<ChatDirectly />} />
+          <Route path="groups/:groupId" element={<GroupChat />} />
+          <Route path="friend-requests" element={<FriendRequests onRefreshConversations={handleRefreshConversations} />} />
+
         </Routes>
       </div>
+      {showAddFriendModal && (
+  <AddFriendModal
+    currentUser={user} // ✅ Truyền toàn bộ user object
+    onClose={() => setShowAddFriendModal(false)}
+  />
+)}
+
+      {/* Modals */}
+      <CreateGroupModal 
+        isOpen={showCreateGroupModal}
+        onClose={() => setShowCreateGroupModal(false)}
+        onGroupCreated={(groupData) => {
+          console.log('Group created:', groupData);
+          
+          // Thêm group mới vào đầu danh sách chat
+          const newGroup = {
+            id: groupData.groupId || groupData.id,
+            type: 'group',
+            title: groupData.name,
+            message: 'Nhóm đã được tạo',
+            time: new Date().toLocaleTimeString('vi-VN', {
+              hour: '2-digit',
+              minute: '2-digit'
+            }),
+            avatar: groupData.avatar || null,
+            memberCount: groupData.memberCount || 0,
+            lastMessage: null,
+            unreadCount: 0
+          };
+          
+          setChats(prevChats => {
+            // Kiểm tra xem group đã tồn tại chưa
+            const existingGroupIndex = prevChats.findIndex(chat => 
+              chat.id === newGroup.id && chat.type === 'group'
+            );
+            
+            if (existingGroupIndex >= 0) {
+              // Nếu đã tồn tại, cập nhật thông tin
+              const updatedChats = [...prevChats];
+              updatedChats[existingGroupIndex] = {
+                ...updatedChats[existingGroupIndex],
+                ...newGroup
+              };
+              return updatedChats;
+            } else {
+              // Nếu chưa tồn tại, thêm vào đầu danh sách
+              return [newGroup, ...prevChats];
+            }
+          });
+          
+          // Chọn group mới tạo và điều hướng
+          setSelectedChat(newGroup.id);
+          navigate(`/app/groups/${newGroup.id}`);
+          
+          // Đóng modal
+          setShowCreateGroupModal(false);
+        }}
+      />
+
     </div>
   );
 }
@@ -849,28 +992,35 @@ function App() {
     const token = localStorage.getItem("accessToken");
     if (!token) return null;
 
-    const newSocket = io(getBaseUrl(), {
+    const newSocket = io(getSocketUrl(), {
       auth: { token },
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      transports: ["websocket"],
-      withCredentials: true,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+      transports: ["websocket", "polling"]
     });
 
     newSocket.on("connect", () => {
-      console.log("Socket connected!");
+      console.log("Socket connected successfully!");
       setSocketConnected(true);
     });
 
     newSocket.on("connect_error", (error) => {
-      console.error("Socket connection error:", error);
+      console.error("Socket connection error:", error.message);
       setSocketConnected(false);
     });
 
     newSocket.on("disconnect", (reason) => {
       console.log("Socket disconnected:", reason);
       setSocketConnected(false);
+      
+      // Attempt to reconnect if disconnected
+      if (reason === "io server disconnect") {
+        // Server disconnected us, try to reconnect
+        newSocket.connect();
+      }
     });
 
     return newSocket;
@@ -884,7 +1034,8 @@ function App() {
       if (newSocket) {
         setSocket(newSocket);
         return () => {
-          newSocket.close();
+          console.log("Cleaning up socket connection...");
+          newSocket.disconnect();
         };
       }
     }
@@ -1105,7 +1256,12 @@ function ChatItem({ avatars, name, message, time, count, hasMore }) {
         </div>
       </div>
     </div>
-  );
+
+    
+  )
+  
 }
 
-export default App;
+
+export default App 
+

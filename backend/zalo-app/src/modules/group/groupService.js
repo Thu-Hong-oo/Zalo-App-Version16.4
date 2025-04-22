@@ -501,6 +501,35 @@ class GroupService {
     const result = await dynamodb.send(new UpdateCommand(params));
     return result.Attributes;
   }
+
+  /**
+   * Update group avatar
+   * @param {string} groupId - Group ID
+   * @param {string} avatarUrl - URL of uploaded avatar
+   * @returns {Promise<Object>} Updated group
+   */
+  async updateGroupAvatar(groupId, avatarUrl) {
+    try {
+      const timestamp = new Date().toISOString();
+      
+      const params = {
+        TableName: TABLES.GROUPS,
+        Key: { groupId },
+        UpdateExpression: 'set avatar = :avatar, updatedAt = :updatedAt',
+        ExpressionAttributeValues: {
+          ':avatar': avatarUrl,
+          ':updatedAt': timestamp
+        },
+        ReturnValues: 'ALL_NEW'
+      };
+
+      const result = await dynamodb.send(new UpdateCommand(params));
+      return result.Attributes;
+    } catch (error) {
+      console.error('Error updating group avatar:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new GroupService(); 

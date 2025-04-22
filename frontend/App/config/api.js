@@ -3,7 +3,8 @@ import axios from "axios";
 import { Platform } from "react-native";
 
 // Default configuration
-const COMPUTER_IP = "192.168.2.118"; // Your computer's IP address
+
+const COMPUTER_IP = "192.168.1.16"; // Your computer's IP address
 
 const API_PORT = "3000";
 

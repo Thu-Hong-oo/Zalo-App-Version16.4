@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useLayoutEffect } from "react";
 import {
   View,
   Text,
@@ -33,6 +33,11 @@ export default function ChatListScreen({ navigation }) {
   const [isSearching, setIsSearching] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
 
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      tabBarStyle: { display: 'none' }
+    });
+  }, [navigation]);
   useEffect(() => {
     console.log("ChatScreen mounted");
     const loadData = async () => {
@@ -128,7 +133,7 @@ export default function ChatListScreen({ navigation }) {
           isGroup: true,
           memberCount: group.memberCount,
           members: group.members || [],
-          avatar: null,
+          avatar: group.avatar|| null,
           unreadCount: 0,
           lastMessageAt: group.lastMessageAt || group.createdAt,
           memberRole: group.memberRole,
@@ -365,11 +370,15 @@ export default function ChatListScreen({ navigation }) {
     >
       <View style={styles.avatarContainer}>
         {item.isGroup ? (
-          <View
-            style={[styles.avatarTextContainer, { backgroundColor: "#1877f2" }]}
-          >
-            <Ionicons name="people" size={24} color="#fff" />
-          </View>
+
+          item.avatar ? (
+            <Image source={{ uri: item.avatar }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatarTextContainer, { backgroundColor: '#1877f2' }]}>
+              <Ionicons name="people" size={24} color="#fff" />
+            </View>
+          )
+
         ) : item.avatar ? (
           <Image source={{ uri: item.avatar }} style={styles.avatar} />
         ) : (
@@ -474,7 +483,9 @@ export default function ChatListScreen({ navigation }) {
                 style={styles.modalOption}
                 onPress={() => {
                   setShowAddModal(false);
-                  navigation.navigate("AddFriend");
+
+                  navigation.navigate('FriendRequests');
+
                 }}
               >
                 <Ionicons name="person-add" size={24} color="#1877f2" />
