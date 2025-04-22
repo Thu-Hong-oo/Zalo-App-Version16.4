@@ -1247,7 +1247,7 @@ const GroupChatScreen = () => {
                   >
                     {item.fileType?.startsWith("image/") ? (
 
-              <Image 
+                 <Image 
 
                         source={{ uri: item.content }}
                         style={styles.fileImage}
@@ -1278,9 +1278,9 @@ const GroupChatScreen = () => {
                         <View style={styles.playButton}>
                           <Ionicons name="play" size={24} color="white" />
 
-            </View>
+             </View>
 
-                      </View>
+           </View>
                     ) : (
                       <View style={styles.documentContainer}>
                         <Ionicons
@@ -1300,7 +1300,7 @@ const GroupChatScreen = () => {
                           {item.content.split("/").pop() || "Tài liệu"}
 
             </Text>
-          </View>
+            </View>
 
                     )}
           </TouchableOpacity>
@@ -1337,7 +1337,7 @@ const GroupChatScreen = () => {
                 </View>
               </View>
           </TouchableOpacity>
-
+          
           );
         }}
         onEndReached={loadMoreMessages}

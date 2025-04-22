@@ -1,6 +1,6 @@
-import { io } from 'socket.io-client';
+import { io } from "socket.io-client";
 
-const SOCKET_URL = 'http://localhost:3001';
+const SOCKET_URL = "http://192.168.2.118:3001";
 
 class SocketIOService {
   constructor() {
@@ -10,24 +10,24 @@ class SocketIOService {
   connect() {
     if (!this.socket) {
       this.socket = io(SOCKET_URL, {
-        transports: ['websocket'],
+        transports: ["websocket"],
         autoConnect: true,
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
-        reconnectionAttempts: 5
+        reconnectionAttempts: 5,
       });
 
-      this.socket.on('connect', () => {
-        console.log('Socket connected');
+      this.socket.on("connect", () => {
+        console.log("Socket connected");
       });
 
-      this.socket.on('disconnect', () => {
-        console.log('Socket disconnected');
+      this.socket.on("disconnect", () => {
+        console.log("Socket disconnected");
       });
 
-      this.socket.on('connect_error', (error) => {
-        console.error('Socket connection error:', error);
+      this.socket.on("connect_error", (error) => {
+        console.error("Socket connection error:", error);
       });
     }
     return this.socket;
@@ -60,4 +60,4 @@ class SocketIOService {
 }
 
 const socketService = new SocketIOService();
-export default socketService; 
+export default socketService;
