@@ -456,12 +456,25 @@ const GroupChat = () => {
     const isVideo = fileType.startsWith("video/");
     const fileUrl = message.fileUrl || message.content;
 
+    // Extract filename from S3 URL if no fileName is provided
+    let displayFileName = message.fileName;
+    if (!displayFileName && fileUrl) {
+      try {
+        // Extract filename from URL (assumes URL format like https://media-zalolite.s3.ap-southeast-1.amazonaws.com/filename.ext)
+        const urlParts = fileUrl.split("/");
+        displayFileName = decodeURIComponent(urlParts[urlParts.length - 1]);
+      } catch (error) {
+        console.error("Error extracting filename from URL:", error);
+        displayFileName = "Unknown file";
+      }
+    }
+
     return (
       <div className="file-message">
         {isImage ? (
           <img
             src={fileUrl}
-            alt={message.fileName || "Image"}
+            alt={displayFileName}
             onClick={() => setFullscreenMedia({ type: "image", url: fileUrl })}
           />
         ) : isVideo ? (
@@ -474,12 +487,10 @@ const GroupChat = () => {
           </video>
         ) : (
           <div className="file-info">
-            <div className="file-icon">
-              <FileText size={24} />
-            </div>
+            <div className="file-icon">{getFileIcon(fileType)}</div>
             <div className="file-details">
-              <div className="file-name">
-                {message.fileName || "Unknown file"}
+              <div className="file-name" title={displayFileName}>
+                {displayFileName}
               </div>
               <div className="file-size">
                 {message.fileSize ? formatFileSize(message.fileSize) : ""}
@@ -487,7 +498,7 @@ const GroupChat = () => {
             </div>
             <a
               href={fileUrl}
-              download={message.fileName}
+              download={displayFileName}
               className="download-button"
               onClick={(e) => e.stopPropagation()}
             >
@@ -833,7 +844,7 @@ const GroupChat = () => {
           onClick={() => setShowMessageOptions(false)}
         >
           <div className="modal-content">
-            {selectedMessage.senderId === currentUserId && (
+            {selectedMessage.senderId === currentUserId ? (
               <>
                 <button
                   className="modal-button"
@@ -845,6 +856,19 @@ const GroupChat = () => {
                   <AlertCircle size={20} />
                   <span>Thu hồi</span>
                 </button>
+                <button
+                  className="modal-button"
+                  onClick={() => {
+                    handleDeleteMessage(selectedMessage.groupMessageId);
+                    setShowMessageOptions(false);
+                  }}
+                >
+                  <X size={20} />
+                  <span>Xóa</span>
+                </button>
+              </>
+            ) : (
+              <>
                 <button
                   className="modal-button"
                   onClick={() => {
@@ -896,7 +920,7 @@ const GroupChat = () => {
         style={{ display: "none" }}
         accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.rar"
         multiple
-        onChange={(e) => setSelectedFiles(Array.from(e.target.files))}
+        onChange={handleFileSelect}
       />
 
       {renderFullscreenModal()}
