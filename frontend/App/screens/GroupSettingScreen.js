@@ -32,13 +32,16 @@ import {
 } from '../modules/group/controller';
 import { AuthContext } from '../App';
 import COLORS from '../components/colors';
-import { socketService } from '../services/socketService';
+import io from 'socket.io-client';
+import { API_URL } from '../config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 
 const GroupSettingsScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const { groupId } = route.params;
+  const [socket, setSocket] = useState(null);
 
   const { user } = useContext(AuthContext);
   console.log('Thông tin user để biet ai tạo nhóm, ', user);
@@ -55,6 +58,47 @@ const GroupSettingsScreen = () => {
   const [showEditNameModal, setShowEditNameModal] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
+  const [showTransferSuccess, setShowTransferSuccess] = useState(false);
+  const [showLeaveSuccess, setShowLeaveSuccess] = useState(false);
+
+  // Initialize socket connection
+  useEffect(() => {
+    const initSocket = async () => {
+      try {
+        const token = await AsyncStorage.getItem('accessToken');
+        if (!token) {
+          console.error('No token found for socket connection');
+          return;
+        }
+
+        const newSocket = io(API_URL, {
+          auth: { token },
+          transports: ['websocket'],
+          reconnection: true
+        });
+
+        newSocket.on('connect', () => {
+          console.log('Socket connected successfully');
+        });
+
+        newSocket.on('error', (error) => {
+          console.error('Socket error:', error);
+        });
+
+        setSocket(newSocket);
+
+        return () => {
+          if (newSocket) {
+            newSocket.disconnect();
+          }
+        };
+      } catch (error) {
+        console.error('Socket initialization error:', error);
+      }
+    };
+
+    initSocket();
+  }, []);
 
   // Fetch group info and members
   const fetchGroupInfo = useCallback(async () => {
@@ -67,6 +111,8 @@ const GroupSettingsScreen = () => {
         setGroupInfo(info);
         setMembers(info.members || []);
         const currentMember = info.members?.find(m => m.userId === user?.userId);
+        console.log('Current member:', currentMember);
+        console.log('Current member role:', currentMember?.role);
         setIsAdmin(currentMember?.role === 'ADMIN');
       } else {
         // Handle group not found or invalid data
@@ -74,8 +120,6 @@ const GroupSettingsScreen = () => {
         setMembers([]);
         setIsAdmin(false);
         Alert.alert('Lỗi', 'Không thể tải thông tin nhóm hoặc nhóm không tồn tại.');
-        // Consider navigating back if group doesn't exist
-        // navigation.goBack();
       }
     } catch (error) {
       console.error('Error fetching group info:', error);
@@ -115,17 +159,17 @@ const GroupSettingsScreen = () => {
       }
     };
 
-    socketService.addListener('group:memberAdded', handleMemberAdded);
-    socketService.addListener('group:memberRemoved', handleMemberRemoved);
-    socketService.addListener('group:updated', handleGroupUpdated);
-    socketService.joinGroup(groupId); // Join the group room
+    socket?.addListener('group:memberAdded', handleMemberAdded);
+    socket?.addListener('group:memberRemoved', handleMemberRemoved);
+    socket?.addListener('group:updated', handleGroupUpdated);
+    socket?.joinGroup(groupId); // Join the group room
 
     // Cleanup listeners on unmount
     return () => {
-      socketService.removeListener('group:memberAdded', handleMemberAdded);
-      socketService.removeListener('group:memberRemoved', handleMemberRemoved);
-      socketService.removeListener('group:updated', handleGroupUpdated);
-      socketService.leaveGroup(groupId); // Leave the group room
+      socket?.removeListener('group:memberAdded', handleMemberAdded);
+      socket?.removeListener('group:memberRemoved', handleMemberRemoved);
+      socket?.removeListener('group:updated', handleGroupUpdated);
+      socket?.leaveGroup(groupId); // Leave the group room
     };
   }, [groupId, fetchGroupInfo]);
 
@@ -142,31 +186,29 @@ const GroupSettingsScreen = () => {
       // Then demote current admin to member
       await updateMemberRole(groupId, user.userId, 'MEMBER');
       
-      // Sau khi chuyển quyền thành công, rời nhóm
-      await leaveGroup(groupId, user.userId);
-      
       setShowTransferAdminModal(false);
+      setShowTransferSuccess(true);
       
-      // Reset navigation stack và chuyển về màn hình Chat
-      navigation.reset({
-        index: 0,
-        routes: [
-          {
-            name: 'ChatTab',
-            state: {
-              routes: [
-                { name: 'Chat' }
-              ]
-            }
-          }
-        ]
+      // Cập nhật lại thông tin nhóm sau 2 giây và đóng modal thành công
+      setTimeout(() => {
+        setShowTransferSuccess(false);
+        fetchGroupInfo(); // Refresh group info to update UI
+      }, 2000);
+
+      // Emit socket event để thông báo cho các thành viên khác
+      socket?.emit('group:updated', {
+        groupId,
+        type: 'TRANSFER_ADMIN',
+        newAdminId: selectedMember.userId,
+        previousAdminId: user.userId
       });
+
     } catch (error) {
       console.error('Transfer admin error:', error);
       Alert.alert('Lỗi', 'Không thể chuyển quyền trưởng nhóm');
-
     } finally {
       setLoading(false);
+      setSelectedMember(null); // Reset selected member
     }
   };
 
@@ -182,27 +224,53 @@ const GroupSettingsScreen = () => {
         return;
       }
 
+      // Leave the group through API
       await leaveGroup(groupId, user.userId);
-      setShowLeaveGroupModal(false);
       
-      // Reset navigation stack và chuyển về màn hình Chat
-      navigation.reset({
-        index: 0,
-        routes: [
-          {
-            name: 'ChatTab',
-            state: {
-              routes: [
-                { name: 'Chat' }
-              ]
+      setShowLeaveGroupModal(false);
+      setShowLeaveSuccess(true);
+
+      // Emit socket events if socket is connected
+      if (socket?.connected) {
+        console.log('Emitting leave group events...');
+        
+        socket.emit('group:member_leave', {
+          groupId,
+          userId: user.userId,
+          action: 'leave'
+        });
+
+        socket.emit('chat:update', {
+          type: 'group',
+          action: 'leave',
+          groupId: groupId,
+          userId: user.userId
+        });
+      } else {
+        console.log('Socket not connected, skipping events');
+      }
+      
+      // After 2 seconds, close modal and navigate
+      setTimeout(() => {
+        setShowLeaveSuccess(false);
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: 'ChatTab',
+              state: {
+                routes: [
+                  { name: 'Chat' }
+                ]
+              }
             }
-          }
-        ]
-      });
+          ]
+        });
+      }, 2000);
+
     } catch (error) {
       console.error('Leave group error:', error);
       Alert.alert('Lỗi', error.message || 'Không thể rời nhóm. Vui lòng thử lại.');
-
     } finally {
       setLoading(false);
     }
@@ -641,19 +709,19 @@ const GroupSettingsScreen = () => {
             <Ionicons name="people-outline" size={24} color="#666" style={styles.menuIcon} />
             <Text style={styles.menuText}>Xem thành viên</Text>
           </TouchableOpacity>
-          {groupInfo && groupInfo.createdBy === user.userId && (
-          <TouchableOpacity 
-            style={styles.menuItem}
-            onPress={() => setShowTransferAdminModal(true)}
-          >
-            <Ionicons name="person-outline" size={24} color="#666" style={styles.menuIcon} />
-            <Text style={styles.menuText}>Chuyển quyền trưởng nhóm</Text>
-          </TouchableOpacity>
-  )}
-          <TouchableOpacity style={[styles.menuItem, styles.dangerItem]}>
-            <Ionicons name="trash-outline" size={24} color="#ff3b30" style={styles.menuIcon} />
-            <Text style={[styles.menuText, styles.dangerText]}>Xóa lịch sử trò chuyện</Text>
-          </TouchableOpacity>
+
+          {isAdmin && (
+            <>
+              <TouchableOpacity 
+                style={styles.menuItem}
+                onPress={() => setShowTransferAdminModal(true)}
+              >
+                <Ionicons name="person-outline" size={24} color="#666" style={styles.menuIcon} />
+                <Text style={styles.menuText}>Chuyển quyền trưởng nhóm</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
         </View>
 
         {/* Danger Zone */}
@@ -669,8 +737,7 @@ const GroupSettingsScreen = () => {
             </Text>
           </TouchableOpacity>
 
-
-          {groupInfo && groupInfo.createdBy === user.userId && (
+          {isAdmin && (
             <TouchableOpacity 
               style={[styles.menuItem, styles.dangerItem]}
               onPress={() => setShowDissolveGroupModal(true)}
@@ -708,6 +775,42 @@ const GroupSettingsScreen = () => {
       )}
       {renderSuccessModal()}
       {renderEditNameModal()}
+      {/* Transfer Success Modal */}
+      {showTransferSuccess && (
+        <Modal
+          visible={showTransferSuccess}
+          transparent={true}
+          animationType="fade"
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.successIcon}>
+                <Ionicons name="checkmark-circle" size={50} color="#00C851" />
+              </View>
+              <Text style={styles.modalTitle}>Đã chuyển quyền trưởng nhóm thành công</Text>
+              <Text style={styles.modalMessage}>Bạn sẽ trở thành thành viên thông thường</Text>
+            </View>
+          </View>
+        </Modal>
+      )}
+      {/* Leave Success Modal */}
+      {showLeaveSuccess && (
+        <Modal
+          visible={showLeaveSuccess}
+          transparent={true}
+          animationType="fade"
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.successIcon}>
+                <Ionicons name="checkmark-circle" size={50} color="#00C851" />
+              </View>
+              <Text style={styles.modalTitle}>Đã rời khỏi nhóm thành công</Text>
+              <Text style={styles.modalMessage}>Bạn sẽ được chuyển về trang chủ...</Text>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 };
@@ -1005,6 +1108,10 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 20,
     fontSize: 16,
+  },
+  successIcon: {
+    alignItems: 'center',
+    marginBottom: 15,
   },
 });
 

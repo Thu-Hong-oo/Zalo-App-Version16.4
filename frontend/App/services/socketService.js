@@ -96,6 +96,14 @@ class SocketService {
       this.socket = null;
     }
   }
+
+  emit(event, data) {
+    if (this.socket) {
+      this.socket.emit(event, data);
+    } else {
+      console.warn('Socket not connected, cannot emit event:', event);
+    }
+  }
 }
 
 export const socketService = new SocketService(); 
