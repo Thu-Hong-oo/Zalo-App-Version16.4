@@ -87,7 +87,7 @@ export const updateGroupInfo = async (groupId, updateData) => {
 };
 
 // Thêm thành viên vào nhóm
-export const addGroupMember = async (groupId, userId) => {
+export const addGroupMember = async (groupId, userId, options = {}) => {
   try {
     const token = await getAccessToken();
     if (!token) {
@@ -96,17 +96,13 @@ export const addGroupMember = async (groupId, userId) => {
 
     const response = await api.post(`/groups/${groupId}/members`, {
       userId,
-      role: 'MEMBER'  // Backend expects this exact format
+      role: 'MEMBER'
     });
 
-    if (response.status === 201 || response.status === 200) {
-      return {
-        success: true,
-        data: response.data
-      };
-    } else {
-      throw new Error('Không thể thêm thành viên');
-    }
+    return {
+      success: true,
+      data: response.data
+    };
   } catch (error) {
     console.error('Add group member error:', error);
     return {

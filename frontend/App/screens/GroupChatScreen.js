@@ -37,16 +37,17 @@ import {
   deleteGroupMessage,
   getGroupInfo,
 } from "../modules/chat-group/chatGroupController";
-import { getAccessToken, getUserId } from "../services/storage";
+import { getAccessToken, getUserId, getUserInfo } from "../services/storage";
 import * as ImagePicker from "expo-image-picker";
 import { Video } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
-import ForwardMessageModal from "./ForwardMessageModal";
+import ForwardMessageModal from "../components/ForwardMessageModal";
 import { getApiUrl, getBaseUrl, api } from "../config/api";
 import axios from "axios";
 import { WebView } from 'react-native-webview';
+import { sendMessage, forwardMessage } from "../modules/chat/controller";
 // import jwt_decode from "jwt-decode"; // Tạm thời comment lại
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -667,31 +668,72 @@ const GroupChatScreen = () => {
     }
   };
 
-  const handleForwardMessage = async (receiverPhones) => {
+  const handleForwardMessage = async (receivers) => {
     try {
       if (!selectedMessage) {
         Alert.alert("Lỗi", "Không có tin nhắn được chọn");
         return;
       }
 
-      const promises = receiverPhones.map((receiverPhone) =>
-        forwardGroupMessage(
-          groupId,
-          selectedMessage.groupMessageId,
-          receiverPhone,
-          selectedMessage.type === "file"
-            ? selectedMessage.content
-            : selectedMessage.content
-        )
-      );
-      const results = await Promise.all(promises);
-      const allSuccessful = results.every((res) => res.status === "success");
+      console.log("Forwarding message:", {
+        selectedMessage,
+        receivers
+      });
 
-      if (allSuccessful) {
+      const results = await Promise.all(
+        receivers.map(async (receiver) => {
+          try {
+            // Nếu là chuyển tiếp đến cá nhân
+            if (receiver.type === 'conversation') {
+              console.log("Forwarding to personal chat:", {
+                messageId: selectedMessage.messageId || selectedMessage.groupMessageId,
+                receiverPhone: receiver.id,
+                content: selectedMessage.content
+              });
+
+              try {
+                const response = await api.post("/chat/messages/forward", {
+                  messageId: selectedMessage.messageId || selectedMessage.groupMessageId,
+                  receiverPhone: receiver.id,
+                  content: selectedMessage.content
+                });
+
+                if (response.data && response.data.status === "success") {
+                  console.log("Forward message success:", response.data);
+                  return { success: true, response: response.data };
+                }
+                
+                return { success: false, error: "Không nhận được phản hồi từ server" };
+              } catch (error) {
+                console.error("Forward message error:", error.response?.data || error.message);
+                return { success: false, error: error.response?.data || error.message };
+              }
+            }
+
+            // Nếu là chuyển tiếp đến nhóm - giữ nguyên logic cũ
+            const response = await forwardGroupMessage(
+              groupId,
+              selectedMessage.groupMessageId,
+              receiver.id,
+              receiver.type
+            );
+            return { success: response.status === "success", response };
+          } catch (error) {
+            console.error("Error forwarding to receiver:", receiver.id, error);
+            return { success: false, error };
+          }
+        })
+      );
+
+      const failedForwards = results.filter(r => !r.success);
+      console.log("Failed forwards:", failedForwards);
+
+      if (failedForwards.length === 0) {
         setForwardModalVisible(false);
         Alert.alert("Thành công", "Tin nhắn đã được chuyển tiếp");
       } else {
-        throw new Error("Có lỗi xảy ra khi chuyển tiếp tin nhắn");
+        const errorMessage = failedForwards[0].error?.message || "Không thể chuyển tiếp tin nhắn";
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error("Error forwarding message:", error);

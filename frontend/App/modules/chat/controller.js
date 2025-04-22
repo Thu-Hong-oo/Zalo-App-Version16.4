@@ -44,13 +44,56 @@ export const getChatHistory = async (otherParticipantPhone, options = {}) => {
 
 export const sendMessage = async (receiverPhone, content) => {
   try {
+    console.log("Sending message with params:", {
+      receiverPhone,
+      content
+    });
+
+    // Thêm token vào header
+    const token = await getAccessToken();
+    const config = {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    };
+
     const response = await api.post("/chat/message", {
       receiverPhone,
       content,
+    }, config);
+
+    console.log("Raw response from server:", {
+      status: response.status,
+      statusText: response.statusText,
+      data: response.data,
+      headers: response.headers
     });
-    return response.data;
+    
+    if (!response || !response.data) {
+      throw new Error("Không nhận được phản hồi từ server");
+    }
+
+    // Kiểm tra cấu trúc response
+    const messageData = response.data;
+    console.log("Message data:", messageData);
+
+    // Nếu response không có messageId nhưng có status success thì vẫn coi là thành công
+    if (messageData.status === "success") {
+      return messageData;
+    }
+
+    if (!messageData.messageId) {
+      throw new Error("Response không chứa messageId");
+    }
+
+    return messageData;
   } catch (error) {
-    console.error("❌ Error in sendMessage:", error);
+    console.error("❌ Error in sendMessage:", {
+      error: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      config: error.config
+    });
     throw error;
   }
 };
