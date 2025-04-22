@@ -9,7 +9,7 @@ const createGroupSchema = Joi.object({
 const updateGroupSchema = Joi.object({
   name: Joi.string().optional(),
   avatar: Joi.string().uri().optional()
-}).min(1);
+}).unknown(true);
 
 const addMemberSchema = Joi.object({
   userId: Joi.string().required(),

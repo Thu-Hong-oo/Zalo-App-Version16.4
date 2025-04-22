@@ -1,4 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+
 
 import {
   View,
@@ -36,16 +38,19 @@ import {
   deleteGroupMessage,
   getGroupInfo,
 } from "../modules/chat-group/chatGroupController";
-import { getAccessToken, getUserId } from "../services/storage";
+import { getAccessToken, getUserId, getUserInfo } from "../services/storage";
 import * as ImagePicker from "expo-image-picker";
 import { Video } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
-import ForwardMessageModal from "./ForwardMessageModal";
+import ForwardMessageModal from "../components/ForwardMessageModal";
 import { getApiUrl, getBaseUrl, api } from "../config/api";
 import axios from "axios";
-import { WebView } from "react-native-webview";
+
+import { WebView } from 'react-native-webview';
+import { sendMessage, forwardMessage } from "../modules/chat/controller";
+
 // import jwt_decode from "jwt-decode"; // Tạm thời comment lại
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -514,6 +519,45 @@ const GroupChatScreen = () => {
               (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
             );
           });
+
+          // Update group's lastMessage
+          try {
+            const token = await getAccessToken();
+            const lastMessageData = {
+              lastMessage: {
+                content: message.trim(),
+                type: "text",
+                senderId: currentUserId,
+                timestamp: new Date().toISOString()
+              }
+            };
+            
+            console.log("Updating last message with data:", lastMessageData);
+            
+            const updateResponse = await axios.put(
+              `${getApiUrl()}/groups/${groupId}`,
+              lastMessageData,
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            
+            console.log("Last message update response:", updateResponse.data);
+            
+            // Emit socket event to notify other users
+            if (socket) {
+              socket.emit("group:updated", {
+                groupId,
+                type: "LAST_MESSAGE_UPDATED",
+                data: lastMessageData.lastMessage
+              });
+            }
+          } catch (error) {
+            console.error("Error updating group's lastMessage:", error);
+          }
         }
       }
 
@@ -576,6 +620,20 @@ const GroupChatScreen = () => {
           recalledBy: response.data.recalledBy,
           recalledAt: response.data.recalledAt,
         });
+
+        // Update group's lastMessage to null when recalling
+        try {
+          const token = await getAccessToken();
+          await axios.put(`${getApiUrl()}/groups/${groupId}`, {
+            lastMessage: null
+          }, {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          });
+        } catch (error) {
+          console.error("Error updating group's lastMessage after recall:", error);
+        }
       }
     } catch (error) {
       console.error("Error recalling message:", error);
@@ -612,31 +670,72 @@ const GroupChatScreen = () => {
     }
   };
 
-  const handleForwardMessage = async (receiverPhones) => {
+  const handleForwardMessage = async (receivers) => {
     try {
       if (!selectedMessage) {
         Alert.alert("Lỗi", "Không có tin nhắn được chọn");
         return;
       }
 
-      const promises = receiverPhones.map((receiverPhone) =>
-        forwardGroupMessage(
-          groupId,
-          selectedMessage.groupMessageId,
-          receiverPhone,
-          selectedMessage.type === "file"
-            ? selectedMessage.content
-            : selectedMessage.content
-        )
-      );
-      const results = await Promise.all(promises);
-      const allSuccessful = results.every((res) => res.status === "success");
+      console.log("Forwarding message:", {
+        selectedMessage,
+        receivers
+      });
 
-      if (allSuccessful) {
+      const results = await Promise.all(
+        receivers.map(async (receiver) => {
+          try {
+            // Nếu là chuyển tiếp đến cá nhân
+            if (receiver.type === 'conversation') {
+              console.log("Forwarding to personal chat:", {
+                messageId: selectedMessage.messageId || selectedMessage.groupMessageId,
+                receiverPhone: receiver.id,
+                content: selectedMessage.content
+              });
+
+              try {
+                const response = await api.post("/chat/messages/forward", {
+                  messageId: selectedMessage.messageId || selectedMessage.groupMessageId,
+                  receiverPhone: receiver.id,
+                  content: selectedMessage.content
+                });
+
+                if (response.data && response.data.status === "success") {
+                  console.log("Forward message success:", response.data);
+                  return { success: true, response: response.data };
+                }
+                
+                return { success: false, error: "Không nhận được phản hồi từ server" };
+              } catch (error) {
+                console.error("Forward message error:", error.response?.data || error.message);
+                return { success: false, error: error.response?.data || error.message };
+              }
+            }
+
+            // Nếu là chuyển tiếp đến nhóm - giữ nguyên logic cũ
+            const response = await forwardGroupMessage(
+              groupId,
+              selectedMessage.groupMessageId,
+              receiver.id,
+              receiver.type
+            );
+            return { success: response.status === "success", response };
+          } catch (error) {
+            console.error("Error forwarding to receiver:", receiver.id, error);
+            return { success: false, error };
+          }
+        })
+      );
+
+      const failedForwards = results.filter(r => !r.success);
+      console.log("Failed forwards:", failedForwards);
+
+      if (failedForwards.length === 0) {
         setForwardModalVisible(false);
         Alert.alert("Thành công", "Tin nhắn đã được chuyển tiếp");
       } else {
-        throw new Error("Có lỗi xảy ra khi chuyển tiếp tin nhắn");
+        const errorMessage = failedForwards[0].error?.message || "Không thể chuyển tiếp tin nhắn";
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error("Error forwarding message:", error);
@@ -1093,7 +1192,10 @@ const GroupChatScreen = () => {
               ]}
             >
               {!isMe && (
+
               <Image 
+
+
                   source={{
                     uri: item.senderAvatar || "https://via.placeholder.com/50",
                   }}
@@ -1109,7 +1211,7 @@ const GroupChatScreen = () => {
                 {!isMe && (
                   <Text style={styles.senderName}>
                     {item.senderName || "Người dùng"}
-                  </Text>
+          </Text>
                 )}
                 {isRecalled ? (
                   <View style={styles.recalledMessageContainer}>
@@ -1144,7 +1246,9 @@ const GroupChatScreen = () => {
                     onPress={() => handleFilePress(item)}
                   >
                     {item.fileType?.startsWith("image/") ? (
-                 <Image 
+
+              <Image 
+
                         source={{ uri: item.content }}
                         style={styles.fileImage}
                         resizeMode="cover"
@@ -1173,7 +1277,9 @@ const GroupChatScreen = () => {
                         />
                         <View style={styles.playButton}>
                           <Ionicons name="play" size={24} color="white" />
-             </View>
+
+            </View>
+
                       </View>
                     ) : (
                       <View style={styles.documentContainer}>
@@ -1192,8 +1298,10 @@ const GroupChatScreen = () => {
                           numberOfLines={1}
                         >
                           {item.content.split("/").pop() || "Tài liệu"}
-             </Text>
-           </View>
+
+            </Text>
+          </View>
+
                     )}
           </TouchableOpacity>
                 ) : null}
@@ -1229,6 +1337,7 @@ const GroupChatScreen = () => {
                 </View>
               </View>
           </TouchableOpacity>
+
           );
         }}
         onEndReached={loadMoreMessages}
@@ -1243,6 +1352,7 @@ const GroupChatScreen = () => {
           ) : null
         }
       />
+
       
       {/* Message Input */}
       <KeyboardAvoidingView

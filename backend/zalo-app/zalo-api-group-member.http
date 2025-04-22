@@ -1,6 +1,6 @@
 
-@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI0NjM4NTBhMS03NWJhLTRmMDktYmY3ZS1jMGNhNjJiMGVhMTgiLCJwaG9uZSI6Ijg0Mzc2OTYzNjUzIiwiaWF0IjoxNzQ1MTU4NTU5LCJleHAiOjE3NDUyNDQ5NTl9.NiiwSxSevpvG0bVkH1GcvUvXdl1v2Jcm_06NRZe_3rM
-@group_id = bc126a20-154b-4dc0-8bb3-1da16bea4aa5
+@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJlYjZjYWIxNC0wNTRiLTRhYjMtOGU2OS0yMWIzOTRmZjc1ZmQiLCJwaG9uZSI6Ijg0MTIzNDU2Nzg5IiwiaWF0IjoxNzQ1MzMwNTQ3LCJleHAiOjE3NDU0MTY5NDd9.WkmarlTuJr5j5bVysQIEbhvxUpmPku_Qo6z-4pIGiyU
+@group_id = 6dcd4dd3-6da2-4c90-8a60-3b029b5d8c17
 
 @user_id = 346f45cb-af42-4f2d-9b15-eb7aa29e4b86
 @member_id = 123
@@ -21,7 +21,7 @@ Authorization: Bearer {{authToken}}
     "eb6cab14-054b-4ab3-8e69-21b394ff75fd"
   ],
   "createdBy": "463850a1-75ba-4f09-bf7e-c0ca62b0ea18",
-  "name": "backend group bình thường"
+  "name": "Tesst hiện tin nhắn mới nhất"
 }
 
 ### Update group info
@@ -30,8 +30,8 @@ Content-Type: application/json
 Authorization: Bearer {{authToken}}
 
 {
-  "name": "Giờ là biết rồi",
-  "avatar": "https://users-zalolite.s3.ap-southeast-1.amazonaws.com/avatars/84112233445_1744861231732.jpg"
+  "name": "tin nhắn mơi nhat",
+ "lastMessage":"không biết"
 }
 
 ### Get group by ID

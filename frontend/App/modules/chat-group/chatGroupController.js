@@ -81,7 +81,7 @@ export const forwardGroupMessage = async (
     const response = await api.post(`/chat-group/${groupId}/messages/forward`, {
       sourceMessageId,
       targetId,
-      targetType,
+      targetType
     });
     return response.data;
   } catch (error) {
