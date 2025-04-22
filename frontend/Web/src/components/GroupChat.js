@@ -1,8 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { getGroupDetails, sendGroupMessage } from '../services/group';
+import React, { useState, useEffect, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import {
+  getGroupDetails,
+  getGroupMessages,
+  sendGroupMessage,
+  recallGroupMessage,
+  deleteGroupMessage,
+  forwardGroupMessage,
+} from "../services/group";
 import EmojiPicker from "emoji-picker-react";
-import GroupSidebar from './GroupSidebar';
+import GroupSidebar from "./GroupSidebar";
 import {
   Smile,
   Image as ImageIcon,
@@ -34,20 +41,26 @@ import {
   Clock,
   FileEdit,
   Info,
-  Sidebar
+  Sidebar,
+  Check,
+  CheckCheck,
 } from "lucide-react";
-import './css/GroupChat.css';
+import "./css/GroupChat.css";
+import api, { getBaseUrl, getApiUrl } from "../config/api";
 
 const GroupChat = () => {
   const { groupId } = useParams();
   const navigate = useNavigate();
   const [groupDetails, setGroupDetails] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  // Add new states for file handling
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [recalledMessages, setRecalledMessages] = useState(new Set());
+  const [deletedMessages, setDeletedMessages] = useState(new Set());
+  const [selectedMessage, setSelectedMessage] = useState(null);
+  const [showMessageOptions, setShowMessageOptions] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [showFilePreview, setShowFilePreview] = useState(false);
@@ -57,122 +70,317 @@ const GroupChat = () => {
   const [showVideoPreview, setShowVideoPreview] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const emojiPickerRef = useRef(null);
-  const fileInputRef = useRef(null);
-  const documentInputRef = useRef(null);
-
   const [showSidebar, setShowSidebar] = useState(false);
   const [showMembersList, setShowMembersList] = useState(true);
   const [showGroupInfo, setShowGroupInfo] = useState(true);
   const [showMediaList, setShowMediaList] = useState(true);
+  const messagesEndRef = useRef(null);
+  const emojiPickerRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const documentInputRef = useRef(null);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [lastEvaluatedKey, setLastEvaluatedKey] = useState(null);
+  const [userCache, setUserCache] = useState({});
 
   useEffect(() => {
     fetchGroupDetails();
+    loadChatHistory();
+    getCurrentUserId();
   }, [groupId]);
+
+  const getCurrentUserId = async () => {
+    try {
+      const token = localStorage.getItem("accessToken");
+      if (!token) {
+        throw new Error("No token found");
+      }
+      const base64Url = token.split(".")[1];
+      const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split("")
+          .map((c) => {
+            return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
+          })
+          .join("")
+      );
+      const { userId } = JSON.parse(jsonPayload);
+      setCurrentUserId(userId);
+    } catch (error) {
+      console.error("Error getting current user ID:", error);
+    }
+  };
 
   const fetchGroupDetails = async () => {
     try {
       console.log(`Fetching group details for group ID: ${groupId}`);
       const response = await getGroupDetails(groupId);
-      console.log('Group details response:', response);
-      
-      if (response.status === 'success') {
+      console.log("Group details response:", response);
+
+      if (response.status === "success") {
         setGroupDetails(response.data);
         setLoading(false);
       } else {
-        throw new Error('Không nhận được dữ liệu từ server');
+        throw new Error("Không nhận được dữ liệu từ server");
       }
     } catch (err) {
-      console.error('Error fetching group details:', err);
-      setError('Không thể tải thông tin nhóm. Vui lòng thử lại sau.');
+      console.error("Error fetching group details:", err);
+      setError("Không thể tải thông tin nhóm. Vui lòng thử lại sau.");
       setLoading(false);
     }
   };
 
-  const formatTime = (dateString) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const fetchUserInfo = async (userId) => {
+    try {
+      // Check cache first
+      if (userCache[userId]) {
+        return userCache[userId];
+      }
+
+      const response = await api.get(`/users/byId/${userId}`);
+      console.log("User info response:", response);
+
+      if (!response.data) {
+        throw new Error("Không nhận được dữ liệu từ server");
+      }
+
+      const userData = {
+        userId: response.data.userId,
+        name: response.data.name,
+        avatar: response.data.avatar,
+        phone: response.data.phone,
+        status: response.data.status,
+        gender: response.data.gender,
+        isPhoneVerified: response.data.isPhoneVerified,
+        dateOfBirth: response.data.dateOfBirth,
+        createdAt: response.data.createdAt,
+        updatedAt: response.data.updatedAt,
+      };
+
+      // Update cache
+      setUserCache((prev) => ({
+        ...prev,
+        [userId]: userData,
+      }));
+
+      return userData;
+    } catch (error) {
+      console.error("Get user info error:", error);
+      return null;
+    }
   };
 
-  const sendMessage = async () => {
-    if (!message.trim()) return;
+  const loadChatHistory = async (loadMore = false) => {
+    try {
+      const options = {
+        limit: 50,
+        before: true,
+      };
+
+      if (loadMore && messages.length > 0) {
+        const lastMessage = messages[0];
+        options.lastEvaluatedKey = lastMessage.createdAt;
+      }
+
+      const response = await getGroupMessages(groupId, options);
+      console.log("Chat history response:", response);
+
+      if (response.status === "success") {
+        // Xử lý các tin nhắn theo ngày
+        const messageArray = await Promise.all(
+          Object.entries(response.data.messages).flatMap(([date, messages]) =>
+            messages.map(async (msg) => {
+              const isMe = msg.senderId === currentUserId;
+
+              // Nếu là tin nhắn của người khác, fetch thông tin người gửi
+              let senderInfo = {};
+              if (!isMe) {
+                const userInfo = await fetchUserInfo(msg.senderId);
+                if (userInfo) {
+                  senderInfo = {
+                    senderName: userInfo.name,
+                    senderAvatar: userInfo.avatar,
+                    senderPhone: userInfo.phone,
+                    senderStatus: userInfo.status,
+                    senderGender: userInfo.gender,
+                  };
+                }
+              }
+
+              return {
+                ...msg,
+                ...senderInfo,
+                status: msg.status || "sent",
+                isMe,
+              };
+            })
+          )
+        );
+
+        // Filter out messages that have been recalled or deleted
+        const filteredMessages = messageArray.filter((msg) => {
+          const isRecalled = msg.recallStatus === "recalled";
+          const isDeleted =
+            msg.deleteStatus === "deleted" && msg.deletedBy === currentUserId;
+          return !isRecalled && !isDeleted;
+        });
+
+        if (loadMore) {
+          setMessages((prev) => {
+            const messageMap = new Map();
+            prev.forEach((msg) => {
+              messageMap.set(msg.groupMessageId, msg);
+            });
+            filteredMessages.forEach((msg) => {
+              messageMap.set(msg.groupMessageId, msg);
+            });
+            return Array.from(messageMap.values()).sort(
+              (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+            );
+          });
+        } else {
+          setMessages(
+            filteredMessages.sort(
+              (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+            )
+          );
+        }
+
+        setHasMoreMessages(response.data.pagination?.hasMore || false);
+        if (response.data.pagination?.lastEvaluatedKey) {
+          setLastEvaluatedKey(response.data.pagination.lastEvaluatedKey);
+        }
+      } else {
+        throw new Error("Không nhận được dữ liệu từ server");
+      }
+    } catch (error) {
+      console.error("Error loading chat history:", error);
+      setError("Không thể tải tin nhắn. Vui lòng thử lại sau.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!message.trim() && selectedFiles.length === 0) return;
 
     try {
-      console.log(`Sending message to group ${groupId}: ${message}`);
-      const response = await sendGroupMessage(groupId, message);
-      
-      if (response.status === 'success') {
-        setMessages(prevMessages => [...prevMessages, response.data]);
-        setMessage('');
-      } else {
-        throw new Error('Không nhận được dữ liệu từ server');
+      let fileUrl = null;
+      let fileType = null;
+
+      if (selectedFiles.length > 0) {
+        // Handle file upload here
+        // This is a placeholder - implement actual file upload logic
+        fileUrl = "placeholder-url";
+        fileType = selectedFiles[0].type;
       }
-    } catch (err) {
-      console.error('Error sending message:', err);
-      setError('Không thể gửi tin nhắn. Vui lòng thử lại sau.');
+
+      const response = await sendGroupMessage(
+        groupId,
+        message,
+        fileUrl,
+        fileType
+      );
+
+      if (response.status === "success") {
+        setMessages((prev) => [...prev, response.data]);
+        setMessage("");
+        setSelectedFiles([]);
+        scrollToBottom();
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+      setError("Failed to send message");
     }
   };
 
-  const handleBack = () => {
-    navigate('/app');
-  };
-
-  const handleAddMembers = () => {
-    navigate(`/app/groups/${groupId}/add-members`);
-  };
-
-  const handleSearchMessages = () => {
-    navigate(`/app/groups/${groupId}/search`);
-  };
-
-  const onEmojiClick = (emojiObject) => {
-    const cursor = document.querySelector(".message-input").selectionStart;
-    const text = message.slice(0, cursor) + emojiObject.emoji + message.slice(cursor);
-    setMessage(text);
-    setShowEmojiPicker(false);
-  };
-
-  const handleFileSelect = (event) => {
-    const files = Array.from(event.target.files);
-    if (files.length > 0) {
-      setSelectedFiles(files);
-      setShowFilePreview(true);
+  const handleRecallMessage = async (messageId) => {
+    try {
+      const response = await recallGroupMessage(groupId, messageId);
+      if (response.status === "success") {
+        setRecalledMessages((prev) => new Set([...prev, messageId]));
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.groupMessageId === messageId
+              ? { ...msg, recallStatus: "recalled" }
+              : msg
+          )
+        );
+      }
+    } catch (error) {
+      console.error("Error recalling message:", error);
+      setError("Failed to recall message");
     }
   };
 
-  const handleImageClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
+  const handleDeleteMessage = async (messageId) => {
+    try {
+      const response = await deleteGroupMessage(groupId, messageId);
+      if (response.status === "success") {
+        setDeletedMessages((prev) => new Set([...prev, messageId]));
+        setMessages((prev) =>
+          prev.filter((msg) => msg.groupMessageId !== messageId)
+        );
+      }
+    } catch (error) {
+      console.error("Error deleting message:", error);
+      setError("Failed to delete message");
     }
   };
 
-  const handleDocumentClick = () => {
-    if (documentInputRef.current) {
-      documentInputRef.current.click();
+  const handleForwardMessage = async (receiverPhones) => {
+    if (!selectedMessage) return;
+
+    try {
+      const response = await forwardGroupMessage(
+        groupId,
+        selectedMessage.groupMessageId,
+        receiverPhones,
+        "phone"
+      );
+
+      if (response.status === "success") {
+        setSelectedMessage(null);
+        setShowMessageOptions(false);
+      }
+    } catch (error) {
+      console.error("Error forwarding message:", error);
+      setError("Failed to forward message");
     }
   };
 
-  const handleFilePreviewClose = () => {
-    setShowFilePreview(false);
-    setSelectedFiles([]);
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const formatTime = (dateString) => {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
   const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
+    if (bytes === 0) return "0 Bytes";
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const sizes = ["Bytes", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
   const getFileIcon = (mimeType) => {
-    if (mimeType.includes('image')) return <FileImage size={24} />;
-    if (mimeType.includes('video')) return <FileVideo size={24} />;
-    if (mimeType.includes('pdf')) return <FileText size={24} />;
-    if (mimeType.includes('word') || mimeType.includes('document')) return <FileText size={24} />;
-    if (mimeType.includes('powerpoint') || mimeType.includes('presentation')) return <FileText size={24} />;
-    if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('archive')) return <FileArchive size={24} />;
+    if (mimeType.includes("image")) return <FileImage size={24} />;
+    if (mimeType.includes("video")) return <FileVideo size={24} />;
+    if (mimeType.includes("pdf")) return <FileText size={24} />;
+    if (mimeType.includes("word") || mimeType.includes("document"))
+      return <FileText size={24} />;
+    if (mimeType.includes("powerpoint") || mimeType.includes("presentation"))
+      return <FileText size={24} />;
+    if (
+      mimeType.includes("zip") ||
+      mimeType.includes("rar") ||
+      mimeType.includes("archive")
+    )
+      return <FileArchive size={24} />;
     return <File size={24} />;
   };
 
@@ -184,10 +392,17 @@ const GroupChat = () => {
     return (
       <div className="error-container">
         <div className="error">{error}</div>
-        <button className="retry-button" onClick={fetchGroupDetails}>
+        <button
+          className="retry-button"
+          onClick={() => {
+            setError(null);
+            fetchGroupDetails();
+            loadChatHistory();
+          }}
+        >
           Thử lại
         </button>
-        <button className="back-button" onClick={handleBack}>
+        <button className="back-button" onClick={() => navigate("/app")}>
           Quay lại
         </button>
       </div>
@@ -196,9 +411,9 @@ const GroupChat = () => {
 
   return (
     <div className="group-chat-container">
-      <div className={`chat-main ${showSidebar ? 'with-sidebar' : ''}`}>
+      <div className={`chat-main ${showSidebar ? "with-sidebar" : ""}`}>
         <header className="group-chat-header">
-          <button className="back-button" onClick={handleBack}>
+          <button className="back-button" onClick={() => navigate("/app")}>
             <ChevronLeft size={24} />
           </button>
           <div className="header-title">
@@ -206,17 +421,8 @@ const GroupChat = () => {
             <p>{groupDetails?.members?.length || 0} thành viên</p>
           </div>
           <div className="header-actions">
-            <button className="header-button" onClick={handleAddMembers}>
-              <UserPlus size={20} />
-            </button>
-            <button className="header-button">
-              <Video size={20} />
-            </button>
-            <button className="header-button" onClick={handleSearchMessages}>
-              <Search size={20} />
-            </button>
-            <button 
-              className={`header-button ${showSidebar ? 'active' : ''}`}
+            <button
+              className="header-button"
               onClick={() => setShowSidebar(!showSidebar)}
             >
               <Sidebar size={20} />
@@ -228,13 +434,15 @@ const GroupChat = () => {
           <div className="group-info-card">
             <div className="group-avatars">
               {groupDetails?.avatar ? (
-                <img 
-                  src={groupDetails.avatar} 
+                <img
+                  src={groupDetails.avatar}
                   alt={groupDetails.name}
                   className="group-main-avatar"
                   onError={(e) => {
                     e.target.onerror = null;
-                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(groupDetails?.name || '')}&background=random&color=fff&size=96`;
+                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                      groupDetails?.name || ""
+                    )}&background=random&color=fff&size=96`;
                   }}
                 />
               ) : (
@@ -255,91 +463,77 @@ const GroupChat = () => {
             </span>
           </div>
 
-          {messages.map(msg => (
-            <div key={msg.id} className="system-message-container">
-              <div className="system-message-avatars">
-                {msg.memberAvatars?.map((avatarUri, index) => (
-                  <img 
-                    key={`sys-avatar-${index}`}
-                    src={avatarUri}
-                    alt={`Member ${index + 1}`}
-                    className="system-message-avatar"
-                  />
-                ))}
-              </div>
-              <p className="system-message-text">
-                <strong>{msg.memberNames}</strong> đã tham gia nhóm
-              </p>
-            </div>
-          ))}
+          {messages.map((msg) => {
+            const isMyMessage = msg.senderId === currentUserId;
+            const isRecalled = recalledMessages.has(msg.groupMessageId);
+            const isDeleted = deletedMessages.has(msg.groupMessageId);
 
-          <div className="setup-card">
-            <div className="setup-avatar-container">
-              <div className="setup-avatar">
-                {groupDetails?.avatar ? (
-                  <img 
-                    src={groupDetails.avatar} 
-                    alt={groupDetails.name}
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(groupDetails?.name || '')}&background=random&color=fff&size=40`;
-                    }}
+            if (isDeleted) return null;
+
+            return (
+              <div
+                key={msg.groupMessageId}
+                className={`message-container ${
+                  isMyMessage ? "my-message" : "other-message"
+                }`}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setSelectedMessage(msg);
+                  setShowMessageOptions(true);
+                }}
+              >
+                {!isMyMessage && (
+                  <img
+                    src={
+                      msg.senderAvatar ||
+                      "https://ui-avatars.com/api/?name=User"
+                    }
+                    alt="avatar"
+                    className="avatar"
                   />
-                ) : (
-                  <Users size={24} color="#65676B" />
                 )}
+                <div
+                  className={`message-bubble ${
+                    isMyMessage ? "my-message-bubble" : "other-message-bubble"
+                  }`}
+                >
+                  {!isMyMessage && (
+                    <span className="sender-name">{msg.senderName}</span>
+                  )}
+                  {isRecalled ? (
+                    <div className="recalled-message">
+                      <AlertCircle size={16} />
+                      <span>Message has been recalled</span>
+                    </div>
+                  ) : msg.fileUrl ? (
+                    <div className="file-message">
+                      {getFileIcon(msg.fileType)}
+                      <span className="file-name">{msg.fileName}</span>
+                      <span className="file-size">
+                        {formatFileSize(msg.fileSize)}
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="message-text">{msg.content}</p>
+                  )}
+                  <div className="message-footer">
+                    <span className="message-time">
+                      {formatTime(msg.createdAt)}
+                    </span>
+                    {isMyMessage && (
+                      <div className="message-status">
+                        {msg.status === "sent" && <Clock size={12} />}
+                        {msg.status === "delivered" && <Check size={12} />}
+                        {msg.status === "read" && <CheckCheck size={12} />}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-              <span className="setup-title">{groupDetails?.name}</span>
-              <i className="chevron-icon">›</i>
-            </div>
-
-            
-            <div className="member-avatars">
-              {groupDetails?.members?.map((member, index) => (
-                <img 
-                  key={`setup-avatar-${member.userId || index}`}
-                  src={member.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name || '')}&background=random&color=fff&size=40`}
-                  alt={`Member ${index + 1}`}
-                  className="member-avatar"
-                  style={{ zIndex: (groupDetails.members?.length || 0) - index }}
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name || '')}&background=random&color=fff&size=40`;
-                  }}
-                />
-              ))}
-              <button className="add-member-button" onClick={handleAddMembers}>
-                <i className="person-add-icon">+</i>
-              </button>
-            </div>
-
-            <button className="wave-button">
-              👋 Vẫy tay chào
-            </button>
-
-            <button className="qr-button">
-              Xem mã QR tham gia nhóm
-            </button>
-          </div>
+            );
+          })}
+          <div ref={messagesEndRef} />
         </div>
-
-        {/* File upload inputs */}
-        <input
-          type="file"
-          ref={fileInputRef}
-          style={{ display: 'none' }}
-          accept="image/*,video/*"
-          multiple
-          onChange={handleFileSelect}
-        />
-        <input
-          type="file"
-          ref={documentInputRef}
-          style={{ display: 'none' }}
-          accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.rar"
-          multiple
-          onChange={handleFileSelect}
-        />
 
         <div className="chat-input-area">
           <div className="input-toolbar">
@@ -355,139 +549,124 @@ const GroupChat = () => {
                 {showEmojiPicker && (
                   <div className="emoji-picker-container">
                     <EmojiPicker
-                      onEmojiClick={onEmojiClick}
-                      width={300}
-                      height={400}
+                      onEmojiClick={(emoji) => {
+                        setMessage((prev) => prev + emoji.emoji);
+                        setShowEmojiPicker(false);
+                      }}
                     />
                   </div>
                 )}
               </div>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="toolbar-button"
-                onClick={handleImageClick}
-                title="Gửi ảnh hoặc video"
+                onClick={() => fileInputRef.current?.click()}
               >
                 <ImageIcon size={20} />
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="toolbar-button"
-                onClick={handleDocumentClick}
-                title="Gửi tài liệu"
+                onClick={() => documentInputRef.current?.click()}
               >
                 <Paperclip size={20} />
-              </button>
-              <button type="button" className="toolbar-button">
-                <Type size={20} />
-              </button>
-              <button type="button" className="toolbar-button">
-                <Sticker size={20} />
-              </button>
-              <button type="button" className="toolbar-button">
-                <Zap size={20} />
-              </button>
-              <button type="button" className="toolbar-button">
-                <MoreHorizontal size={20} />
               </button>
             </div>
           </div>
 
-          <form  className="input-form">
+          <form
+            className="input-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSendMessage();
+            }}
+          >
             <input
               type="text"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder={`Nhập @, tin nhắn tới ${groupDetails?.name || 'Nhóm'}`}
+              placeholder="Type a message..."
               className="message-input"
             />
-            <div className="input-buttons">
-              <button
-                type="submit"
-                className="send-button"
-                disabled={!message.trim() && selectedFiles.length === 0}
-              >
-                <Send size={20} color={(message.trim() || selectedFiles.length > 0) ? "#1877f2" : "#666"} />
-              </button>
-            </div>
+            <button
+              type="submit"
+              className="send-button"
+              disabled={!message.trim() && selectedFiles.length === 0}
+            >
+              <Send size={20} />
+            </button>
           </form>
         </div>
       </div>
 
-      <GroupSidebar 
+      <GroupSidebar
         groupId={groupId}
         isOpen={showSidebar}
         onClose={() => setShowSidebar(false)}
-        onGroupUpdate={fetchGroupDetails}
       />
 
-      {showFilePreview && (
-        <div className="modal-overlay">
+      {showMessageOptions && selectedMessage && (
+        <div
+          className="modal-overlay"
+          onClick={() => setShowMessageOptions(false)}
+        >
           <div className="modal-content">
-            <div className="modal-header">
-              <h3>Đã chọn {selectedFiles.length} file</h3>
-              <button className="close-button" onClick={handleFilePreviewClose}>
-                <X size={24} />
-              </button>
-            </div>
-            <div className="file-list">
-              {selectedFiles.map((file, index) => (
-                <div key={index} className="file-item">
-                  <div className="file-icon">
-                    {getFileIcon(file.type)}
-                  </div>
-                  <div className="file-info">
-                    <div className="file-name">{file.name}</div>
-                    <div className="file-size">{formatFileSize(file.size)}</div>
-                  </div>
-                  <button
-                    className="remove-file-button"
-                    onClick={() => {
-                      const newFiles = [...selectedFiles];
-                      newFiles.splice(index, 1);
-                      setSelectedFiles(newFiles);
-                      if (newFiles.length === 0) {
-                        setShowFilePreview(false);
-                      }
-                    }}
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-              ))}
-            </div>
-            {isUploading ? (
-              <div className="upload-progress">
-                <div className="progress-bar">
-                  <div 
-                    className="progress-fill" 
-                    style={{ width: `${uploadProgress}%` }}
-                  ></div>
-                </div>
-                <div className="progress-text">Đang upload... {uploadProgress}%</div>
-              </div>
-            ) : (
-              <div className="modal-actions">
-                <button 
-                  className="cancel-button"
-                  onClick={handleFilePreviewClose}
+            {selectedMessage.senderId === currentUserId && (
+              <>
+                <button
+                  className="modal-button"
+                  onClick={() => {
+                    handleRecallMessage(selectedMessage.groupMessageId);
+                    setShowMessageOptions(false);
+                  }}
                 >
-                  Hủy
+                  <AlertCircle size={20} />
+                  <span>Recall Message</span>
                 </button>
-                <button 
-                  className="send-button"
-                 // onClick={() => handleUpload(selectedFiles)}
-                  disabled={selectedFiles.length === 0}
+                <button
+                  className="modal-button"
+                  onClick={() => {
+                    handleDeleteMessage(selectedMessage.groupMessageId);
+                    setShowMessageOptions(false);
+                  }}
                 >
-                  Gửi
+                  <X size={20} />
+                  <span>Delete Message</span>
                 </button>
-              </div>
+              </>
             )}
+            <button
+              className="modal-button"
+              onClick={() => {
+                // Implement forward message UI
+                setShowMessageOptions(false);
+              }}
+            >
+              <Share2 size={20} />
+              <span>Forward Message</span>
+            </button>
           </div>
         </div>
       )}
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: "none" }}
+        accept="image/*,video/*"
+        multiple
+        onChange={(e) => setSelectedFiles(Array.from(e.target.files))}
+      />
+      <input
+        type="file"
+        ref={documentInputRef}
+        style={{ display: "none" }}
+        accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.rar"
+        multiple
+        onChange={(e) => setSelectedFiles(Array.from(e.target.files))}
+      />
     </div>
   );
 };
 
-export default GroupChat; 
+export default GroupChat;

@@ -1,5 +1,4 @@
-
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from "react";
 
 import {
   View,
@@ -14,7 +13,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-
   ActivityIndicator,
   Modal,
   Alert,
@@ -47,11 +45,10 @@ import * as MediaLibrary from "expo-media-library";
 import ForwardMessageModal from "./ForwardMessageModal";
 import { getApiUrl, getBaseUrl, api } from "../config/api";
 import axios from "axios";
-import { WebView } from 'react-native-webview';
+import { WebView } from "react-native-webview";
 // import jwt_decode from "jwt-decode"; // Tạm thời comment lại
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
 
 const GroupChatScreen = () => {
   const navigation = useNavigation();
@@ -175,7 +172,6 @@ const GroupChatScreen = () => {
       return currentUserId;
     }
   };
-
 
   // Tạo tin nhắn hệ thống dựa trên dữ liệu nhóm
   const createSystemMessage = (details) => {
@@ -540,7 +536,8 @@ const GroupChatScreen = () => {
         return;
       }
 
-      const messageAge = Date.now() - new Date(targetMessage.createdAt).getTime();
+      const messageAge =
+        Date.now() - new Date(targetMessage.createdAt).getTime();
       const MAX_RECALL_TIME = 24 * 60 * 60 * 1000; // 24h
 
       if (messageAge > MAX_RECALL_TIME) {
@@ -722,32 +719,32 @@ const GroupChatScreen = () => {
       const uploadUrl = `${getApiUrl()}/chat-group/${groupId}/upload`;
       console.log("Upload URL:", uploadUrl);
 
-      const response = await axios.post(
-        uploadUrl,
-        formData,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
-            Accept: "application/json",
-          },
-          onUploadProgress: (progressEvent) => {
-            const progress = (progressEvent.loaded / progressEvent.total) * 100;
-            setUploadProgress(progress);
-          },
-        }
-      );
+      const response = await axios.post(uploadUrl, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+          Accept: "application/json",
+        },
+        onUploadProgress: (progressEvent) => {
+          const progress = (progressEvent.loaded / progressEvent.total) * 100;
+          setUploadProgress(progress);
+        },
+      });
 
       console.log("Upload response:", response.data);
 
       if (response.data.status === "success") {
         const uploadedFiles = response.data.data.files;
         const fileUrls = response.data.data.urls;
-        
+
         console.log("Uploaded files:", uploadedFiles);
         console.log("File URLs:", fileUrls);
 
-        if (!uploadedFiles || !fileUrls || uploadedFiles.length !== fileUrls.length) {
+        if (
+          !uploadedFiles ||
+          !fileUrls ||
+          uploadedFiles.length !== fileUrls.length
+        ) {
           throw new Error("Dữ liệu file không hợp lệ từ server");
         }
 
@@ -755,7 +752,7 @@ const GroupChatScreen = () => {
         for (let i = 0; i < uploadedFiles.length; i++) {
           const file = uploadedFiles[i];
           const fileUrl = fileUrls[i];
-          
+
           try {
             // Gọi API để lưu tin nhắn vào DynamoDB
             const messageResponse = await sendGroupMessage(
@@ -803,11 +800,13 @@ const GroupChatScreen = () => {
                   fileType: file.mimetype,
                   createdAt: message.createdAt,
                   status: "sent",
-                  groupMessageId: message.groupMessageId
+                  groupMessageId: message.groupMessageId,
                 });
               }
             } else {
-              throw new Error(messageResponse.message || "Failed to save message");
+              throw new Error(
+                messageResponse.message || "Failed to save message"
+              );
             }
           } catch (error) {
             console.error("Error saving message to DynamoDB:", error);
@@ -832,108 +831,108 @@ const GroupChatScreen = () => {
   };
 
   const handleAttachPress = async () => {
-    Alert.alert(
-      "Chọn loại file",
-      "Bạn muốn đính kèm loại file nào?",
-      [
-        {
-          text: "Hình ảnh",
-          onPress: async () => {
-            try {
-              const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: "Images",
-                allowsMultipleSelection: true,
-                selectionLimit: 10,
-                quality: 1,
-              });
+    Alert.alert("Chọn loại file", "Bạn muốn đính kèm loại file nào?", [
+      {
+        text: "Hình ảnh",
+        onPress: async () => {
+          try {
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: "Images",
+              allowsMultipleSelection: true,
+              selectionLimit: 10,
+              quality: 1,
+            });
 
-              if (!result.canceled) {
-                const newFiles = result.assets.map((asset) => ({
-                  uri: asset.uri,
-                  type: "image/jpeg",
-                  name: `image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`,
-                  mimeType: asset.mimeType || "image/jpeg",
-                  size: asset.fileSize || 0,
-                }));
-                setSelectedFiles((prev) => [...prev, ...newFiles]);
-                setShowFilePreview(true);
-              }
-            } catch (error) {
-              console.error("Error picking image:", error);
-              Alert.alert("Lỗi", "Không thể chọn ảnh");
+            if (!result.canceled) {
+              const newFiles = result.assets.map((asset) => ({
+                uri: asset.uri,
+                type: "image/jpeg",
+                name: `image_${Date.now()}_${Math.random()
+                  .toString(36)
+                  .substr(2, 9)}.jpg`,
+                mimeType: asset.mimeType || "image/jpeg",
+                size: asset.fileSize || 0,
+              }));
+              setSelectedFiles((prev) => [...prev, ...newFiles]);
+              setShowFilePreview(true);
             }
+          } catch (error) {
+            console.error("Error picking image:", error);
+            Alert.alert("Lỗi", "Không thể chọn ảnh");
           }
         },
-        {
-          text: "Video",
-          onPress: async () => {
-            try {
-              const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: "Videos",
-                allowsMultipleSelection: true,
-                selectionLimit: 5,
-                quality: 1,
-              });
+      },
+      {
+        text: "Video",
+        onPress: async () => {
+          try {
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: "Videos",
+              allowsMultipleSelection: true,
+              selectionLimit: 5,
+              quality: 1,
+            });
 
-              if (!result.canceled) {
-                const newFiles = result.assets.map((asset) => ({
-                  uri: asset.uri,
-                  type: "video/mp4",
-                  name: `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.mp4`,
-                  mimeType: asset.mimeType || "video/mp4",
-                  size: asset.fileSize || 0,
-                }));
-                setSelectedFiles((prev) => [...prev, ...newFiles]);
-                setShowFilePreview(true);
-              }
-            } catch (error) {
-              console.error("Error picking video:", error);
-              Alert.alert("Lỗi", "Không thể chọn video");
+            if (!result.canceled) {
+              const newFiles = result.assets.map((asset) => ({
+                uri: asset.uri,
+                type: "video/mp4",
+                name: `video_${Date.now()}_${Math.random()
+                  .toString(36)
+                  .substr(2, 9)}.mp4`,
+                mimeType: asset.mimeType || "video/mp4",
+                size: asset.fileSize || 0,
+              }));
+              setSelectedFiles((prev) => [...prev, ...newFiles]);
+              setShowFilePreview(true);
             }
+          } catch (error) {
+            console.error("Error picking video:", error);
+            Alert.alert("Lỗi", "Không thể chọn video");
           }
         },
-        {
-          text: "Tài liệu",
-          onPress: async () => {
-            try {
-              const result = await DocumentPicker.getDocumentAsync({
-                type: [
-                  "application/pdf",
-                  "application/msword",
-                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                  "application/vnd.ms-powerpoint",
-                  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                  "application/vnd.ms-excel",
-                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                  "text/plain",
-                ],
-                multiple: true,
-                copyToCacheDirectory: true,
-              });
+      },
+      {
+        text: "Tài liệu",
+        onPress: async () => {
+          try {
+            const result = await DocumentPicker.getDocumentAsync({
+              type: [
+                "application/pdf",
+                "application/msword",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.ms-powerpoint",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "application/vnd.ms-excel",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "text/plain",
+              ],
+              multiple: true,
+              copyToCacheDirectory: true,
+            });
 
-              if (result.type !== "cancel") {
-                const newFiles = result.assets.map((asset) => ({
-                  uri: asset.uri,
-                  type: asset.mimeType,
-                  name: asset.name,
-                  mimeType: asset.mimeType,
-                  size: asset.size || 0,
-                }));
-                setSelectedFiles((prev) => [...prev, ...newFiles]);
-                setShowFilePreview(true);
-              }
-            } catch (error) {
-              console.error("Error picking document:", error);
-              Alert.alert("Lỗi", "Không thể chọn tài liệu");
+            if (result.type !== "cancel") {
+              const newFiles = result.assets.map((asset) => ({
+                uri: asset.uri,
+                type: asset.mimeType,
+                name: asset.name,
+                mimeType: asset.mimeType,
+                size: asset.size || 0,
+              }));
+              setSelectedFiles((prev) => [...prev, ...newFiles]);
+              setShowFilePreview(true);
             }
+          } catch (error) {
+            console.error("Error picking document:", error);
+            Alert.alert("Lỗi", "Không thể chọn tài liệu");
           }
         },
-        {
-          text: "Hủy",
-          style: "cancel"
-        }
-      ]
-    );
+      },
+      {
+        text: "Hủy",
+        style: "cancel",
+      },
+    ]);
   };
 
   const formatFileSize = (bytes) => {
@@ -960,15 +959,23 @@ const GroupChatScreen = () => {
         } else if (message.fileType?.startsWith("video/")) {
           setPreviewVideo(message.content);
           setShowVideoPreview(true);
-        } else if (message.fileType?.includes("pdf") || message.fileType?.includes("word") || message.fileType?.includes("powerpoint")) {
+        } else if (
+          message.fileType?.includes("pdf") ||
+          message.fileType?.includes("word") ||
+          message.fileType?.includes("powerpoint")
+        ) {
           // Mở file trực tiếp với Google Drive Viewer
-          const driveUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(message.content)}`;
+          const driveUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(
+            message.content
+          )}`;
           Linking.openURL(driveUrl);
         } else {
           // Xử lý các loại file khác
           try {
             const fileUrl = message.content;
-            const driveUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
+            const driveUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(
+              fileUrl
+            )}`;
             await Linking.openURL(driveUrl);
           } catch (error) {
             console.error("Error handling file press:", error);
@@ -1033,21 +1040,25 @@ const GroupChatScreen = () => {
             {groupDetails.name}
           </Text>
           <Text style={styles.subtitle}>
-
-            {groupDetails.members ? `${groupDetails.members.length} thành viên` : `${initialMemberCount} thành viên`} {/* Cập nhật số lượng từ API */}
+            {groupDetails.members
+              ? `${groupDetails.members.length} thành viên`
+              : `${initialMemberCount} thành viên`}{" "}
+            {/* Cập nhật số lượng từ API */}
           </Text>
         </View>
-        
+
         <TouchableOpacity style={styles.headerButton}>
           <Ionicons name="videocam" size={24} color="#fff" />
         </TouchableOpacity>
-        
+
         <TouchableOpacity style={styles.headerButton}>
           <Ionicons name="search" size={24} color="#fff" />
         </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate('GroupSetting', { groupId })}>
 
+        <TouchableOpacity
+          style={styles.headerButton}
+          onPress={() => navigation.navigate("GroupSetting", { groupId })}
+        >
           <Ionicons name="menu" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -1090,7 +1101,6 @@ const GroupChatScreen = () => {
                 />
               )}
               <View
-
                 style={[
                   styles.messageBubble,
                   isMe ? styles.myMessageBubble : styles.otherMessageBubble,
@@ -1139,7 +1149,10 @@ const GroupChatScreen = () => {
                         style={styles.fileImage}
                         resizeMode="cover"
                         onError={(e) => {
-                          console.error("Error loading image:", e.nativeEvent.error);
+                          console.error(
+                            "Error loading image:",
+                            e.nativeEvent.error
+                          );
                           Alert.alert("Lỗi", "Không thể tải ảnh");
                         }}
                       />
@@ -1151,7 +1164,10 @@ const GroupChatScreen = () => {
                           resizeMode="cover"
                           useNativeControls
                           onError={(e) => {
-                            console.error("Error loading video:", e.nativeEvent.error);
+                            console.error(
+                              "Error loading video:",
+                              e.nativeEvent.error
+                            );
                             Alert.alert("Lỗi", "Không thể tải video");
                           }}
                         />
@@ -1169,7 +1185,9 @@ const GroupChatScreen = () => {
                         <Text
                           style={[
                             styles.fileName,
-                            isMe ? styles.myMessageText : styles.otherMessageText,
+                            isMe
+                              ? styles.myMessageText
+                              : styles.otherMessageText,
                           ]}
                           numberOfLines={1}
                         >
@@ -1211,7 +1229,6 @@ const GroupChatScreen = () => {
                 </View>
               </View>
             </TouchableOpacity>
-
           );
         }}
         onEndReached={loadMoreMessages}
@@ -1227,14 +1244,13 @@ const GroupChatScreen = () => {
         }
       />
 
-
       {/* Message Input */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
         style={styles.inputContainer}
       >
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.attachButton}
           onPress={handleAttachPress}
         >
@@ -1373,7 +1389,11 @@ const GroupChatScreen = () => {
       />
 
       {showImagePreview && (
-        <Modal visible={showImagePreview} transparent={true} animationType="fade">
+        <Modal
+          visible={showImagePreview}
+          transparent={true}
+          animationType="fade"
+        >
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <TouchableOpacity
@@ -1393,7 +1413,11 @@ const GroupChatScreen = () => {
       )}
 
       {showVideoPreview && (
-        <Modal visible={showVideoPreview} transparent={true} animationType="fade">
+        <Modal
+          visible={showVideoPreview}
+          transparent={true}
+          animationType="fade"
+        >
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <TouchableOpacity
@@ -1415,7 +1439,11 @@ const GroupChatScreen = () => {
       )}
 
       {showDocumentPreview && (
-        <Modal visible={showDocumentPreview} transparent={true} animationType="fade">
+        <Modal
+          visible={showDocumentPreview}
+          transparent={true}
+          animationType="fade"
+        >
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <TouchableOpacity
