@@ -2,6 +2,9 @@ const { groupService, GroupMemberService, MEMBER_ROLES } = require('./index');
 const { createGroupSchema, updateGroupSchema, addMemberSchema, updateMemberSchema } = require('./group.validator');
 const { GROUP_EVENTS } = require('./group.model');
 const { emitEvent } = require('../events');
+const userController = require('../user/controller');
+const { s3 } = require('../../config/aws');
+const path = require('path');
 
 class GroupController {
   /**
@@ -182,6 +185,153 @@ class GroupController {
       res.json(member);
     } catch (error) {
       res.status(500).json({ error: error.message });
+    }
+  }
+
+  // Cập nhật avatar nhóm
+  async updateGroupAvatar(req, res) {
+    try {
+      const { groupId } = req.params;
+      const userId = req.user.userId;
+
+      // Log để debug
+      console.log('Update group avatar request:', {
+        groupId,
+        userId,
+        file: req.file,
+        body: req.body
+      });
+
+      if (!req.file) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Không tìm thấy file avatar'
+        });
+      }
+
+      // // Kiểm tra quyền (chỉ admin mới được cập nhật)
+      // const member = await GroupMemberService.getMember(groupId, userId);
+      // if (!member || member.role !== 'ADMIN') {
+      //   return res.status(403).json({
+      //     status: 'error',
+      //     message: 'Bạn không có quyền cập nhật avatar nhóm'
+      //   });
+      // }
+
+      // Lấy thông tin file
+      const file = req.file;
+      console.log('Received file:', {
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size
+      });
+
+      try {
+        // Upload to S3
+        const filepath = `groups/avatars/${groupId}_${Date.now()}${path.extname(file.originalname)}`;
+        const s3Response = await s3.upload({
+          Bucket: process.env.S3_BUCKET_NAME,
+          Key: filepath,
+          Body: file.buffer,
+          ContentType: file.mimetype
+        }).promise();
+
+        console.log('S3 upload result:', s3Response);
+
+        // Cập nhật URL avatar trong database
+        const updatedGroup = await groupService.updateGroupAvatar(groupId, s3Response.Location);
+
+        // Thông báo cho các thành viên qua socket
+        const io = req.app.get('io');
+        if (io) {
+          io.to(`group:${groupId}`).emit('group:updated', {
+            groupId,
+            type: 'AVATAR_UPDATED',
+            data: { avatarUrl: s3Response.Location }
+          });
+        }
+
+        return res.json({
+          status: 'success',
+          message: 'Cập nhật avatar nhóm thành công',
+          data: {
+            avatarUrl: s3Response.Location
+          }
+        });
+      } catch (s3Error) {
+        console.error('S3 upload error:', s3Error);
+        return res.status(500).json({
+          status: 'error',
+          message: 'Lỗi khi upload ảnh',
+          error: s3Error.message
+        });
+      }
+
+    } catch (error) {
+      console.error('Update group avatar error:', error);
+      if (error.response) {
+        console.error('Server error details:', {
+          status: error.response.status,
+          data: error.response.data,
+          headers: error.response.headers
+        });
+      }
+      return res.status(500).json({
+        status: 'error',
+        message: 'Lỗi khi cập nhật avatar nhóm',
+        error: error.message
+      });
+    }
+  }
+
+  // Cập nhật tên nhóm
+  async updateGroupName(req, res) {
+    try {
+      const { groupId } = req.params;
+      const { name } = req.body;
+      const userId = req.user.userId;
+
+      if (!name || !name.trim()) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Tên nhóm không được để trống'
+        });
+      }
+
+      // Kiểm tra quyền (chỉ admin mới được cập nhật)
+      const member = await GroupMemberService.getMember(groupId, userId);
+      if (!member || member.role !== 'ADMIN') {
+        return res.status(403).json({
+          status: 'error',
+          message: 'Bạn không có quyền đổi tên nhóm'
+        });
+      }
+
+      // Cập nhật tên nhóm
+      const updatedGroup = await groupService.updateGroup(groupId, { name: name.trim() });
+
+      // Thông báo cho các thành viên qua socket
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`group:${groupId}`).emit('group:updated', {
+          groupId,
+          type: 'NAME_UPDATED',
+          data: { name: name.trim() }
+        });
+      }
+
+      return res.json({
+        status: 'success',
+        message: 'Cập nhật tên nhóm thành công',
+        data: { name: name.trim() }
+      });
+    } catch (error) {
+      console.error('Update group name error:', error);
+      return res.status(500).json({
+        status: 'error',
+        message: 'Lỗi khi cập nhật tên nhóm',
+        error: error.message
+      });
     }
   }
 }

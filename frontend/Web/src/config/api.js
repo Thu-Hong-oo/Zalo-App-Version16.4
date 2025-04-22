@@ -1,19 +1,21 @@
-// XÓA 3 dòng import này:
-// import AsyncStorage from "@react-native-async-storage/async-storage";
-// import { Platform } from "react-native";
-// import Constants from "expo-constants";
-
-// Chỉ giữ lại import axios
 import axios from "axios";
 
 // Cấu hình API
 
-const COMPUTER_IP = "192.168.2.118";
+
+const COMPUTER_IP = "192.168.1.16";
 
 const BASE_URL = `http://${COMPUTER_IP}:3000`;
+
 const API_URL = `${BASE_URL}/api`;
+const SOCKET_URL = BASE_URL;
 
 // Hàm lấy base URL cho socket
+export const getSocketUrl = () => {
+  return SOCKET_URL;
+};
+
+// Hàm lấy base URL cho API
 export const getBaseUrl = () => {
   return BASE_URL;
 };
@@ -31,7 +33,7 @@ export const getApiUrlAsync = async () => {
 // Tạo instance Axios
 const api = axios.create({
   baseURL: API_URL,
-  withCredentials: true,
+  timeout: 10000,
   headers: {
     "Content-Type": "application/json",
   },
@@ -51,51 +53,53 @@ api.interceptors.request.use(
   }
 );
 
-// Add response interceptor to handle errors
+// Add response interceptor to handle token refresh
 api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
-  (error) => {
-    if (error.response) {
-      // The request was made and the server responded with a status code
-      // that falls out of the range of 2xx
-      console.error("API Error:", {
-        url: error.config.url,
-        message: error.message,
-        response: error.response.data,
-        status: error.response.status,
-      });
-    } else if (error.request) {
-      // The request was made but no response was received
-      console.error("API Error:", {
-        url: error.config.url,
-        message:
-          "Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.",
-        response: undefined,
-        status: undefined,
-      });
-    } else {
-      // Something happened in setting up the request that triggered an Error
-      console.error("API Error:", {
-        url: error.config.url,
-        message: error.message,
-        response: undefined,
-        status: undefined,
-      });
+
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    // If error is 401 and we haven't tried to refresh token yet
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
+      try {
+        const refreshToken = localStorage.getItem("refreshToken");
+        const response = await axios.post(`${API_URL}/auth/refresh`, {
+          refreshToken
+        });
+
+        if (response.data?.accessToken) {
+          localStorage.setItem("accessToken", response.data.accessToken);
+          api.defaults.headers.common["Authorization"] = `Bearer ${response.data.accessToken}`;
+          return api(originalRequest);
+        }
+      } catch (refreshError) {
+        // If refresh token is invalid, logout user
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("refreshToken");
+        localStorage.removeItem("user");
+        window.location.href = "/login";
+        return Promise.reject(refreshError);
+      }
+
     }
+
     return Promise.reject(error);
   }
 );
 
-// Thêm hàm kiểm tra kết nối
+// Hàm kiểm tra kết nối tới server
 export const checkServerConnection = async () => {
   try {
-    const response = await axios.get(`${BASE_URL}/health`, { timeout: 5000 });
-    return response.status === 200;
+
+    const response = await axios.get(`${BASE_URL}/health`, { timeout: 5000 });  // Kiểm tra kết nối với endpoint `/health`
+    return response.status === 200;  // Nếu status là 200, server hoạt động
   } catch (error) {
-    console.error("Server connection check failed:", error);
-    return false;
+    console.error('Server connection check failed:', error);
+    return false;  // Nếu có lỗi, trả về false
+
   }
 };
 

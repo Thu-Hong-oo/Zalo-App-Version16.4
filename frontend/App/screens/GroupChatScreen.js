@@ -1,4 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+
 import {
   View,
   Text,
@@ -12,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+
   ActivityIndicator,
   Modal,
   Alert,
@@ -49,6 +52,7 @@ import { WebView } from 'react-native-webview';
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
+
 const GroupChatScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
@@ -63,6 +67,7 @@ const GroupChatScreen = () => {
   const [groupDetails, setGroupDetails] = useState(null); // State lưu chi tiết nhóm
   const [loading, setLoading] = useState(true); // State loading
   const [error, setError] = useState(null); // State lỗi
+
   const [messages, setMessages] = useState([]);
   const [recalledMessages, setRecalledMessages] = useState(new Set()); // Thêm state mới để theo dõi tin nhắn đã thu hồi
   const [isTyping, setIsTyping] = useState(false);
@@ -170,6 +175,7 @@ const GroupChatScreen = () => {
       return currentUserId;
     }
   };
+
 
   // Tạo tin nhắn hệ thống dựa trên dữ liệu nhóm
   const createSystemMessage = (details) => {
@@ -1027,16 +1033,27 @@ const GroupChatScreen = () => {
             {groupDetails.name}
           </Text>
           <Text style={styles.subtitle}>
-            {groupDetails.members ? groupDetails.members.length : 0} thành viên
+
+            {groupDetails.members ? `${groupDetails.members.length} thành viên` : `${initialMemberCount} thành viên`} {/* Cập nhật số lượng từ API */}
           </Text>
         </View>
-
+        
         <TouchableOpacity style={styles.headerButton}>
+          <Ionicons name="videocam" size={24} color="#fff" />
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.headerButton}>
+          <Ionicons name="search" size={24} color="#fff" />
+        </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate('GroupSetting', { groupId })}>
+
           <Ionicons name="menu" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
 
       {/* Chat Messages */}
+
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -1073,6 +1090,7 @@ const GroupChatScreen = () => {
                 />
               )}
               <View
+
                 style={[
                   styles.messageBubble,
                   isMe ? styles.myMessageBubble : styles.otherMessageBubble,
@@ -1193,6 +1211,7 @@ const GroupChatScreen = () => {
                 </View>
               </View>
             </TouchableOpacity>
+
           );
         }}
         onEndReached={loadMoreMessages}
@@ -1207,6 +1226,7 @@ const GroupChatScreen = () => {
           ) : null
         }
       />
+
 
       {/* Message Input */}
       <KeyboardAvoidingView

@@ -1,5 +1,5 @@
 @baseUrl = http://localhost:3000/api
-@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwaG9uZSI6Ijg0Mzc2OTYzNjUzIiwiaWF0IjoxNzQ0ODcwNDg3LCJleHAiOjE3NDQ5NTY4ODd9.87mEMhzOgmo7FvaqDvsaTk4aMi4SEGuYA8NTQYzDAEI
+@authToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJlYjZjYWIxNC0wNTRiLTRhYjMtOGU2OS0yMWIzOTRmZjc1ZmQiLCJwaG9uZSI6Ijg0MTIzNDU2Nzg5IiwiaWF0IjoxNzQ1MjI2ODA2LCJleHAiOjE3NDUzMTMyMDZ9.lcl7rtZj7I6IIrfYiiL4D05Hof9Zw_0ghRpj20e7NUA
 
 ### Gửi lời mời kết bạn
 POST {{baseUrl}}/friends/request
@@ -8,7 +8,7 @@ Authorization: Bearer {{authToken}}
 
 {
     "from": "eb6cab14-054b-4ab3-8e69-21b394ff75fd",
-    "to": "346f45cb-af42-4f2d-9b15-eb7aa29e4b86"
+    "to": "463850a1-75ba-4f09-bf7e-c0ca62b0ea18"
 }
 
 ### Lấy danh sách lời mời đã gửi
