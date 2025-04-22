@@ -123,29 +123,27 @@ const AddMembersScreen = () => {
   };
 
   const handleSearch = async (query) => {
-    setSearchQuery(query);
+    if (!query.trim()) return;
     
-    if (query.length >= 10 && /^\d+$/.test(query)) {
-      setIsSearching(true);
-      try {
-        const result = await searchUserByPhone(query);
-        if (result) {
-          setSearchResults([{
-            userId: result.userId,
-            name: result.name,
-            avatar: result.avatar || 'https://via.placeholder.com/50',
-            phone: query
-          }]);
-        } else {
-          setSearchResults([]);
-        }
-      } catch (error) {
-        console.error('Error searching user:', error);
+    setIsSearching(true);
+    try {
+      const result = await searchUserByPhone(query);
+      if (result) {
+        setSearchResults([{
+          userId: result.userId,
+          name: result.name,
+          avatar: result.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(result.name),
+          phone: query
+        }]);
+      } else {
         setSearchResults([]);
       }
-      setIsSearching(false);
-    } else {
+    } catch (error) {
+      console.error('Error searching user by phone:', error);
       setSearchResults([]);
+      Alert.alert('Lỗi', 'Không thể tìm thấy người dùng với số điện thoại này');
+    } finally {
+      setIsSearching(false);
     }
   };
 
@@ -157,30 +155,39 @@ const AddMembersScreen = () => {
 
     try {
       setLoading(true);
-      await addGroupMember(groupId, contact.userId);
-      Alert.alert('Thành công', 'Đã thêm thành viên vào nhóm');
-      await loadGroupMembers();
-    
+      const response = await addGroupMember(groupId, contact.userId);
+
+      if (response && response.success) {
+        setGroupMembers(prev => [...prev, contact.userId]);
+        
+        socketService.emit('group:memberAdded', {
+          groupId,
+          userId: contact.userId,
+          type: 'ADD_MEMBER'
+        });
+
+        Alert.alert('Thành công', 'Đã thêm thành viên vào nhóm');
+        
+        await loadGroupMembers();
+      } else {
+        throw new Error(response?.error || 'Không thể thêm thành viên');
+      }
     } catch (error) {
       console.error('Error adding member:', error);
-      Alert.alert('Lỗi', 'Không thể thêm thành viên vào nhóm');
+      Alert.alert(
+        'Lỗi',
+        'Không thể thêm thành viên vào nhóm. Vui lòng thử lại sau.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
   const filteredContacts = () => {
-    if (searchQuery.length >= 10 && /^\d+$/.test(searchQuery)) {
+    if (searchQuery && searchResults.length > 0) {
       return searchResults;
     }
-
-    const contacts = activeTab === 'recent' ? recentChats : friends;
-    if (!searchQuery) return contacts;
-
-    return contacts.filter(contact => 
-      contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (contact.phone && contact.phone.includes(searchQuery))
-    );
+    return activeTab === 'recent' ? recentChats : friends;
   };
 
   const renderContactItem = ({ item }) => {
@@ -189,12 +196,17 @@ const AddMembersScreen = () => {
     return (
       <View style={styles.contactItem}>
         <Image 
-          source={{ uri: item.avatar || 'https://via.placeholder.com/50' }}
+          source={{ 
+            uri: item.avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(item.name || '?')
+          }}
           style={styles.avatar}
+          onError={(e) => {
+            e.target.source = { uri: 'https://ui-avatars.com/api/?name=' + encodeURIComponent(item.name || '?') };
+          }}
         />
         <View style={styles.contactInfo}>
           <Text style={styles.contactName}>{item.name || 'Không có tên'}</Text>
-          <Text style={styles.contactPhone}>{item.phone || 'Không có số điện thoại'}</Text>
+          {/* {item.phone && <Text style={styles.contactPhone}>{item.phone}</Text>} */}
         </View>
         {isExistingMember ? (
           <View style={styles.memberBadge}>
@@ -233,17 +245,29 @@ const AddMembersScreen = () => {
         </View>
       </View>
       
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Tìm tên hoặc số điện thoại"
-          value={searchQuery}
-          onChangeText={handleSearch}
-          placeholderTextColor="#999"
-          keyboardType="default"
-        />
-        {isSearching && <ActivityIndicator size="small" color="#2196F3" />}
+      <View style={styles.searchWrapper}>
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Nhập số điện thoại"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholderTextColor="#999"
+            keyboardType="numeric"
+          />
+        </View>
+        <TouchableOpacity 
+          style={[styles.searchButton, isSearching && styles.searchButtonDisabled]}
+          onPress={() => handleSearch(searchQuery)}
+          disabled={isSearching || !searchQuery.trim()}
+        >
+          {isSearching ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.searchButtonText}>Tìm</Text>
+          )}
+        </TouchableOpacity>
       </View>
       
       {!searchQuery && (
@@ -261,7 +285,7 @@ const AddMembersScreen = () => {
             onPress={() => setActiveTab('contacts')}
           >
             <Text style={[styles.tabText, activeTab === 'contacts' && styles.activeTabText]}>
-              BẠN BÈ
+              DANH BẠ
             </Text>
           </TouchableOpacity>
         </View>
@@ -279,9 +303,7 @@ const AddMembersScreen = () => {
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>
                 {searchQuery 
-                  ? isSearching 
-                    ? 'Đang tìm kiếm...'
-                    : 'Không tìm thấy kết quả' 
+                  ? 'Không tìm thấy kết quả'
                   : 'Không có liên hệ'}
               </Text>
             </View>
@@ -318,11 +340,17 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
   },
-  searchContainer: {
+  searchWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 16,
     marginVertical: 8,
+    gap: 8,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
     height: 40,
     backgroundColor: '#f5f5f5',
@@ -337,6 +365,24 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: '#333',
+    marginLeft: 8,
+  },
+  searchButton: {
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchButtonDisabled: {
+    backgroundColor: '#ccc',
+  },
+  searchButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
   },
   tabContainer: {
     flexDirection: 'row',

@@ -87,7 +87,7 @@ export const updateGroupInfo = async (groupId, updateData) => {
 };
 
 // Thêm thành viên vào nhóm
-export const addGroupMember = async (groupId, userId, role = 'MEMBER') => {
+export const addGroupMember = async (groupId, userId) => {
   try {
     const token = await getAccessToken();
     if (!token) {
@@ -96,12 +96,23 @@ export const addGroupMember = async (groupId, userId, role = 'MEMBER') => {
 
     const response = await api.post(`/groups/${groupId}/members`, {
       userId,
-      role
+      role: 'MEMBER'  // Backend expects this exact format
     });
-    return response.data;
+
+    if (response.status === 201 || response.status === 200) {
+      return {
+        success: true,
+        data: response.data
+      };
+    } else {
+      throw new Error('Không thể thêm thành viên');
+    }
   } catch (error) {
     console.error('Add group member error:', error);
-    throw error;
+    return {
+      success: false,
+      error: error.message || 'Không thể thêm thành viên'
+    };
   }
 };
 
@@ -247,71 +258,65 @@ export const getRecentContacts = async () => {
 };
 
 // Cập nhật avatar nhóm
-export const updateGroupAvatar = async (groupId, avatar) => {
+export const updateGroupAvatar = async (groupId, avatarFile) => {
   try {
     const token = await getAccessToken();
     if (!token) {
-      throw new Error('Không tìm thấy token xác thực');
+      throw new Error('Unauthorized');
     }
 
-    if (!avatar || !avatar.uri) {
-      throw new Error('Không tìm thấy file ảnh');
+    if (!avatarFile || !avatarFile.uri) {
+      throw new Error('No avatar file provided');
     }
-
-    console.log('Updating group avatar with data:', {
-      uri: avatar.uri,
-      type: avatar.type,
-      name: avatar.fileName
-    });
 
     const formData = new FormData();
     
-    // Xử lý file ảnh
-    const fileType = avatar.type || 'image/jpeg';
-    const fileName = avatar.fileName || 'avatar.jpg';
+    // Clean up the URI and ensure proper file object structure
+    const fileUri = Platform.OS === 'android' 
+      ? avatarFile.uri 
+      : avatarFile.uri.replace('file://', '');
     
-    // Nếu uri là base64
-    if (avatar.uri.startsWith('data:')) {
-      // Convert base64 to blob
-      const response = await fetch(avatar.uri);
-      const blob = await response.blob();
-      formData.append('avatar', blob, fileName);
-    } else {
-      // Nếu là file từ thư viện
-      formData.append('avatar', {
-        uri: avatar.uri,
-        type: fileType,
-        name: fileName
-      });
-    }
+    const file = {
+      uri: fileUri,
+      type: avatarFile.type || 'image/jpeg',
+      name: avatarFile.name || `avatar-${Date.now()}.jpg`
+    };
 
-    console.log('Sending form data with file name:', fileName);
+    formData.append('avatar', file);
 
-    const response = await api.put(`/groups/${groupId}/avatar`, formData, {
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'multipart/form-data'
-      }
+    console.log('Uploading avatar:', {
+      groupId,
+      fileDetails: file
     });
 
-    console.log('Update avatar response:', response.data);
+    const apiUrl = await getApiUrlAsync();
+    const fullUrl = `${apiUrl}/groups/${groupId}/avatar`;
     
-    if (!response.data || !response.data.data?.avatarUrl) {
-      throw new Error('Không nhận được URL ảnh từ server');
+    const response = await axios({
+      method: 'PUT',
+      url: fullUrl,
+      data: formData,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'multipart/form-data',
+        'Authorization': `Bearer ${token}`
+      },
+      transformRequest: [(data) => data]
+    });
+
+    console.log('Upload response:', response.data);
+
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Failed to update avatar');
     }
-    
-    return response.data.data.avatarUrl;
+
+    return response.data.avatarUrl;
   } catch (error) {
-    console.error('Avatar update error:', error);
+    console.error('Error updating group avatar:', error);
     if (error.response) {
-      console.error('Server error details:', {
-        status: error.response.status,
-        data: error.response.data,
-        headers: error.response.headers
-      });
-      throw new Error(error.response.data.message || 'Không thể cập nhật ảnh nhóm');
+      console.error('Server response:', error.response.data);
     }
-    throw error;
+    throw new Error('Failed to update avatar: ' + (error.message || 'Network error'));
   }
 };
 

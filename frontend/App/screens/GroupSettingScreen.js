@@ -14,7 +14,8 @@ import {
 
   ActivityIndicator,
   FlatList,
-  TextInput
+  TextInput,
+  Platform
 } from 'react-native';
 import { Ionicons, MaterialIcons, Feather } from '@expo/vector-icons';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
@@ -337,51 +338,61 @@ const GroupSettingsScreen = () => {
 
   const handlePickImage = async () => {
     try {
+      // Request permissions
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Lỗi', 'Cần cấp quyền truy cập thư viện ảnh');
+        Alert.alert('Permission needed', 'Please grant permission to access your photos');
         return;
       }
 
+      // Launch image picker
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.8,
+        quality: 1,
       });
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setLoading(true);
-        try {
-          const selectedImage = result.assets[0];
-          
-          // Format file object for multer
-          const avatarFile = {
-            uri: selectedImage.uri,
-            type: selectedImage.type || 'image/jpeg',
-            name: selectedImage.uri.split('/').pop() || 'avatar.jpg'
-          };
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const selectedImage = result.assets[0];
+        console.log('Selected image:', selectedImage);
 
-          console.log('Selected image:', avatarFile);
+        // Get file extension from URI
+        const uriParts = selectedImage.uri.split('.');
+        const fileExtension = uriParts[uriParts.length - 1];
+
+        // Create file object
+        const avatarFile = {
+          uri: selectedImage.uri,
+          type: `image/${fileExtension}` || 'image/jpeg',
+          name: `group-avatar-${Date.now()}.${fileExtension}`
+        };
+
+        console.log('Uploading with file:', avatarFile);
+
+        try {
+          // Show loading state
+          setLoading(true);
 
           // Upload avatar
           const avatarUrl = await updateGroupAvatar(groupId, avatarFile);
-          console.log('Avatar uploaded successfully:', avatarUrl);
+          console.log('Upload successful, new avatar URL:', avatarUrl);
 
-          // Update group info to reflect new avatar
+          // Update group info to show new avatar
           await fetchGroupInfo();
-          Alert.alert('Thành công', 'Đã cập nhật ảnh nhóm');
 
+          // Show success message
+          Alert.alert('Success', 'Cập nhật ảnh đại diện nhóm thành công');
         } catch (error) {
-          console.error('Upload avatar error:', error);
-          Alert.alert('Lỗi', error.message || 'Không thể cập nhật ảnh nhóm');
+          console.error('Avatar update error:', error);
+          Alert.alert('Error', 'Failed to update group avatar. Please try again.');
         } finally {
           setLoading(false);
         }
       }
     } catch (error) {
-      console.error('Pick image error:', error);
-      Alert.alert('Lỗi', 'Không thể chọn ảnh');
+      console.error('Error picking/uploading image:', error);
+      Alert.alert('Error', 'Failed to select image. Please try again.');
     }
   };
 
