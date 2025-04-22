@@ -356,28 +356,24 @@ const GroupSettingsScreen = () => {
           const selectedImage = result.assets[0];
           
           // Format file object for multer
-          const file = {
+          const avatarFile = {
             uri: selectedImage.uri,
             type: selectedImage.type || 'image/jpeg',
-            fileName: selectedImage.uri.split('/').pop() || 'avatar.jpg',
-            width: selectedImage.width,
-            height: selectedImage.height
+            name: selectedImage.uri.split('/').pop() || 'avatar.jpg'
           };
 
-          console.log('Selected image:', selectedImage);
-          console.log('Formatted file:', file);
-          
-          const uploadResponse = await updateGroupAvatar(groupId, file);
-          console.log('Upload avatar response:', uploadResponse);
-          
-          // Refresh group info to get new avatar
+          console.log('Selected image:', avatarFile);
+
+          // Upload avatar
+          const avatarUrl = await updateGroupAvatar(groupId, avatarFile);
+          console.log('Avatar uploaded successfully:', avatarUrl);
+
+          // Update group info to reflect new avatar
           await fetchGroupInfo();
           Alert.alert('Thành công', 'Đã cập nhật ảnh nhóm');
+
         } catch (error) {
           console.error('Upload avatar error:', error);
-          if (error.response) {
-            console.error('Error response:', error.response.data);
-          }
           Alert.alert('Lỗi', error.message || 'Không thể cập nhật ảnh nhóm');
         } finally {
           setLoading(false);

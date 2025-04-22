@@ -209,14 +209,14 @@ class GroupController {
         });
       }
 
-      // Kiểm tra quyền (chỉ admin mới được cập nhật)
-      const member = await GroupMemberService.getMember(groupId, userId);
-      if (!member || member.role !== 'ADMIN') {
-        return res.status(403).json({
-          status: 'error',
-          message: 'Bạn không có quyền cập nhật avatar nhóm'
-        });
-      }
+      // // Kiểm tra quyền (chỉ admin mới được cập nhật)
+      // const member = await GroupMemberService.getMember(groupId, userId);
+      // if (!member || member.role !== 'ADMIN') {
+      //   return res.status(403).json({
+      //     status: 'error',
+      //     message: 'Bạn không có quyền cập nhật avatar nhóm'
+      //   });
+      // }
 
       // Lấy thông tin file
       const file = req.file;

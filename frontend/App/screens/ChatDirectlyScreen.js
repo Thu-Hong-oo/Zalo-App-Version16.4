@@ -34,19 +34,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import ForwardMessageModal from "./ForwardMessageModal";
-
-import { getApiUrl, getBaseUrl,api } from "../config/api";
-import {
-  getFriendsList,
-  sendFriendRequest,
-  getSentFriendRequests,
-  getReceivedFriendRequests,
-  getUserInfoByPhone,
-  acceptFriendRequest,
-  rejectFriendRequest,
-} from "../modules/friend/controller";
-import { useFocusEffect } from '@react-navigation/native';
-
+import { getApiUrl, getBaseUrl, api } from "../config/api";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -84,7 +72,6 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
     minimumViewTime: 300,
   };
   const flatListRef = useRef(null);
-
   const { title, otherParticipantPhone, avatar } = route.params;
   const [currentDate, setCurrentDate] = useState(null);
   const [showLoadMore, setShowLoadMore] = useState(false);
@@ -304,7 +291,6 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       if (socket) socket.disconnect();
     };
   }, []);
-
 
   useEffect(() => {
     navigation.setOptions({
@@ -596,11 +582,9 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       const response = await deleteMessage(messageId);
       if (response.status === "success") {
         setMessages((prev) =>
-
           prev.map((msg) =>
             msg.messageId === messageId ? { ...msg, status: "deleted" } : msg
           )
-
         );
 
         socket?.emit("message-deleted", {
@@ -933,7 +917,6 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-
   const getItemLayout = (data, index) => {
     const group = data[index];
     return {
@@ -1027,7 +1010,6 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
     }
   }, [isNearTop]);
 
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1877f2" />
@@ -1035,68 +1017,8 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
-        <Image source={{ uri: headerAvatar || 'https://via.placeholder.com/40' }} style={styles.headerAvatar} />
-        <View style={styles.headerUserInfo}>
-          <Text style={styles.headerTitle}>{headerTitle}</Text>
-          {friendshipStatus === 'not_friend' && (
-            <Text style={styles.strangerLabel}>Người lạ</Text>
-          )}
-        </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerActionButton}>
-            <Ionicons name="call-outline" size={24} color="white" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerActionButton}>
-            <Ionicons name="videocam-outline" size={24} color="white" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerActionButton}>
-            <Ionicons name="ellipsis-vertical" size={24} color="white" />
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.headerTitle}>{title}</Text>
       </View>
-
-      {friendshipStatus === 'not_friend' && (
-        <View style={styles.friendRequestBanner}>
-          <Text style={styles.friendRequestText}>Bạn và người này chưa phải là bạn bè.</Text>
-          <TouchableOpacity style={styles.addFriendButton} onPress={handleAddFriend}>
-            <Ionicons name="person-add-outline" size={18} color="#fff" />
-            <Text style={styles.addFriendButtonText}>Kết bạn</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      {friendshipStatus === 'request_sent' && (
-        <View style={[styles.friendRequestBanner, styles.requestSentBanner]}>
-          <Ionicons name="checkmark-circle-outline" size={20} color="#666" style={{ marginRight: 5 }}/>
-          <Text style={styles.requestSentText}>Đã gửi lời mời kết bạn</Text>
-        </View>
-      )}
-      {friendshipStatus === 'request_received' && receivedRequestId && (
-        <View style={styles.friendRequestBanner}> 
-          <Text style={styles.friendRequestText}>
-            {otherParticipantInfo?.name || 'Người này'} muốn kết bạn.
-          </Text>
-          <View style={styles.requestReceivedActions}>
-            <TouchableOpacity 
-              style={[styles.requestActionButton, styles.rejectButton]}
-              onPress={handleRejectRequest}
-              disabled={isProcessingRequest}
-            >
-              <Text style={styles.requestActionButtonText}>Từ chối</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.requestActionButton, styles.acceptButton]}
-              onPress={handleAcceptRequest}
-              disabled={isProcessingRequest}
-            >
-              {isProcessingRequest 
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={[styles.requestActionButtonText, styles.acceptButtonText]}>Đồng ý</Text>
-              }
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
       <KeyboardAvoidingView
         style={styles.keyboardAvoidingView}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -1361,81 +1283,15 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: "#1877f2",
-    paddingVertical: 10,
-    paddingHorizontal: 15,
+    padding: 10,
     flexDirection: "row",
     alignItems: "center",
   },
-  headerAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginHorizontal: 10,
-  },
-  headerUserInfo: {
-    flex: 1,
-  },
   headerTitle: {
     color: "#FFFFFF",
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: "bold",
-  },
-  strangerLabel: {
-    color: "rgba(255, 255, 255, 0.8)",
-    fontSize: 12,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-    marginTop: 2,
-    overflow: 'hidden',
-  },
-  headerActions: {
-    flexDirection: 'row',
-  },
-  headerActionButton: {
-    marginLeft: 15,
-  },
-  friendRequestBanner: {
-    backgroundColor: '#fff',
-    padding: 15,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  friendRequestText: {
-    fontSize: 14,
-    color: '#333',
-    flex: 1,
-    marginRight: 10,
-  },
-  addFriendButton: {
-    backgroundColor: '#1877f2',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 5,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  addFriendButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-    marginLeft: 5,
-  },
-  requestSentBanner: {
-    backgroundColor: '#f0f0f0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  requestSentText: {
-    fontSize: 14,
-    color: '#666',
-    fontStyle: 'italic',
+    marginLeft: 10,
   },
   chatContainer: {
     flex: 1,
@@ -1637,7 +1493,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-
   dateGroup: {
     marginVertical: 15,
   },
@@ -1715,7 +1570,6 @@ const styles = StyleSheet.create({
   },
   deleteText: {
     color: "#ff3b30",
-
   },
 });
 
