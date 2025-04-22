@@ -163,13 +163,14 @@ const GroupMessageService = {
 
     const messageId = uuidv4();
     const timestamp = new Date().toISOString();
-
+    let messageContent = content || fileUrl;
+    let messageType = fileUrl ? "file" : "text";
     const messageData = {
       groupMessageId: messageId,
       groupId,
       senderId,
-      content: content || fileUrl,
-      type: fileUrl ? "file" : "text",
+      content: messageContent,
+      type: messageType,
       fileType: fileUrl ? fileType : null,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -722,11 +723,13 @@ const initializeSocket = (io) => {
 
       socket.on("send-group-message", async (data) => {
         try {
-          const { groupId, content } = data;
+          const { groupId, content, fileUrl, fileType } = data;
           const message = await GroupMessageService.sendMessage(
             groupId,
             userId,
-            content
+            content,
+            fileUrl,
+            fileType
           );
 
           socket.emit("message-sent", { status: "success", message });
@@ -924,6 +927,79 @@ const getDeletedMessages = async (userId, groupId) => {
     .map((item) => item.metadata?.deletedMessageId)
     .filter(Boolean);
 };
+
+
+// Route to handle file uploads in group
+router.post(
+  "/:groupId/upload",
+  authMiddleware,
+  upload.array("files"),
+  async (req, res) => {
+    try {
+      const { groupId } = req.params;
+      const userId = req.user.userId;
+
+      // Kiểm tra quyền truy cập nhóm
+      const member = await GroupMemberService.getMember(groupId, userId);
+      if (!member || !member.isActive) {
+        return res.status(403).json({
+          status: "error",
+          message: "Bạn không có quyền truy cập nhóm này",
+        });
+      }
+
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({
+          status: "error",
+          message: "Không có file nào được tải lên",
+          code: "NO_FILES",
+        });
+      }
+
+      // Upload files to S3
+      const results = await uploadToS3(req.files);
+      
+      // Kiểm tra kết quả upload
+      if (!results || results.length === 0) {
+        return res.status(500).json({
+          status: "error",
+          message: "Không thể tải lên file",
+          code: "UPLOAD_FAILED",
+        });
+      }
+
+      // Lấy URLs và thông tin files
+      const urls = results.map(result => result.Location);
+      const files = req.files.map(file => ({
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+      }));
+
+      res.json({
+        status: "success",
+        data: {
+          urls,
+          files,
+        },
+      });
+    } catch (error) {
+      console.error("Upload error:", error);
+      if (error.isValid === false) {
+        return res.status(400).json({
+          status: "error",
+          message: error.message,
+          code: error.code,
+        });
+      }
+      res.status(500).json({
+        status: "error",
+        message: "Đã xảy ra lỗi server",
+        code: "SERVER_ERROR",
+      });
+    }
+  }
+);
 
 // Routes
 router.get("/:groupId/messages", authMiddleware, getGroupMessages);
