@@ -22,17 +22,22 @@ export const getConversations = async () => {
   }
 };
 
-export const getChatHistory = async (otherParticipantPhone, page = 1, limit = 20) => {
+export const getChatHistory = async (otherParticipantPhone, options = {}) => {
   try {
+    const { date, limit = 50, before = true } = options;
+    const params = { limit };
+
+    if (date) {
+      params.date = date;
+      params.before = before;
+    }
+
     const response = await api.get(`/chat/history/${otherParticipantPhone}`, {
-      params: {
-        page,
-        limit
-      }
+      params,
     });
     return response.data;
   } catch (error) {
-    console.error('Get chat history error:', error);
+    console.error("Get chat history error:", error);
     throw error;
   }
 };

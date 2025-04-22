@@ -1,6 +1,6 @@
-const { dynamoDB, TABLES } = require('../../config/aws');
-const { v4: uuidv4 } = require('uuid');
-const { GroupMemberService } = require('./index');
+const { dynamoDB, TABLES } = require("../../config/aws");
+const { v4: uuidv4 } = require("uuid");
+const { GroupMemberService } = require("./index");
 
 class GroupChatService {
   /**
@@ -19,12 +19,12 @@ class GroupChatService {
         groupId: messageData.groupId,
         senderId: messageData.senderId,
         content: messageData.content,
-        type: messageData.type || 'text',
+        type: messageData.type || "text",
         createdAt: timestamp,
         updatedAt: timestamp,
         isActive: true,
-        metadata: messageData.metadata || {}
-      }
+        metadata: messageData.metadata || {},
+      },
     };
 
     await dynamoDB.put(params).promise();
@@ -42,14 +42,14 @@ class GroupChatService {
 
     const params = {
       TableName: TABLES.GROUP_MESSAGES,
-      KeyConditionExpression: 'groupId = :groupId',
-      FilterExpression: 'isActive = :isActive',
+      KeyConditionExpression: "groupId = :groupId",
+      FilterExpression: "isActive = :isActive",
       ExpressionAttributeValues: {
-        ':groupId': groupId,
-        ':isActive': true
+        ":groupId": groupId,
+        ":isActive": true,
       },
       Limit: limit,
-      ScanIndexForward: false // Get latest messages first
+      ScanIndexForward: false, // Get latest messages first
     };
 
     if (lastEvaluatedKey) {
@@ -59,7 +59,7 @@ class GroupChatService {
     const result = await dynamoDB.query(params).promise();
     return {
       messages: result.Items,
-      lastEvaluatedKey: result.LastEvaluatedKey
+      lastEvaluatedKey: result.LastEvaluatedKey,
     };
   }
 
@@ -73,14 +73,14 @@ class GroupChatService {
     const params = {
       TableName: TABLES.GROUP_MESSAGES,
       Key: { messageId },
-      UpdateExpression: 'SET isActive = :isActive, updatedAt = :updatedAt',
-      ConditionExpression: 'senderId = :senderId',
+      UpdateExpression: "SET isActive = :isActive, updatedAt = :updatedAt",
+      ConditionExpression: "senderId = :senderId",
       ExpressionAttributeValues: {
-        ':isActive': false,
-        ':updatedAt': new Date().toISOString(),
-        ':senderId': senderId
+        ":isActive": false,
+        ":updatedAt": new Date().toISOString(),
+        ":senderId": senderId,
       },
-      ReturnValues: 'ALL_NEW'
+      ReturnValues: "ALL_NEW",
     };
 
     const result = await dynamoDB.update(params).promise();
@@ -97,7 +97,7 @@ class GroupChatService {
   async forwardMessage(messageId, targetGroupId, senderId) {
     const originalMessage = await this.getMessage(messageId);
     if (!originalMessage) {
-      throw new Error('Message not found');
+      throw new Error("Message not found");
     }
 
     return this.sendMessage({
@@ -107,8 +107,8 @@ class GroupChatService {
       type: originalMessage.type,
       metadata: {
         ...originalMessage.metadata,
-        forwardedFrom: originalMessage.messageId
-      }
+        forwardedFrom: originalMessage.messageId,
+      },
     });
   }
 
@@ -120,7 +120,7 @@ class GroupChatService {
   async getMessage(messageId) {
     const params = {
       TableName: TABLES.GROUP_MESSAGES,
-      Key: { messageId }
+      Key: { messageId },
     };
 
     const result = await dynamoDB.get(params).promise();
@@ -140,13 +140,13 @@ class GroupChatService {
 
     // Define permission rules based on member role
     const permissions = {
-      [MEMBER_ROLES.ADMIN]: ['send', 'delete', 'forward'],
-      [MEMBER_ROLES.MODERATOR]: ['send', 'delete', 'forward'],
-      [MEMBER_ROLES.MEMBER]: ['send', 'forward']
+      [MEMBER_ROLES.ADMIN]: ["send", "delete", "forward"],
+      [MEMBER_ROLES.MODERATOR]: ["send", "delete", "forward"],
+      [MEMBER_ROLES.MEMBER]: ["send", "forward"],
     };
 
     return permissions[member.role]?.includes(action) || false;
   }
 }
 
-module.exports = new GroupChatService(); 
+module.exports = new GroupChatService();

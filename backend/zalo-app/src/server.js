@@ -17,8 +17,12 @@ const groupRoutes = require("./modules/group/group.route");
 const friendRoutes = require("./modules/friend/routes");
 const conversationRoutes = require("./modules/conversation/routes"); // ✅ thêm dòng này
 const {
+  routes: chatGroupRoutes,
+  socket: initializeChatGroupSocket,
+} = require("./modules/chatGroup");
+const {
   routes: chatRoutes,
-  socket: initializeSocket,
+  socket: initializeChatSocket,
 } = require("./modules/chat");
 
 // Initialize express app
@@ -53,6 +57,7 @@ const upload = multer({
 });
 
 // Middleware
+
 app.use(
   cors({
     origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:8081"],
@@ -65,10 +70,12 @@ app.use(
     maxAge: 86400,
   })
 );
+
 app.use(helmet());
-app.use(morgan("dev"));
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(morgan("dev"));
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 app.use((req, res, next) => {
@@ -79,13 +86,35 @@ app.use((req, res, next) => {
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
-app.use("/api/chat", chatRoutes);
+
+// app.use("/api", gatewayRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/friends", friendRoutes);
-app.use("/api/conversations", conversationRoutes); // ✅ thêm route tạo conversation
+app.use("/api/chat", chatRoutes);
+app.use("/api/chat-group", chatGroupRoutes);
 
-// Init socket
-initializeSocket(io);
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    status: "error",
+    message: "Something went wrong!",
+    error: process.env.NODE_ENV === "development" ? err.message : undefined,
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    status: "error",
+    message: "Route not found",
+  });
+});
+
+// Initialize socket connections
+initializeChatSocket(io);
+initializeChatGroupSocket(io);
+
 
 // Start server
 httpServer.listen(PORT, "0.0.0.0", () => {

@@ -1,5 +1,12 @@
 // Optimized ChatDirectly component
-import React, { useState, useEffect, useRef, useContext, useMemo, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useContext,
+  useMemo,
+  useCallback,
+} from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import EmojiPicker from "emoji-picker-react";
@@ -31,7 +38,7 @@ import {
   FileArchive,
   AlertCircle,
 } from "lucide-react";
-import api, { getBaseUrl,getApiUrl } from "../config/api";
+import api, { getBaseUrl, getApiUrl } from "../config/api";
 import "./css/ChatDirectly.css";
 import MessageContextMenu from "./MessageContextMenu";
 import ForwardMessageModal from "./ForwardMessageModal";
@@ -56,6 +63,12 @@ const ChatDirectly = () => {
   const [showVideoPreview, setShowVideoPreview] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [oldestMessageDate, setOldestMessageDate] = useState(null);
+  const [visibleDates, setVisibleDates] = useState([]);
+  const [initialLoad, setInitialLoad] = useState(true);
+  const [isLoadingDate, setIsLoadingDate] = useState(false);
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const emojiPickerRef = useRef(null);
@@ -90,20 +103,20 @@ const ChatDirectly = () => {
 
   const extractFilenameFromUrl = (url) => {
     if (!url) return null;
-    
+
     try {
       // Try to get the filename from the URL
-      const urlParts = url.split('/');
+      const urlParts = url.split("/");
       const lastPart = urlParts[urlParts.length - 1];
-      
+
       // Check if the URL contains a filename parameter
       const urlParams = new URLSearchParams(url);
-      const filenameParam = urlParams.get('filename');
-      
+      const filenameParam = urlParams.get("filename");
+
       if (filenameParam) {
         return decodeURIComponent(filenameParam);
       }
-      
+
       // If no filename parameter, use the last part of the URL
       return lastPart;
     } catch (error) {
@@ -149,31 +162,291 @@ const ChatDirectly = () => {
     }
   };
 
-  const loadChatHistory = useCallback(async () => {
+  const formatDate = (timestamp) => {
     try {
-      setLoading(true);
-      const res = await api.get(`/chat/history/${phone}`);
-      if (res.data.status === "success") {
-        const sorted = res.data.data.messages.sort(
-          (a, b) => a.timestamp - b.timestamp
-        );
-        setMessages(sorted);
-        scrollToBottom();
-      }
-    } catch (err) {
-      console.error("Chat history error:", err);
-      setError("Không thể tải lịch sử chat");
-    } finally {
-      setLoading(false);
+      if (!timestamp) return "";
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return "";
+      return date.toLocaleDateString("vi-VN");
+    } catch (error) {
+      console.warn("Date formatting error:", error);
+      return "";
     }
-  }, [phone]);
+  };
+
+  const groupMessagesByDate = (messages) => {
+    const groups = {};
+    messages.forEach((msg) => {
+      const date = formatDate(msg.timestamp);
+      if (!groups[date]) {
+        groups[date] = [];
+      }
+      groups[date].push(msg);
+    });
+    return groups;
+  };
+
+  const loadChatHistory = useCallback(
+    async (loadMore = false) => {
+      try {
+        if (loadMore && !hasMore) return;
+
+        setIsLoadingMore(loadMore);
+        const options = {
+          limit: 50,
+        };
+
+        if (loadMore && oldestMessageDate) {
+          options.date = oldestMessageDate;
+          options.before = true;
+        }
+
+        const response = await api.get(`/chat/history/${phone}`, {
+          params: options,
+        });
+
+        if (response.data.status === "success" && response.data.data.messages) {
+          const messageArray = Object.values(response.data.data.messages)
+            .flat()
+            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+          setMessages((prev) => {
+            if (loadMore) {
+              const combined = [...messageArray, ...prev];
+              const unique = Array.from(
+                new Map(combined.map((msg) => [msg.messageId, msg])).values()
+              );
+              return unique.sort(
+                (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+              );
+            }
+            return messageArray;
+          });
+
+          // Update pagination state
+          setHasMore(response.data.data.pagination.hasMore);
+          if (response.data.data.pagination.oldestTimestamp) {
+            setOldestMessageDate(response.data.data.pagination.oldestTimestamp);
+          }
+
+          // Update visible dates
+          if (!loadMore) {
+            const today = formatDate(Date.now());
+            setVisibleDates([today]);
+            setInitialLoad(false);
+          }
+        }
+
+        // Set loading to false after successful data fetch
+        setLoading(false);
+      } catch (error) {
+        console.error("Error loading chat history:", error);
+        setError("Không thể tải lịch sử trò chuyện");
+        // Also set loading to false in case of error
+        setLoading(false);
+      } finally {
+        setIsLoadingMore(false);
+      }
+    },
+    [phone, hasMore]
+  );
+
+  const loadMoreMessages = useCallback(() => {
+    if (isLoadingDate) return;
+
+    const dates = Object.keys(groupMessagesByDate(messages)).sort(
+      (a, b) => new Date(a) - new Date(b)
+    );
+
+    // Find the oldest visible date
+    const oldestVisibleDate = visibleDates[visibleDates.length - 1];
+    const oldestVisibleIndex = dates.indexOf(oldestVisibleDate);
+
+    // Load just one previous date
+    if (oldestVisibleIndex > 0) {
+      const previousDate = dates[oldestVisibleIndex - 1];
+      setIsLoadingDate(true);
+      setVisibleDates((prev) => [...prev, previousDate]);
+
+      setTimeout(() => {
+        setIsLoadingDate(false);
+      }, 500);
+      return;
+    }
+
+    // If we've shown all local dates and there might be more on server
+    if (oldestVisibleIndex === 0 && hasMore && !isLoadingMore) {
+      loadChatHistory(true);
+    }
+  }, [
+    messages,
+    visibleDates,
+    hasMore,
+    isLoadingMore,
+    isLoadingDate,
+    loadChatHistory,
+  ]);
+
+  const handleScroll = useCallback(
+    (e) => {
+      const element = e.target;
+      if (element.scrollTop === 0) {
+        loadMoreMessages();
+      }
+    },
+    [loadMoreMessages]
+  );
+
+  // Update useEffect for initial load
+  useEffect(() => {
+    if (messages.length > 0) {
+      if (initialLoad) {
+        const today = formatDate(Date.now());
+        setVisibleDates([today]);
+        setInitialLoad(false);
+      }
+    }
+  }, [messages, initialLoad]);
+
+  // Update message rendering logic
+  const renderedMessages = useMemo(() => {
+    const messagesByDate = groupMessagesByDate(messages);
+
+    return Object.keys(messagesByDate)
+      .sort((a, b) => new Date(a) - new Date(b))
+      .map((date) => {
+        if (!visibleDates.includes(date)) {
+          return null;
+        }
+
+        const messagesForDate = messagesByDate[date];
+
+        return (
+          <div key={date} className="date-group">
+            <div className="date-header">
+              <div className="date-line"></div>
+              <span className="date-text">{date}</span>
+              <div className="date-line"></div>
+            </div>
+            {messagesForDate.map((msg, idx) => {
+              const isOther = msg.senderPhone !== localStorage.getItem("phone");
+              const isRecalled = msg.status === "recalled";
+
+              return (
+                <div
+                  key={msg.messageId || idx}
+                  className={`message ${isOther ? "received" : "sent"}`}
+                  onContextMenu={(e) => handleContextMenu(e, msg)}
+                >
+                  <div
+                    className={`message-content ${
+                      isRecalled ? "recalled" : ""
+                    }`}
+                  >
+                    {msg.type === "file" ? (
+                      <div className="file-message">
+                        {msg.fileType?.startsWith("image/") ? (
+                          <div
+                            className="image-preview"
+                            onClick={() => handleImagePreview(msg.content)}
+                          >
+                            <img src={msg.content} alt="Image" />
+                          </div>
+                        ) : msg.fileType?.startsWith("video/") ? (
+                          <div
+                            className="video-preview"
+                            onClick={() => handleVideoPreview(msg.content)}
+                          >
+                            <video src={msg.content} controls />
+                          </div>
+                        ) : (
+                          <div
+                            className="document-preview"
+                            onClick={() =>
+                              handleDownloadFile(msg.content, msg.fileName)
+                            }
+                          >
+                            <div className="document-icon">
+                              {getFileIcon(msg.fileType)}
+                            </div>
+                            <div className="document-info">
+                              <div className="document-name">
+                                {msg.fileName ||
+                                  extractFilenameFromUrl(msg.content) ||
+                                  "File"}
+                              </div>
+                              <div className="document-size">
+                                {formatFileSize(msg.fileSize)}
+                              </div>
+                            </div>
+                            <div className="document-download">
+                              <Download size={20} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p>{msg.content}</p>
+                    )}
+                    <div className="message-info">
+                      <span className="message-time">
+                        {new Date(msg.timestamp).toLocaleTimeString("vi-VN", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                      {!isOther && msg.status === "sending" && (
+                        <span className="loading-dot">
+                          <span>.</span>
+                          <span>.</span>
+                          <span>.</span>
+                        </span>
+                      )}
+                      {!isOther && msg.status === "delivered" && (
+                        <span className="message-status">Đã nhận</span>
+                      )}
+                      {isRecalled && (
+                        <span className="message-status">Đã thu hồi</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {!isRecalled && (
+                    <div className="message-actions">
+                      <button
+                        className="action-button forward"
+                        onClick={() => handleForwardClick(msg)}
+                        title="Chuyển tiếp"
+                      >
+                        <ArrowRight size={16} />
+                      </button>
+                      {!isOther && (
+                        <button
+                          className="action-button more"
+                          onClick={(e) => handleContextMenu(e, msg)}
+                          title="Thêm"
+                        >
+                          <MoreHorizontal size={16} />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })
+      .filter(Boolean);
+  }, [messages, visibleDates]);
 
   const scrollToBottom = useCallback(() => {
     const el = messagesEndRef.current;
     if (!el) return;
     const container = el.parentElement;
     const isNearBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      150;
     if (isNearBottom) el.scrollIntoView({ behavior: "smooth" });
   }, []);
 
@@ -252,6 +525,8 @@ const ChatDirectly = () => {
       return;
     }
 
+    setLoading(true); // Set loading when starting to fetch data
+
     const newSocket = io(getBaseUrl(), {
       auth: { token },
       reconnection: true,
@@ -279,6 +554,10 @@ const ChatDirectly = () => {
         );
 
         if (exists) return prev;
+
+        // Cập nhật newest timestamp
+        setOldestMessageDate(Math.min(msg.timestamp, oldestMessageDate || 0));
+
         return [...prev, { ...msg, status: "received" }];
       });
       scrollToBottom();
@@ -321,8 +600,14 @@ const ChatDirectly = () => {
     setSocket(newSocket);
 
     // Initial load
-    fetchUserInfo();
-    loadChatHistory();
+    Promise.all([fetchUserInfo(), loadChatHistory()])
+      .catch((err) => {
+        console.error("Error during initial load:", err);
+        setError("Không thể tải dữ liệu chat");
+      })
+      .finally(() => {
+        setLoading(false); // Ensure loading is set to false after all initial loads
+      });
 
     return () => {
       if (newSocket) {
@@ -481,7 +766,7 @@ const ChatDirectly = () => {
       console.log("Starting upload with token:", token);
       console.log("Files to upload:", files);
 
-      const response = await fetch(getApiUrl()+"/chat/upload", {
+      const response = await fetch(getApiUrl() + "/chat/upload", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -503,24 +788,28 @@ const ChatDirectly = () => {
       result.data.urls.forEach((url, index) => {
         const file = files[index];
         const tempId = `temp-${Date.now()}-${index}`;
-        
+
         // Use the exact original filename
         const originalFileName = file.name;
-        
+
         // Append filename to URL for document types
         let fileUrl = url;
-        if (file.type.includes('pdf') || 
-            file.type.includes('word') || 
-            file.type.includes('document') || 
-            file.type.includes('powerpoint') || 
-            file.type.includes('presentation') ||
-            file.type.includes('excel') ||
-            file.type.includes('spreadsheet')) {
+        if (
+          file.type.includes("pdf") ||
+          file.type.includes("word") ||
+          file.type.includes("document") ||
+          file.type.includes("powerpoint") ||
+          file.type.includes("presentation") ||
+          file.type.includes("excel") ||
+          file.type.includes("spreadsheet")
+        ) {
           // Add filename as a query parameter to the URL
-          const separator = url.includes('?') ? '&' : '?';
-          fileUrl = `${url}${separator}filename=${encodeURIComponent(originalFileName)}`;
+          const separator = url.includes("?") ? "&" : "?";
+          fileUrl = `${url}${separator}filename=${encodeURIComponent(
+            originalFileName
+          )}`;
         }
-        
+
         // Thêm tin nhắn vào danh sách ngay lập tức
         const newMessage = {
           messageId: tempId,
@@ -628,18 +917,18 @@ const ChatDirectly = () => {
   const handleDownloadFile = (url, fileName) => {
     // For document files, use the exact filename from S3 if available
     let downloadFileName = fileName;
-    
+
     if (!downloadFileName && url) {
       // Try to extract the exact filename from the URL
       downloadFileName = extractFilenameFromUrl(url);
     }
-    
+
     // If still no filename, use a default name
     if (!downloadFileName) {
-      downloadFileName = 'downloaded-file';
+      downloadFileName = "downloaded-file";
     }
-    
-    const link = document.createElement('a');
+
+    const link = document.createElement("a");
     link.href = url;
     link.download = downloadFileName;
     document.body.appendChild(link);
@@ -648,21 +937,28 @@ const ChatDirectly = () => {
   };
 
   const getFileIcon = (mimeType) => {
-    if (mimeType.includes('image')) return <FileImage size={24} />;
-    if (mimeType.includes('video')) return <FileVideo size={24} />;
-    if (mimeType.includes('pdf')) return <FileText size={24} />;
-    if (mimeType.includes('word') || mimeType.includes('document')) return <FileText size={24} />;
-    if (mimeType.includes('powerpoint') || mimeType.includes('presentation')) return <FileText size={24} />;
-    if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('archive')) return <FileArchive size={24} />;
+    if (mimeType.includes("image")) return <FileImage size={24} />;
+    if (mimeType.includes("video")) return <FileVideo size={24} />;
+    if (mimeType.includes("pdf")) return <FileText size={24} />;
+    if (mimeType.includes("word") || mimeType.includes("document"))
+      return <FileText size={24} />;
+    if (mimeType.includes("powerpoint") || mimeType.includes("presentation"))
+      return <FileText size={24} />;
+    if (
+      mimeType.includes("zip") ||
+      mimeType.includes("rar") ||
+      mimeType.includes("archive")
+    )
+      return <FileArchive size={24} />;
     return <File size={24} />;
   };
 
   const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
+    if (bytes === 0) return "0 Bytes";
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const sizes = ["Bytes", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
   const onEmojiClick = (emojiObject) => {
@@ -725,109 +1021,6 @@ const ChatDirectly = () => {
     }
   };
 
-  const renderedMessages = useMemo(
-    () =>
-      messages
-        .filter((msg) => {
-          // Chỉ ẩn tin nhắn deleted nếu là tin nhắn của người dùng hiện tại
-          const currentUserPhone = localStorage.getItem("phone");
-          if (msg.status === "deleted" && msg.senderPhone === currentUserPhone) {
-            return false;
-          }
-          return true;
-        })
-        .map((msg, idx) => {
-          const isOther = msg.senderPhone !== localStorage.getItem("phone");
-          const isRecalled = msg.status === "recalled";
-
-          return (
-            <div
-              key={msg.messageId || idx}
-              className={`message ${isOther ? "received" : "sent"}`}
-              onContextMenu={(e) => handleContextMenu(e, msg)}
-            >
-              <div
-                className={`message-content ${isRecalled ? "recalled" : ""}`}
-              >
-                {msg.type === "file" ? (
-                  <div className="file-message">
-                    {msg.fileType?.startsWith("image/") ? (
-                      <div className="image-preview" onClick={() => handleImagePreview(msg.content)}>
-                        <img src={msg.content} alt="Image" />
-                      </div>
-                    ) : msg.fileType?.startsWith("video/") ? (
-                      <div className="video-preview" onClick={() => handleVideoPreview(msg.content)}>
-                        <video src={msg.content} controls />
-                      </div>
-                    ) : (
-                      <div className="document-preview" onClick={() => handleDownloadFile(msg.content, msg.fileName)}>
-                        <div className="document-icon">
-                          {getFileIcon(msg.fileType)}
-                        </div>
-                        <div className="document-info">
-                          <div className="document-name">
-                            {msg.fileName || extractFilenameFromUrl(msg.content) || "File"}
-                          </div>
-                          <div className="document-size">{formatFileSize(msg.fileSize)}</div>
-                        </div>
-                        <div className="document-download">
-                          <Download size={20} />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <p>{msg.content}</p>
-                )}
-                <div className="message-info">
-                  <span className="message-time">
-                    {new Date(msg.timestamp).toLocaleTimeString("vi-VN", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                  {!isOther && msg.status === "sending" && (
-                    <span className="loading-dot">
-                      <span>.</span>
-                      <span>.</span>
-                      <span>.</span>
-                    </span>
-                  )}
-                  {!isOther && msg.status === "delivered" && (
-                    <span className="message-status">Đã nhận</span>
-                  )}
-                  {isRecalled && (
-                    <span className="message-status">Đã thu hồi</span>
-                  )}
-                </div>
-              </div>
-
-              {!isRecalled && (
-                <div className="message-actions">
-                  <button
-                    className="action-button forward"
-                    onClick={() => handleForwardClick(msg)}
-                    title="Chuyển tiếp"
-                  >
-                    <ArrowRight size={16} />
-                  </button>
-                  {!isOther && (
-                    <button
-                      className="action-button more"
-                      onClick={(e) => handleContextMenu(e, msg)}
-                      title="Thêm"
-                    >
-                      <MoreHorizontal size={16} />
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        }),
-    [messages]
-  );
-
   if (loading) return <div className="loading">Đang tải...</div>;
   if (error) return <div className="error">{error}</div>;
 
@@ -862,7 +1055,13 @@ const ChatDirectly = () => {
         </div>
       </div>
 
-      <div className="messages-container">
+      <div className="messages-container" onScroll={handleScroll}>
+        {isLoadingMore && (
+          <div className="loading-more">
+            <div className="loading-spinner"></div>
+            <span>Đang tải tin nhắn cũ...</span>
+          </div>
+        )}
         <div className="messages-list">
           {renderedMessages}
           <div ref={messagesEndRef} />
@@ -906,7 +1105,7 @@ const ChatDirectly = () => {
       <input
         type="file"
         ref={fileInputRef}
-        style={{ display: 'none' }}
+        style={{ display: "none" }}
         accept="image/*,video/*"
         multiple
         onChange={handleFileSelect}
@@ -914,7 +1113,7 @@ const ChatDirectly = () => {
       <input
         type="file"
         ref={documentInputRef}
-        style={{ display: 'none' }}
+        style={{ display: "none" }}
         accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.rar"
         multiple
         onChange={handleFileSelect}
@@ -933,9 +1132,7 @@ const ChatDirectly = () => {
             <div className="file-list">
               {selectedFiles.map((file, index) => (
                 <div key={index} className="file-item">
-                  <div className="file-icon">
-                    {getFileIcon(file.type)}
-                  </div>
+                  <div className="file-icon">{getFileIcon(file.type)}</div>
                   <div className="file-info">
                     <div className="file-name">{file.name}</div>
                     <div className="file-size">{formatFileSize(file.size)}</div>
@@ -959,22 +1156,24 @@ const ChatDirectly = () => {
             {isUploading ? (
               <div className="upload-progress">
                 <div className="progress-bar">
-                  <div 
-                    className="progress-fill" 
+                  <div
+                    className="progress-fill"
                     style={{ width: `${uploadProgress}%` }}
                   ></div>
                 </div>
-                <div className="progress-text">Đang upload... {uploadProgress}%</div>
+                <div className="progress-text">
+                  Đang upload... {uploadProgress}%
+                </div>
               </div>
             ) : (
               <div className="modal-actions">
-                <button 
+                <button
                   className="cancel-button"
                   onClick={handleFilePreviewClose}
                 >
                   Hủy
                 </button>
-                <button 
+                <button
                   className="send-button"
                   onClick={() => handleUpload(selectedFiles)}
                   disabled={selectedFiles.length === 0}
@@ -992,10 +1191,13 @@ const ChatDirectly = () => {
         <div className="modal-overlay">
           <div className="image-preview-modal">
             <div className="modal-header">
-              <button className="close-button" onClick={() => setShowImagePreview(false)}>
+              <button
+                className="close-button"
+                onClick={() => setShowImagePreview(false)}
+              >
                 <X size={24} />
               </button>
-              <button 
+              <button
                 className="download-button"
                 onClick={() => handleDownloadFile(previewImage, "image.jpg")}
               >
@@ -1014,10 +1216,13 @@ const ChatDirectly = () => {
         <div className="modal-overlay">
           <div className="video-preview-modal">
             <div className="modal-header">
-              <button className="close-button" onClick={() => setShowVideoPreview(false)}>
+              <button
+                className="close-button"
+                onClick={() => setShowVideoPreview(false)}
+              >
                 <X size={24} />
               </button>
-              <button 
+              <button
                 className="download-button"
                 onClick={() => handleDownloadFile(previewVideo, "video.mp4")}
               >
@@ -1052,16 +1257,16 @@ const ChatDirectly = () => {
                 </div>
               )}
             </div>
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="toolbar-button"
               onClick={handleImageClick}
               title="Gửi ảnh hoặc video"
             >
               <ImageIcon size={20} />
             </button>
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="toolbar-button"
               onClick={handleDocumentClick}
               title="Gửi tài liệu"
@@ -1099,7 +1304,14 @@ const ChatDirectly = () => {
               className="send-button"
               disabled={!message.trim() && selectedFiles.length === 0}
             >
-              <Send size={20} color={(message.trim() || selectedFiles.length > 0) ? "#1877f2" : "#666"} />
+              <Send
+                size={20}
+                color={
+                  message.trim() || selectedFiles.length > 0
+                    ? "#1877f2"
+                    : "#666"
+                }
+              />
             </button>
           </div>
         </form>
@@ -1117,13 +1329,13 @@ const ChatDirectly = () => {
             </div>
             <p className="error-message">{errorModal.message}</p>
             <div className="error-modal-footer">
-              <button 
+              <button
                 className="error-modal-button secondary"
                 onClick={closeError}
               >
                 Đóng
               </button>
-              <button 
+              <button
                 className="error-modal-button primary"
                 onClick={closeError}
               >

@@ -10,12 +10,12 @@ import {
   SafeAreaView,
   ActivityIndicator,
   LogBox,
-  Modal
+  Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { getConversations } from "../modules/chat/controller";
 import api from "../config/api";
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthContext } from "../App";
 
 // Enable logging in development
@@ -39,10 +39,10 @@ export default function ChatListScreen({ navigation }) {
     });
   }, [navigation]);
   useEffect(() => {
-    console.log('ChatScreen mounted');
+    console.log("ChatScreen mounted");
     const loadData = async () => {
       if (user?.userId) {
-        console.log('Current user ID from context:', user.userId);
+        console.log("Current user ID from context:", user.userId);
         await fetchConversations();
         await fetchGroups();
       }
@@ -51,7 +51,7 @@ export default function ChatListScreen({ navigation }) {
 
     // Add focus listener to reload conversations when screen comes into focus
     const unsubscribe = navigation.addListener("focus", () => {
-      console.log('ChatScreen focused');
+      console.log("ChatScreen focused");
       loadData();
     });
 
@@ -109,26 +109,26 @@ export default function ChatListScreen({ navigation }) {
   const fetchGroups = async () => {
     try {
       if (!user?.userId) {
-        console.log('No user ID available in context');
+        console.log("No user ID available in context");
         return;
       }
 
-      console.log('Fetching groups for user:', user.userId);
+      console.log("Fetching groups for user:", user.userId);
       const response = await api.get(`/users/${user.userId}/groups`);
-      console.log('Groups API response:', response.data);
+      console.log("Groups API response:", response.data);
 
       if (!response.data?.groups) {
-        console.log('No groups data in response');
+        console.log("No groups data in response");
         return;
       }
 
       // Transform groups data to match chat list format
-      const groupChats = response.data.groups.map(group => {
-        console.log('Processing group:', group);
+      const groupChats = response.data.groups.map((group) => {
+        // console.log("Processing group:", group);
         return {
           id: group.groupId,
           title: group.name,
-          message: group.lastMessage?.content || 'Chưa có tin nhắn',
+          message: group.lastMessage?.content || "Chưa có tin nhắn",
           time: formatTime(group.lastMessageAt || group.createdAt),
           isGroup: true,
           memberCount: group.memberCount,
@@ -136,38 +136,38 @@ export default function ChatListScreen({ navigation }) {
           avatar: group.avatar|| null,
           unreadCount: 0,
           lastMessageAt: group.lastMessageAt || group.createdAt,
-          memberRole: group.memberRole
+          memberRole: group.memberRole,
         };
       });
 
-      console.log('Transformed group chats:', groupChats);
+      // console.log("Transformed group chats:", groupChats);
 
       // Update state with both conversations and groups
-      setChats(prevChats => {
-        console.log('Previous chats:', prevChats);
+      setChats((prevChats) => {
+        // console.log("Previous chats:", prevChats);
         // Filter out any existing groups from previous chats
-        const directChats = prevChats.filter(chat => !chat.isGroup);
-        console.log('Direct chats:', directChats);
-        
+        const directChats = prevChats.filter((chat) => !chat.isGroup);
+        // console.log("Direct chats:", directChats);
+
         // Combine direct chats and group chats
         const allChats = [...directChats, ...groupChats];
-        console.log('Combined chats before sorting:', allChats);
-        
+        // console.log('Combined chats before sorting:', allChats);
+
         // Sort by last message time
         const sortedChats = allChats.sort((a, b) => {
           const timeA = new Date(a.lastMessageAt || a.time);
           const timeB = new Date(b.lastMessageAt || b.time);
           return timeB - timeA;
         });
-        
-        console.log('Final sorted chats:', sortedChats);
+
+        // console.log("Final sorted chats:", sortedChats);
         return sortedChats;
       });
     } catch (error) {
-      console.error('Error fetching groups:', error);
+      console.error("Error fetching groups:", error);
       if (error.response) {
-        console.error('Error response:', error.response.data);
-        console.error('Error status:', error.response.status);
+        console.error("Error response:", error.response.data);
+        console.error("Error status:", error.response.status);
       }
     }
   };
@@ -181,9 +181,9 @@ export default function ChatListScreen({ navigation }) {
       }
       setError(null);
 
-      console.log('Fetching conversations...');
+      console.log("Fetching conversations...");
       const response = await getConversations();
-      console.log('Conversations response:', response);
+      console.log("Conversations response:", response);
 
       if (response.status === "success" && response.data?.conversations) {
         // Transform API data to match UI requirements
@@ -207,12 +207,12 @@ export default function ChatListScreen({ navigation }) {
               unreadCount: conv.unreadCount || 0,
               otherParticipantPhone: otherParticipant.phone,
               lastMessageAt: conv.lastMessage.timestamp,
-              isGroup: false
+              isGroup: false,
             };
           })
         );
 
-        console.log('Transformed conversations:', transformedChats);
+        console.log("Transformed conversations:", transformedChats);
         setChats(transformedChats);
         // Fetch groups after setting conversations
         await fetchGroups();
@@ -229,7 +229,7 @@ export default function ChatListScreen({ navigation }) {
   };
 
   const handleRefresh = () => {
-    console.log('Refreshing...');
+    console.log("Refreshing...");
     fetchConversations(true);
   };
 
@@ -354,12 +354,12 @@ export default function ChatListScreen({ navigation }) {
     <TouchableOpacity
       style={styles.chatItem}
       onPress={() =>
-        item.isGroup 
+        item.isGroup
           ? navigation.navigate("GroupChat", {
               groupId: item.id,
               title: item.title,
               members: item.members,
-              memberCount: item.memberCount
+              memberCount: item.memberCount,
             })
           : navigation.navigate("ChatDirectly", {
               title: item.title,
@@ -370,6 +370,7 @@ export default function ChatListScreen({ navigation }) {
     >
       <View style={styles.avatarContainer}>
         {item.isGroup ? (
+
           item.avatar ? (
             <Image source={{ uri: item.avatar }} style={styles.avatar} />
           ) : (
@@ -377,6 +378,7 @@ export default function ChatListScreen({ navigation }) {
               <Ionicons name="people" size={24} color="#fff" />
             </View>
           )
+
         ) : item.avatar ? (
           <Image source={{ uri: item.avatar }} style={styles.avatar} />
         ) : (
@@ -457,7 +459,10 @@ export default function ChatListScreen({ navigation }) {
         <TouchableOpacity style={styles.headerButton}>
           <Ionicons name="qr-code" size={24} color="#fff" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.headerButton} onPress={() => setShowAddModal(true)}>
+        <TouchableOpacity
+          style={styles.headerButton}
+          onPress={() => setShowAddModal(true)}
+        >
           <Ionicons name="add" size={27} color="#fff" />
         </TouchableOpacity>
 
@@ -468,28 +473,30 @@ export default function ChatListScreen({ navigation }) {
           animationType="fade"
           onRequestClose={() => setShowAddModal(false)}
         >
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.modalOverlay}
-            activeOpacity={1} 
+            activeOpacity={1}
             onPress={() => setShowAddModal(false)}
           >
             <View style={styles.modalContent}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.modalOption}
                 onPress={() => {
                   setShowAddModal(false);
+
                   navigation.navigate('FriendRequests');
+
                 }}
               >
                 <Ionicons name="person-add" size={24} color="#1877f2" />
                 <Text style={styles.modalOptionText}>Thêm bạn</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.modalOption}
                 onPress={() => {
                   setShowAddModal(false);
-                  navigation.navigate('GroupCreation');
+                  navigation.navigate("GroupCreation");
                 }}
               >
                 <Ionicons name="people" size={24} color="#1877f2" />
@@ -758,36 +765,36 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-start',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-start",
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     marginTop: 60,
     marginHorizontal: 20,
     borderRadius: 10,
     padding: 15,
     elevation: 5,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
   },
   modalOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: "#e0e0e0",
   },
   modalOptionText: {
     marginLeft: 15,
     fontSize: 16,
-    color: '#333',
+    color: "#333",
   },
   memberCount: {
     fontSize: 14,
-    color: '#666',
-    fontWeight: 'normal'
+    color: "#666",
+    fontWeight: "normal",
   },
 });

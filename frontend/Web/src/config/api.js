@@ -1,7 +1,12 @@
 import axios from "axios";
 
 // Cấu hình API
-const BASE_URL =  'http://localhost:3000';
+
+
+const COMPUTER_IP = "192.168.2.118";
+
+const BASE_URL = `http://${COMPUTER_IP}:3000`;
+
 const API_URL = `${BASE_URL}/api`;
 const SOCKET_URL = BASE_URL;
 
@@ -50,6 +55,7 @@ api.interceptors.request.use(
 
 // Add response interceptor to handle token refresh
 api.interceptors.response.use(
+
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
@@ -77,6 +83,7 @@ api.interceptors.response.use(
         window.location.href = "/login";
         return Promise.reject(refreshError);
       }
+
     }
 
     return Promise.reject(error);
@@ -86,11 +93,13 @@ api.interceptors.response.use(
 // Hàm kiểm tra kết nối tới server
 export const checkServerConnection = async () => {
   try {
+
     const response = await axios.get(`${BASE_URL}/health`, { timeout: 5000 });  // Kiểm tra kết nối với endpoint `/health`
     return response.status === 200;  // Nếu status là 200, server hoạt động
   } catch (error) {
     console.error('Server connection check failed:', error);
     return false;  // Nếu có lỗi, trả về false
+
   }
 };
 
