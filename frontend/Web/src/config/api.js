@@ -1,11 +1,16 @@
 import axios from "axios";
 
 // Cấu hình API
-const COMPUTER_IP = "192.168.1.77";  // Địa chỉ IP máy tính
-const BASE_URL = `http://${COMPUTER_IP}:3000`;  // API base URL
-const API_URL = `${BASE_URL}/api`;  // API URL chính
+const BASE_URL =  'http://localhost:3000';
+const API_URL = `${BASE_URL}/api`;
+const SOCKET_URL = BASE_URL;
 
 // Hàm lấy base URL cho socket
+export const getSocketUrl = () => {
+  return SOCKET_URL;
+};
+
+// Hàm lấy base URL cho API
 export const getBaseUrl = () => {
   return BASE_URL;
 };
@@ -23,7 +28,7 @@ export const getApiUrlAsync = async () => {
 // Tạo instance Axios
 const api = axios.create({
   baseURL: API_URL,
-  withCredentials: true,  // Đảm bảo cookie và credentials được gửi
+  timeout: 10000,
   headers: {
     "Content-Type": "application/json",
   },
@@ -43,35 +48,37 @@ api.interceptors.request.use(
   }
 );
 
-// Add response interceptor to handle errors
+// Add response interceptor to handle token refresh
 api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
-  (error) => {
-    // Xử lý lỗi phản hồi
-    if (error.response) {
-      console.error("API Error:", {
-        url: error.config.url,
-        message: error.message,
-        response: error.response.data,
-        status: error.response.status,
-      });
-    } else if (error.request) {
-      console.error("API Error:", {
-        url: error.config.url,
-        message: "Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.",
-        response: undefined,
-        status: undefined,
-      });
-    } else {
-      console.error("API Error:", {
-        url: error.config.url,
-        message: error.message,
-        response: undefined,
-        status: undefined,
-      });
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    // If error is 401 and we haven't tried to refresh token yet
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
+      try {
+        const refreshToken = localStorage.getItem("refreshToken");
+        const response = await axios.post(`${API_URL}/auth/refresh`, {
+          refreshToken
+        });
+
+        if (response.data?.accessToken) {
+          localStorage.setItem("accessToken", response.data.accessToken);
+          api.defaults.headers.common["Authorization"] = `Bearer ${response.data.accessToken}`;
+          return api(originalRequest);
+        }
+      } catch (refreshError) {
+        // If refresh token is invalid, logout user
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("refreshToken");
+        localStorage.removeItem("user");
+        window.location.href = "/login";
+        return Promise.reject(refreshError);
+      }
     }
+
     return Promise.reject(error);
   }
 );

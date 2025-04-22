@@ -53,7 +53,10 @@ export const createGroup = async (groupData) => {
     // Prepare group data
     const finalGroupData = {
       name: groupData.name || `Nhóm của ${groupData.members.slice(0, 3).map(m => m.name).join(', ')}`,
-      members: groupData.members.map(m => m.userId),
+      members: [
+        ...groupData.members.map(m => m.userId),
+        userInfo.userId // Add creator to members list
+      ],
       createdBy: userInfo.userId
     };
     

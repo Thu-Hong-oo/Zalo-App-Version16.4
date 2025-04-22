@@ -23,7 +23,8 @@ import "./App.css"
 import { io } from "socket.io-client"
 import Login from "./components/Login"
 import ChatDirectly from "./components/ChatDirectly"
-import api, { getBaseUrl ,getApiUrl} from "./config/api"
+import GroupChat from "./components/GroupChat"
+import api, { getBaseUrl, getApiUrl, getSocketUrl } from "./config/api"
 import FriendList from "./components/FriendList";
 import FriendPanel from "./components/FriendPanel";
 import FriendRequests from "./components/FriendRequests";
@@ -61,6 +62,7 @@ function MainApp({ setIsAuthenticated }) {
   const [sidebarTab, setSidebarTab] = useState("chat"); // mặc định là chat
   const [showAddFriendModal, setShowAddFriendModal] = useState(false);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [groups, setGroups] = useState([]);
 
   const navigate = useNavigate()
 
@@ -91,7 +93,7 @@ function MainApp({ setIsAuthenticated }) {
       console.log("Conversations response:", response.data);
       
       if (response.data.status === 'success' && response.data.data?.conversations) {
-        const newChats = await Promise.all(
+        const directChats = await Promise.all(
           response.data.data.conversations.map(async (conv) => {
             try {
               const otherParticipant = conv.participant.isCurrentUser
@@ -105,11 +107,13 @@ function MainApp({ setIsAuthenticated }) {
                 id: conv.conversationId,
                 title: userInfo?.name || otherParticipant.phone,
                 message: conv.lastMessage?.content || "",
-                time: conv.lastMessage?.timestamp ? formatTime(conv.lastMessage.timestamp) : "",
+                time: formatTime(conv.lastMessage?.timestamp),
                 avatar: userInfo?.avatar,
                 isFromMe: conv.lastMessage?.isFromMe || false,
                 unreadCount: conv.unreadCount || 0,
                 otherParticipantPhone: otherParticipant.phone,
+                lastMessageAt: conv.lastMessage?.timestamp,
+                type: 'direct',
                 senderName: conv.lastMessage?.isFromMe ? 'Bạn' : (userInfo?.name || otherParticipant.phone)
               };
             } catch (error) {
@@ -118,17 +122,45 @@ function MainApp({ setIsAuthenticated }) {
             }
           })
         );
-  
-        // Filter out any null conversations
-        const validChats = newChats.filter(chat => chat !== null);
+
+        // Fetch groups
+        const userStr = localStorage.getItem('user');
+        if (!userStr) {
+          console.error('User not found in localStorage');
+          return;
+        }
         
-        
-        // 🔍 So sánh dữ liệu mới với dữ liệu cũ
-        const isEqual = JSON.stringify(validChats) === JSON.stringify(chats);
-        if (!isEqual) {
-          setChats(validChats);
+        const user = JSON.parse(userStr);
+        const groupsResponse = await api.get(`/users/${user.userId}/groups`);
+        console.log("Groups response:", groupsResponse.data);
+
+        let groupChats = [];
+        if (groupsResponse.data?.groups) {
+          groupChats = groupsResponse.data.groups.map(group => ({
+            id: group.groupId,
+            title: group.name,
+            message: group.lastMessage?.content || "Chưa có tin nhắn",
+            time: formatTime(group.lastMessageAt || group.createdAt),
+            avatar: group.avatar,
+            unreadCount: group.unreadCount || 0,
+            lastMessageAt: group.lastMessageAt || group.createdAt,
+            type: 'group',
+            memberCount: group.memberCount,
+            members: group.members || []
+          }));
         }
   
+        // Filter out any null conversations
+        const validDirectChats = directChats.filter(chat => chat !== null);
+        
+        // Combine and sort all chats by last message time
+        const allChats = [...validDirectChats, ...groupChats].sort((a, b) => {
+          const timeA = new Date(a.lastMessageAt || 0);
+          const timeB = new Date(b.lastMessageAt || 0);
+          return timeB - timeA;
+        });
+        
+        setChats(allChats);
         setError(null);
       } else {
         console.error("Invalid response format:", response.data);
@@ -240,7 +272,7 @@ function MainApp({ setIsAuthenticated }) {
     socket.on("message_read", handleMessageRead);
     socket.on("new_conversation", handleNewConversation);
   
-    // ✅ Dùng Page Visibility API để load lại khi user quay lại tab
+    //  Dùng Page Visibility API để load lại khi user quay lại tab
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         fetchConversations();
@@ -295,8 +327,13 @@ function MainApp({ setIsAuthenticated }) {
   }
 
   const handleChatClick = (chat) => {
-    setSelectedChat(chat.otherParticipantPhone)
-    navigate(`/app/chat/${chat.otherParticipantPhone}`)
+    if (chat.type === 'group') {
+      setSelectedChat(chat.id);
+      navigate(`/app/groups/${chat.id}`);
+    } else {
+      setSelectedChat(chat.otherParticipantPhone);
+      navigate(`/app/chat/${chat.otherParticipantPhone}`);
+    }
   }
   const handleRefreshConversations = (conversationId) => {
     fetchConversations(); // load lại toàn bộ danh sách chat
@@ -370,6 +407,29 @@ function MainApp({ setIsAuthenticated }) {
     }
   };
  
+  const fetchGroups = async () => {
+    try {
+      // Get current user from localStorage
+      const userStr = localStorage.getItem('user');
+      if (!userStr) {
+        console.error('User not found in localStorage');
+        return;
+      }
+      
+      const user = JSON.parse(userStr);
+      const response = await api.get(`/users/${user.userId}/groups`);
+      if (response.data && response.data.groups) {
+        setGroups(response.data.groups);
+      }
+    } catch (error) {
+      console.error('Error fetching groups:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchGroups();
+  }, []);
+
   return (
     <div className="d-flex vh-100" style={{ backgroundColor: "#f0f5ff" }}>
       {/* Sidebar */}
@@ -503,7 +563,7 @@ function MainApp({ setIsAuthenticated }) {
             chats.map((chat) => (
               <div
                 key={chat.id}
-                className={`chat-item ${selectedChat === chat.otherParticipantPhone ? 'active' : ''}`}
+                className={`chat-item ${selectedChat === (chat.type === 'group' ? chat.id : chat.otherParticipantPhone) ? 'active' : ''}`}
                 onClick={() => handleChatClick(chat)}
               >
                 <div className="chat-avatar">
@@ -518,7 +578,11 @@ function MainApp({ setIsAuthenticated }) {
                     />
                   ) : (
                     <div className="avatar-placeholder">
-                      {chat.title.slice(0, 2).toUpperCase()}
+                      {chat.type === 'group' ? (
+                        <Users size={24} className="group-icon" />
+                      ) : (
+                        chat.title.slice(0, 2).toUpperCase()
+                      )}
                     </div>
                   )}
                   {chat.unreadCount > 0 && (
@@ -527,7 +591,13 @@ function MainApp({ setIsAuthenticated }) {
                 </div>
                 <div className="chat-info">
                   <div className="chat-header">
-                    <h3 className="chat-title">{chat.title}</h3>
+                    <h3 className="chat-title">
+                      {chat.type === 'group' && <Users size={16} className="me-1" />}
+                      {chat.title}
+                      {chat.type === 'group' && chat.memberCount && (
+                        <span className="member-count"> · {chat.memberCount}</span>
+                      )}
+                    </h3>
                     <span className="chat-time">{chat.time}</span>
                   </div>
                   <p className={`chat-message ${chat.unreadCount > 0 ? 'unread' : ''}`}>
@@ -543,17 +613,6 @@ function MainApp({ setIsAuthenticated }) {
       {/* Main Content */}
       <div className="main-content">
         <Routes>
-          <Route path="chat/:phone" element={<ChatDirectly />} />
-          <Route path="friends" element={<FriendList />} />
-          <Route path="contacts" element={<FriendPanel />} />
-          <Route path="chat/:conversationId" element={<ChatDirectly />} />
-          <Route path="chat/id/:userId" element={<ChatDirectly />} />
-
-          <Route path="friend-requests" element={<FriendRequests />} />
-          <Route
-            path="friend-requests"
-            element={<FriendRequests onRefreshConversations={handleRefreshConversations} />}
-          />
           <Route path="/" element={
             <div className="welcome-screen">
               <div className="carousel-container">
@@ -591,6 +650,13 @@ function MainApp({ setIsAuthenticated }) {
               </div>
             </div>
           } />
+          <Route path="chat/:phone" element={<ChatDirectly />} />
+          <Route path="friends" element={<FriendList />} />
+          <Route path="contacts" element={<FriendPanel />} />
+          <Route path="chat/:conversationId" element={<ChatDirectly />} />
+          <Route path="chat/id/:userId" element={<ChatDirectly />} />
+          <Route path="groups/:groupId" element={<GroupChat />} />
+          <Route path="friend-requests" element={<FriendRequests onRefreshConversations={handleRefreshConversations} />} />
         </Routes>
       </div>
       {showAddFriendModal && (
@@ -604,6 +670,52 @@ function MainApp({ setIsAuthenticated }) {
       <CreateGroupModal 
         isOpen={showCreateGroupModal}
         onClose={() => setShowCreateGroupModal(false)}
+        onGroupCreated={(groupData) => {
+          console.log('Group created:', groupData);
+          
+          // Thêm group mới vào đầu danh sách chat
+          const newGroup = {
+            id: groupData.groupId || groupData.id,
+            type: 'group',
+            title: groupData.name,
+            message: 'Nhóm đã được tạo',
+            time: new Date().toLocaleTimeString('vi-VN', {
+              hour: '2-digit',
+              minute: '2-digit'
+            }),
+            avatar: groupData.avatar || null,
+            memberCount: groupData.memberCount || 0,
+            lastMessage: null,
+            unreadCount: 0
+          };
+          
+          setChats(prevChats => {
+            // Kiểm tra xem group đã tồn tại chưa
+            const existingGroupIndex = prevChats.findIndex(chat => 
+              chat.id === newGroup.id && chat.type === 'group'
+            );
+            
+            if (existingGroupIndex >= 0) {
+              // Nếu đã tồn tại, cập nhật thông tin
+              const updatedChats = [...prevChats];
+              updatedChats[existingGroupIndex] = {
+                ...updatedChats[existingGroupIndex],
+                ...newGroup
+              };
+              return updatedChats;
+            } else {
+              // Nếu chưa tồn tại, thêm vào đầu danh sách
+              return [newGroup, ...prevChats];
+            }
+          });
+          
+          // Chọn group mới tạo và điều hướng
+          setSelectedChat(newGroup.id);
+          navigate(`/app/groups/${newGroup.id}`);
+          
+          // Đóng modal
+          setShowCreateGroupModal(false);
+        }}
       />
 
     </div>
@@ -620,28 +732,35 @@ function App() {
     const token = localStorage.getItem("accessToken");
     if (!token) return null;
 
-    const newSocket = io(getBaseUrl(), {
+    const newSocket = io(getSocketUrl(), {
       auth: { token },
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      transports: ["websocket"],
-      withCredentials: true,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+      transports: ["websocket", "polling"]
     });
 
     newSocket.on("connect", () => {
-      console.log("Socket connected!");
+      console.log("Socket connected successfully!");
       setSocketConnected(true);
     });
 
     newSocket.on("connect_error", (error) => {
-      console.error("Socket connection error:", error);
+      console.error("Socket connection error:", error.message);
       setSocketConnected(false);
     });
 
     newSocket.on("disconnect", (reason) => {
       console.log("Socket disconnected:", reason);
       setSocketConnected(false);
+      
+      // Attempt to reconnect if disconnected
+      if (reason === "io server disconnect") {
+        // Server disconnected us, try to reconnect
+        newSocket.connect();
+      }
     });
 
     return newSocket;
@@ -655,7 +774,8 @@ function App() {
       if (newSocket) {
         setSocket(newSocket);
         return () => {
-          newSocket.close();
+          console.log("Cleaning up socket connection...");
+          newSocket.disconnect();
         };
       }
     }

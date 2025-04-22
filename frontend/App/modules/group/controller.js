@@ -124,16 +124,10 @@ export const removeGroupMember = async (groupId, userId) => {
 // Rời nhóm
 export const leaveGroup = async (groupId, userId) => {
   try {
-    const response = await fetch(`${API_URL}/api/groups/${groupId}/leave`, {
-      method: 'POST',
-      headers: await getAuthHeader(),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Không thể rời nhóm');
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Không tìm thấy token xác thực');
     }
-
 
     if (!userId) {
       throw new Error('Không tìm thấy thông tin người dùng');

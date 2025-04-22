@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { X, Search, Camera, Check, Users, UserPlus } from "lucide-react";
 import { createGroup, getRecentContacts } from "../services/group";
+import { useNavigate } from "react-router-dom";
 import './css/CreateGroupModal.css';
 
 const CreateGroupModal = ({ isOpen, onClose, onGroupCreated }) => {
+  const navigate = useNavigate();
   const [groupName, setGroupName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedContacts, setSelectedContacts] = useState([]);
@@ -75,13 +77,16 @@ const CreateGroupModal = ({ isOpen, onClose, onGroupCreated }) => {
       console.log("Group creation response:", response);
 
       if (response.status === 'success' && response.data) {
-        alert("Tạo nhóm thành công!");
         if (onGroupCreated) {
           // Make sure we pass the complete group data
           console.log("Calling onGroupCreated with:", response.data);
           onGroupCreated(response.data);
         }
         onClose();
+        
+        // Navigate to the GroupChat screen with correct path
+        const groupId = response.data.groupId || response.data.id;
+        window.location.href = `/app/groups/${groupId}`;
       } else {
         console.error("Group creation not successful:", response);
         setError("Có lỗi xảy ra khi tạo nhóm");
@@ -92,7 +97,6 @@ const CreateGroupModal = ({ isOpen, onClose, onGroupCreated }) => {
       // Handle specific error cases
       if (error.message === "Vui lòng đăng nhập lại") {
         setError("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
-        // Optionally redirect to login page after a delay
         setTimeout(() => {
           window.location.href = "/login";
         }, 2000);

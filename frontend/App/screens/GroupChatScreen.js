@@ -253,19 +253,19 @@ const GroupChatScreen = () => {
           <View style={styles.groupAvatars}>
             {/* Hiển thị avatar thành viên 1 (nếu có) */}
             {groupDetails.members && groupDetails.members.length > 0 && (
-              <Image 
+            <Image 
                 key={`info-avatar-${groupDetails.members[0].userId}-main`}
                 source={{ uri: groupDetails.members[0].avatar || 'https://via.placeholder.com/50' }} 
-                style={styles.groupMainAvatar} 
-              />
+              style={styles.groupMainAvatar} 
+            />
             )}
             {/* Hiển thị avatar thành viên 2 (nếu có) */}
             {groupDetails.members && groupDetails.members.length > 1 && (
-              <Image 
+            <Image 
                 key={`info-avatar-${groupDetails.members[1].userId}-secondary`}
                 source={{ uri: groupDetails.members[1].avatar || 'https://via.placeholder.com/50' }} 
-                style={styles.groupSecondaryAvatar} 
-              />
+              style={styles.groupSecondaryAvatar} 
+            />
             )}
             {/* Avatar nhỏ của nhóm (nếu có), nếu không dùng icon mặc định */}
             <Image 
@@ -294,36 +294,36 @@ const GroupChatScreen = () => {
         {/* System Message */}
         {messages.map(msg => (
            <View key={msg.id} style={styles.systemMessageContainer}>
-             <View style={styles.systemMessageAvatars}>
+            <View style={styles.systemMessageAvatars}>
                {/* Hiển thị avatar của các thành viên trong tin nhắn hệ thống */}
                {msg.memberAvatars.map((avatarUri, index) => (
-                 <Image 
+              <Image 
                    key={`sys-avatar-${index}`}
                    source={{ uri: avatarUri }}
-                   style={styles.systemMessageAvatar}
-                 />
+                style={styles.systemMessageAvatar} 
+              />
                ))}
-             </View>
-             <Text style={styles.systemMessageText}>
+            </View>
+            <Text style={styles.systemMessageText}>
                 {/* Hiển thị tên các thành viên trong tin nhắn */}
                <Text style={{fontWeight: 'bold'}}>{msg.memberNames}</Text> 
                {` đã tham gia nhóm`}
-             </Text>
-           </View>
+            </Text>
+          </View>
         ))}
         
         {/* Group Setup Card */}
         <View style={styles.setupCard}>
-           <TouchableOpacity style={styles.setupAvatarContainer}>
+          <TouchableOpacity style={styles.setupAvatarContainer}>
             <View style={styles.setupAvatar}>
                {/* Có thể thay icon camera bằng avatar nhóm nếu có */}
-              <Ionicons name="camera-outline" size={28} color="#aaa" /> 
+              <Ionicons name="camera-outline" size={28} color="#aaa" />
             </View>
             <Text style={styles.setupTitle}>{groupDetails.name}</Text>
             <Ionicons name="chevron-forward" size={20} color="#aaa" />
           </TouchableOpacity>
           
-       
+          
           <View style={styles.memberAvatars}>
             {groupDetails.members && groupDetails.members.map((member, index) => (
               <Image 
@@ -339,7 +339,7 @@ const GroupChatScreen = () => {
               <Ionicons name="person-add" size={20} color="#2196F3" />
             </TouchableOpacity>
           </View>
-           <TouchableOpacity style={styles.waveButton}>
+          <TouchableOpacity style={styles.waveButton}>
             <Text style={styles.waveButtonText}>
               👋 Vẫy tay chào
             </Text>
