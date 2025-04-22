@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 import {
@@ -518,6 +517,45 @@ const GroupChatScreen = () => {
               (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
             );
           });
+
+          // Update group's lastMessage
+          try {
+            const token = await getAccessToken();
+            const lastMessageData = {
+              lastMessage: {
+                content: message.trim(),
+                type: "text",
+                senderId: currentUserId,
+                timestamp: new Date().toISOString()
+              }
+            };
+            
+            console.log("Updating last message with data:", lastMessageData);
+            
+            const updateResponse = await axios.put(
+              `${getApiUrl()}/groups/${groupId}`,
+              lastMessageData,
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            
+            console.log("Last message update response:", updateResponse.data);
+            
+            // Emit socket event to notify other users
+            if (socket) {
+              socket.emit("group:updated", {
+                groupId,
+                type: "LAST_MESSAGE_UPDATED",
+                data: lastMessageData.lastMessage
+              });
+            }
+          } catch (error) {
+            console.error("Error updating group's lastMessage:", error);
+          }
         }
       }
 
@@ -579,6 +617,20 @@ const GroupChatScreen = () => {
           recalledBy: response.data.recalledBy,
           recalledAt: response.data.recalledAt,
         });
+
+        // Update group's lastMessage to null when recalling
+        try {
+          const token = await getAccessToken();
+          await axios.put(`${getApiUrl()}/groups/${groupId}`, {
+            lastMessage: null
+          }, {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          });
+        } catch (error) {
+          console.error("Error updating group's lastMessage after recall:", error);
+        }
       }
     } catch (error) {
       console.error("Error recalling message:", error);
@@ -1018,7 +1070,7 @@ const GroupChatScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
-
+      
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -1027,7 +1079,7 @@ const GroupChatScreen = () => {
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-
+        
         <View style={styles.headerTitle}>
           <Text style={styles.title} numberOfLines={1}>
             {groupDetails.name}
@@ -1051,7 +1103,7 @@ const GroupChatScreen = () => {
           <Ionicons name="menu" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
-
+      
       {/* Chat Messages */}
 
       <FlatList
@@ -1082,7 +1134,7 @@ const GroupChatScreen = () => {
               ]}
             >
               {!isMe && (
-                <Image
+            <Image 
                   source={{
                     uri: item.senderAvatar || "https://via.placeholder.com/50",
                   }}
@@ -1099,7 +1151,7 @@ const GroupChatScreen = () => {
                 {!isMe && (
                   <Text style={styles.senderName}>
                     {item.senderName || "Người dùng"}
-                  </Text>
+          </Text>
                 )}
                 {isRecalled ? (
                   <View style={styles.recalledMessageContainer}>
@@ -1117,8 +1169,8 @@ const GroupChatScreen = () => {
                       ]}
                     >
                       Tin nhắn đã bị thu hồi
-                    </Text>
-                  </View>
+          </Text>
+        </View>
                 ) : item.type === "text" ? (
                   <Text
                     style={[
@@ -1127,14 +1179,14 @@ const GroupChatScreen = () => {
                     ]}
                   >
                     {item.content}
-                  </Text>
+          </Text>
                 ) : item.type === "file" ? (
                   <TouchableOpacity
                     style={styles.fileContainer}
                     onPress={() => handleFilePress(item)}
                   >
                     {item.fileType?.startsWith("image/") ? (
-                      <Image
+              <Image 
                         source={{ uri: item.content }}
                         style={styles.fileImage}
                         resizeMode="cover"
@@ -1157,7 +1209,7 @@ const GroupChatScreen = () => {
                         />
                         <View style={styles.playButton}>
                           <Ionicons name="play" size={24} color="white" />
-                        </View>
+            </View>
                       </View>
                     ) : (
                       <View style={styles.documentContainer}>
@@ -1174,10 +1226,10 @@ const GroupChatScreen = () => {
                           numberOfLines={1}
                         >
                           {item.content.split("/").pop() || "Tài liệu"}
-                        </Text>
-                      </View>
+            </Text>
+          </View>
                     )}
-                  </TouchableOpacity>
+          </TouchableOpacity>
                 ) : null}
                 <View style={styles.messageFooter}>
                   <Text
@@ -1187,10 +1239,10 @@ const GroupChatScreen = () => {
                     ]}
                   >
                     {formatTime(item.createdAt)}
-                  </Text>
+          </Text>
                   {isMe && (
                     <Text
-                      style={[
+                style={[
                         styles.messageStatus,
                         isMe
                           ? styles.myMessageStatus
@@ -1206,12 +1258,12 @@ const GroupChatScreen = () => {
                         : item.status === "recalled"
                         ? "Đã thu hồi"
                         : ""}
-                    </Text>
+            </Text>
                   )}
                 </View>
               </View>
-            </TouchableOpacity>
-
+          </TouchableOpacity>
+          
           );
         }}
         onEndReached={loadMoreMessages}
@@ -1222,12 +1274,12 @@ const GroupChatScreen = () => {
           isLoadingMore ? (
             <View style={styles.loadingMoreContainer}>
               <ActivityIndicator size="small" color="#2196F3" />
-            </View>
+        </View>
           ) : null
         }
       />
 
-
+      
       {/* Message Input */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -1240,7 +1292,7 @@ const GroupChatScreen = () => {
         >
           <Ionicons name="attach-outline" size={24} color="#666" />
         </TouchableOpacity>
-
+        
         <TextInput
           style={styles.input}
           placeholder="Nhập tin nhắn..."
@@ -1249,7 +1301,7 @@ const GroupChatScreen = () => {
           onChangeText={setMessage}
           multiline
         />
-
+        
         <TouchableOpacity
           style={styles.sendButton}
           onPress={handleSendMessage}
@@ -1293,7 +1345,7 @@ const GroupChatScreen = () => {
                       >
                         <Ionicons name="arrow-undo" size={24} color="#1877f2" />
                         <Text style={styles.optionText}>Thu hồi</Text>
-                      </TouchableOpacity>
+        </TouchableOpacity>
                     )}
                     <TouchableOpacity
                       style={styles.optionButton}
