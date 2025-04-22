@@ -145,17 +145,13 @@ export const leaveGroup = async (groupId, userId) => {
 // Giải tán nhóm
 export const dissolveGroup = async (groupId) => {
   try {
-    const response = await fetch(`${API_URL}/api/groups/${groupId}`, {
-      method: 'DELETE',
-      headers: await getAuthHeader(),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Không thể giải tán nhóm');
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Không tìm thấy token xác thực');
     }
 
-    return await response.json();
+    const response = await api.delete(`/groups/${groupId}`);
+    return response.data;
   } catch (error) {
     console.error('Dissolve group error:', error);
     throw error;
@@ -231,7 +227,22 @@ export const getRecentContacts = async () => {
     };
   } catch (error) {
     console.error('Get recent contacts error:', error);
-    throw error;
+    
+    // Kiểm tra nếu là lỗi throughput của DynamoDB
+    if (error.response?.data?.error?.includes('provisioned throughput')) {
+      return {
+        success: false,
+        contacts: [],
+        message: 'Hệ thống đang tải. Vui lòng thử lại sau giây lát.'
+      };
+    }
+    
+    // Trả về mảng rỗng thay vì throw error để tránh crash app
+    return {
+      success: false,
+      contacts: [],
+      message: 'Không thể tải danh sách liên hệ. Vui lòng thử lại sau.'
+    };
   }
 };
 

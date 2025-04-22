@@ -33,7 +33,7 @@ import {
 import { AuthContext } from '../App';
 import COLORS from '../components/colors';
 import io from 'socket.io-client';
-import { API_URL } from '../config';
+import { getApiUrlAsync } from '../config/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 
@@ -60,18 +60,21 @@ const GroupSettingsScreen = () => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [showTransferSuccess, setShowTransferSuccess] = useState(false);
   const [showLeaveSuccess, setShowLeaveSuccess] = useState(false);
+  const [showDissolveSuccess, setShowDissolveSuccess] = useState(false);
 
   // Initialize socket connection
   useEffect(() => {
     const initSocket = async () => {
       try {
         const token = await AsyncStorage.getItem('accessToken');
-        if (!token) {
-          console.error('No token found for socket connection');
+        const apiUrl = await getApiUrlAsync();
+        
+        if (!token || !apiUrl) {
+          console.error('No token or API URL found for socket connection');
           return;
         }
 
-        const newSocket = io(API_URL, {
+        const newSocket = io(apiUrl, {
           auth: { token },
           transports: ['websocket'],
           reconnection: true
@@ -279,9 +282,35 @@ const GroupSettingsScreen = () => {
   const handleDissolveGroup = async () => {
     try {
       setLoading(true);
-      const response = await dissolveGroup(groupId);
-      if (response) {
-        setShowDissolveGroupModal(false);
+      await dissolveGroup(groupId);
+      
+      // Emit socket event for realtime update
+      try {
+        if (socket?.connected) {
+          socket.emit('group:dissolved', {
+            groupId,
+            userId: user.userId
+          });
+
+          // Emit event to update chat list
+          socket.emit('chat:update', {
+            type: 'group',
+            action: 'dissolve',
+            groupId: groupId,
+            userId: user.userId
+          });
+        }
+      } catch (socketError) {
+        console.warn('Socket emit error:', socketError);
+        // Continue with navigation even if socket events fail
+      }
+
+      setShowDissolveGroupModal(false);
+      setShowDissolveSuccess(true);
+      
+      // After 2 seconds, close modal and navigate
+      setTimeout(() => {
+        setShowDissolveSuccess(false);
         // Reset navigation stack và chuyển về màn hình Chat
         navigation.reset({
           index: 0,
@@ -296,11 +325,11 @@ const GroupSettingsScreen = () => {
             }
           ]
         });
-      }
+      }, 2000);
     } catch (error) {
       console.error('Error dissolving group:', error);
       setShowDissolveGroupModal(false);
-      Alert.alert('Lỗi', 'Không thể giải tán nhóm');
+      Alert.alert('Lỗi', error.message || 'Không thể giải tán nhóm. Vui lòng thử lại.');
     } finally {
       setLoading(false);
     }
@@ -806,6 +835,24 @@ const GroupSettingsScreen = () => {
                 <Ionicons name="checkmark-circle" size={50} color="#00C851" />
               </View>
               <Text style={styles.modalTitle}>Đã rời khỏi nhóm thành công</Text>
+              <Text style={styles.modalMessage}>Bạn sẽ được chuyển về trang chủ...</Text>
+            </View>
+      </View>
+        </Modal>
+      )}
+      {/* Dissolve Success Modal */}
+      {showDissolveSuccess && (
+        <Modal
+          visible={showDissolveSuccess}
+          transparent={true}
+          animationType="fade"
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.successIcon}>
+                <Ionicons name="checkmark-circle" size={50} color="#00C851" />
+              </View>
+              <Text style={styles.modalTitle}>Đã giải tán nhóm thành công</Text>
               <Text style={styles.modalMessage}>Bạn sẽ được chuyển về trang chủ...</Text>
             </View>
           </View>
