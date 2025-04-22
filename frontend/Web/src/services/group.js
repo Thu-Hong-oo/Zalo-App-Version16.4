@@ -292,3 +292,103 @@ export const getAllGroups = async () => {
     throw error;
   }
 };
+
+// Constants for file validation
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/zip",
+  "application/x-rar-compressed",
+  "text/plain",
+  "video/mp4",
+];
+
+const validateFile = (file) => {
+  if (file.size > MAX_FILE_SIZE) {
+    throw new Error(`File ${file.name} is too large. Maximum size is 10MB.`);
+  }
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    throw new Error(`File type ${file.type} is not allowed.`);
+  }
+};
+
+export const uploadFiles = async (groupId, formData, onProgress) => {
+  const MAX_RETRIES = 3;
+  let retryCount = 0;
+
+  // Validate all files before upload
+  const files = formData.getAll("files");
+  files.forEach(validateFile);
+
+  while (retryCount < MAX_RETRIES) {
+    try {
+      const response = await api.post(
+        `/chat-group/${groupId}/upload`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+          onUploadProgress: (progressEvent) => {
+            if (onProgress && progressEvent.total) {
+              const percentCompleted = Math.round(
+                (progressEvent.loaded * 100) / progressEvent.total
+              );
+              onProgress(percentCompleted);
+            }
+          },
+        }
+      );
+
+      if (!response.data || response.data.status !== "success") {
+        throw new Error("Không nhận được phản hồi từ server");
+      }
+
+      // Return array of uploaded files
+      if (response.data.data.urls && response.data.data.urls.length > 0) {
+        return {
+          status: "success",
+          data: response.data.data.urls.map((url, index) => ({
+            url,
+            name: response.data.data.files[index].originalname,
+            size: response.data.data.files[index].size,
+            type: response.data.data.files[index].mimetype,
+          })),
+        };
+      }
+
+      return {
+        status: "success",
+        data: [],
+      };
+    } catch (error) {
+      console.error(`Upload attempt ${retryCount + 1} failed:`, error);
+
+      if (error.response) {
+        console.error("Server error details:", {
+          status: error.response.status,
+          data: error.response.data,
+        });
+      }
+
+      retryCount++;
+      if (retryCount === MAX_RETRIES) {
+        throw error;
+      }
+
+      // Exponential backoff
+      await new Promise((resolve) =>
+        setTimeout(resolve, 1000 * Math.pow(2, retryCount))
+      );
+    }
+  }
+};

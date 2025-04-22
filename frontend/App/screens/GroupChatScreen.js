@@ -107,7 +107,7 @@ const GroupChatScreen = () => {
     itemVisiblePercentThreshold: 50,
     minimumViewTime: 300,
   };
-
+  
   useEffect(() => {
     const fetchGroupDetails = async () => {
       if (!groupId) {
@@ -115,14 +115,14 @@ const GroupChatScreen = () => {
         setLoading(false);
         return;
       }
-
+      
       console.log(`Fetching details for groupId: ${groupId}`);
       setLoading(true);
       setError(null);
       try {
         const response = await getGroupInfo(groupId);
         console.log("Fetched group details:", response);
-        if (response && response.groupId) {
+        if (response && response.groupId) { 
           setGroupDetails(response);
           // Thêm tin nhắn hệ thống vào messages khi có groupDetails
           const systemMessage = createSystemMessage(response);
@@ -177,21 +177,21 @@ const GroupChatScreen = () => {
   const createSystemMessage = (details) => {
     if (!details || !details.members || details.members.length === 0)
       return null;
-
+    
     const creator = details.members.find((m) => m.userId === details.createdBy);
     const creatorName = creator?.name || "Người tạo";
-
+    
     // Lấy tên của tối đa 2 thành viên khác (không phải người tạo)
     const otherMemberNames = details.members
       .filter((m) => m.userId !== details.createdBy)
       .slice(0, 2)
       .map((m) => m.name || "Thành viên");
-
+      
     let displayText = creatorName;
     if (otherMemberNames.length > 0) {
       displayText += `, ${otherMemberNames.join(", ")}`;
     }
-
+    
     // Lấy avatar của những người được hiển thị tên
     const displayUserIds = [
       creator?.userId,
@@ -1008,24 +1008,24 @@ const GroupChatScreen = () => {
       </SafeAreaView>
     );
   }
-
+  
   if (!groupDetails) {
-    return (
+     return (
       <SafeAreaView style={styles.containerCentered}>
         <Text>Không tìm thấy thông tin nhóm.</Text>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={{ color: "blue", marginTop: 10 }}>Quay lại</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
-  // --- Render UI với groupDetails ---
+  // --- Render UI với groupDetails --- 
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
-
+      
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -1034,7 +1034,7 @@ const GroupChatScreen = () => {
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-
+        
         <View style={styles.headerTitle}>
           <Text style={styles.title} numberOfLines={1}>
             {groupDetails.name}
@@ -1046,15 +1046,15 @@ const GroupChatScreen = () => {
             {/* Cập nhật số lượng từ API */}
           </Text>
         </View>
-
+        
         <TouchableOpacity style={styles.headerButton}>
           <Ionicons name="videocam" size={24} color="#fff" />
         </TouchableOpacity>
-
+        
         <TouchableOpacity style={styles.headerButton}>
           <Ionicons name="search" size={24} color="#fff" />
         </TouchableOpacity>
-
+        
         <TouchableOpacity
           style={styles.headerButton}
           onPress={() => navigation.navigate("GroupSetting", { groupId })}
@@ -1062,7 +1062,7 @@ const GroupChatScreen = () => {
           <Ionicons name="menu" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
-
+      
       {/* Chat Messages */}
 
       <FlatList
@@ -1093,7 +1093,7 @@ const GroupChatScreen = () => {
               ]}
             >
               {!isMe && (
-                <Image
+              <Image 
                   source={{
                     uri: item.senderAvatar || "https://via.placeholder.com/50",
                   }}
@@ -1127,8 +1127,8 @@ const GroupChatScreen = () => {
                       ]}
                     >
                       Tin nhắn đã bị thu hồi
-                    </Text>
-                  </View>
+          </Text>
+        </View>
                 ) : item.type === "text" ? (
                   <Text
                     style={[
@@ -1137,14 +1137,14 @@ const GroupChatScreen = () => {
                     ]}
                   >
                     {item.content}
-                  </Text>
+          </Text>
                 ) : item.type === "file" ? (
                   <TouchableOpacity
                     style={styles.fileContainer}
                     onPress={() => handleFilePress(item)}
                   >
                     {item.fileType?.startsWith("image/") ? (
-                      <Image
+                 <Image 
                         source={{ uri: item.content }}
                         style={styles.fileImage}
                         resizeMode="cover"
@@ -1173,7 +1173,7 @@ const GroupChatScreen = () => {
                         />
                         <View style={styles.playButton}>
                           <Ionicons name="play" size={24} color="white" />
-                        </View>
+             </View>
                       </View>
                     ) : (
                       <View style={styles.documentContainer}>
@@ -1192,10 +1192,10 @@ const GroupChatScreen = () => {
                           numberOfLines={1}
                         >
                           {item.content.split("/").pop() || "Tài liệu"}
-                        </Text>
-                      </View>
+             </Text>
+           </View>
                     )}
-                  </TouchableOpacity>
+          </TouchableOpacity>
                 ) : null}
                 <View style={styles.messageFooter}>
                   <Text
@@ -1205,10 +1205,10 @@ const GroupChatScreen = () => {
                     ]}
                   >
                     {formatTime(item.createdAt)}
-                  </Text>
+          </Text>
                   {isMe && (
                     <Text
-                      style={[
+                style={[
                         styles.messageStatus,
                         isMe
                           ? styles.myMessageStatus
@@ -1224,11 +1224,11 @@ const GroupChatScreen = () => {
                         : item.status === "recalled"
                         ? "Đã thu hồi"
                         : ""}
-                    </Text>
+            </Text>
                   )}
                 </View>
               </View>
-            </TouchableOpacity>
+          </TouchableOpacity>
           );
         }}
         onEndReached={loadMoreMessages}
@@ -1239,11 +1239,11 @@ const GroupChatScreen = () => {
           isLoadingMore ? (
             <View style={styles.loadingMoreContainer}>
               <ActivityIndicator size="small" color="#2196F3" />
-            </View>
+        </View>
           ) : null
         }
       />
-
+      
       {/* Message Input */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -1256,7 +1256,7 @@ const GroupChatScreen = () => {
         >
           <Ionicons name="attach-outline" size={24} color="#666" />
         </TouchableOpacity>
-
+        
         <TextInput
           style={styles.input}
           placeholder="Nhập tin nhắn..."
@@ -1265,7 +1265,7 @@ const GroupChatScreen = () => {
           onChangeText={setMessage}
           multiline
         />
-
+        
         <TouchableOpacity
           style={styles.sendButton}
           onPress={handleSendMessage}
@@ -1309,7 +1309,7 @@ const GroupChatScreen = () => {
                       >
                         <Ionicons name="arrow-undo" size={24} color="#1877f2" />
                         <Text style={styles.optionText}>Thu hồi</Text>
-                      </TouchableOpacity>
+        </TouchableOpacity>
                     )}
                     <TouchableOpacity
                       style={styles.optionButton}
