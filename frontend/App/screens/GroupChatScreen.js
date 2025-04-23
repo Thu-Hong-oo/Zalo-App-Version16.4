@@ -1,6 +1,4 @@
-
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-
+import React, { useState, useRef, useEffect, useCallback } from "react";
 
 import {
   View,
@@ -48,7 +46,7 @@ import ForwardMessageModal from "../components/ForwardMessageModal";
 import { getApiUrl, getBaseUrl, api } from "../config/api";
 import axios from "axios";
 
-import { WebView } from 'react-native-webview';
+import { WebView } from "react-native-webview";
 import { sendMessage, forwardMessage } from "../modules/chat/controller";
 
 // import jwt_decode from "jwt-decode"; // Tạm thời comment lại
@@ -112,7 +110,7 @@ const GroupChatScreen = () => {
     itemVisiblePercentThreshold: 50,
     minimumViewTime: 300,
   };
-  
+
   useEffect(() => {
     const fetchGroupDetails = async () => {
       if (!groupId) {
@@ -120,14 +118,14 @@ const GroupChatScreen = () => {
         setLoading(false);
         return;
       }
-      
+
       console.log(`Fetching details for groupId: ${groupId}`);
       setLoading(true);
       setError(null);
       try {
         const response = await getGroupInfo(groupId);
         console.log("Fetched group details:", response);
-        if (response && response.groupId) { 
+        if (response && response.groupId) {
           setGroupDetails(response);
           // Thêm tin nhắn hệ thống vào messages khi có groupDetails
           const systemMessage = createSystemMessage(response);
@@ -182,21 +180,21 @@ const GroupChatScreen = () => {
   const createSystemMessage = (details) => {
     if (!details || !details.members || details.members.length === 0)
       return null;
-    
+
     const creator = details.members.find((m) => m.userId === details.createdBy);
     const creatorName = creator?.name || "Người tạo";
-    
+
     // Lấy tên của tối đa 2 thành viên khác (không phải người tạo)
     const otherMemberNames = details.members
       .filter((m) => m.userId !== details.createdBy)
       .slice(0, 2)
       .map((m) => m.name || "Thành viên");
-      
+
     let displayText = creatorName;
     if (otherMemberNames.length > 0) {
       displayText += `, ${otherMemberNames.join(", ")}`;
     }
-    
+
     // Lấy avatar của những người được hiển thị tên
     const displayUserIds = [
       creator?.userId,
@@ -528,31 +526,31 @@ const GroupChatScreen = () => {
                 content: message.trim(),
                 type: "text",
                 senderId: currentUserId,
-                timestamp: new Date().toISOString()
-              }
+                timestamp: new Date().toISOString(),
+              },
             };
-            
+
             console.log("Updating last message with data:", lastMessageData);
-            
+
             const updateResponse = await axios.put(
               `${getApiUrl()}/groups/${groupId}`,
               lastMessageData,
               {
                 headers: {
                   Authorization: `Bearer ${token}`,
-                  'Content-Type': 'application/json'
-                }
+                  "Content-Type": "application/json",
+                },
               }
             );
-            
+
             console.log("Last message update response:", updateResponse.data);
-            
+
             // Emit socket event to notify other users
             if (socket) {
               socket.emit("group:updated", {
                 groupId,
                 type: "LAST_MESSAGE_UPDATED",
-                data: lastMessageData.lastMessage
+                data: lastMessageData.lastMessage,
               });
             }
           } catch (error) {
@@ -624,15 +622,22 @@ const GroupChatScreen = () => {
         // Update group's lastMessage to null when recalling
         try {
           const token = await getAccessToken();
-          await axios.put(`${getApiUrl()}/groups/${groupId}`, {
-            lastMessage: null
-          }, {
-            headers: {
-              Authorization: `Bearer ${token}`
+          await axios.put(
+            `${getApiUrl()}/groups/${groupId}`,
+            {
+              lastMessage: null,
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
             }
-          });
+          );
         } catch (error) {
-          console.error("Error updating group's lastMessage after recall:", error);
+          console.error(
+            "Error updating group's lastMessage after recall:",
+            error
+          );
         }
       }
     } catch (error) {
@@ -679,36 +684,47 @@ const GroupChatScreen = () => {
 
       console.log("Forwarding message:", {
         selectedMessage,
-        receivers
+        receivers,
       });
 
       const results = await Promise.all(
         receivers.map(async (receiver) => {
           try {
             // Nếu là chuyển tiếp đến cá nhân
-            if (receiver.type === 'conversation') {
+            if (receiver.type === "conversation") {
               console.log("Forwarding to personal chat:", {
-                messageId: selectedMessage.messageId || selectedMessage.groupMessageId,
+                messageId:
+                  selectedMessage.messageId || selectedMessage.groupMessageId,
                 receiverPhone: receiver.id,
-                content: selectedMessage.content
+                content: selectedMessage.content,
               });
 
               try {
                 const response = await api.post("/chat/messages/forward", {
-                  messageId: selectedMessage.messageId || selectedMessage.groupMessageId,
+                  messageId:
+                    selectedMessage.messageId || selectedMessage.groupMessageId,
                   receiverPhone: receiver.id,
-                  content: selectedMessage.content
+                  content: selectedMessage.content,
                 });
 
                 if (response.data && response.data.status === "success") {
                   console.log("Forward message success:", response.data);
                   return { success: true, response: response.data };
                 }
-                
-                return { success: false, error: "Không nhận được phản hồi từ server" };
+
+                return {
+                  success: false,
+                  error: "Không nhận được phản hồi từ server",
+                };
               } catch (error) {
-                console.error("Forward message error:", error.response?.data || error.message);
-                return { success: false, error: error.response?.data || error.message };
+                console.error(
+                  "Forward message error:",
+                  error.response?.data || error.message
+                );
+                return {
+                  success: false,
+                  error: error.response?.data || error.message,
+                };
               }
             }
 
@@ -727,14 +743,15 @@ const GroupChatScreen = () => {
         })
       );
 
-      const failedForwards = results.filter(r => !r.success);
+      const failedForwards = results.filter((r) => !r.success);
       console.log("Failed forwards:", failedForwards);
 
       if (failedForwards.length === 0) {
         setForwardModalVisible(false);
         Alert.alert("Thành công", "Tin nhắn đã được chuyển tiếp");
       } else {
-        const errorMessage = failedForwards[0].error?.message || "Không thể chuyển tiếp tin nhắn";
+        const errorMessage =
+          failedForwards[0].error?.message || "Không thể chuyển tiếp tin nhắn";
         throw new Error(errorMessage);
       }
     } catch (error) {
@@ -1107,24 +1124,24 @@ const GroupChatScreen = () => {
       </SafeAreaView>
     );
   }
-  
+
   if (!groupDetails) {
-     return (
+    return (
       <SafeAreaView style={styles.containerCentered}>
         <Text>Không tìm thấy thông tin nhóm.</Text>
-         <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={{ color: "blue", marginTop: 10 }}>Quay lại</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
-  // --- Render UI với groupDetails --- 
+  // --- Render UI với groupDetails ---
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -1133,7 +1150,7 @@ const GroupChatScreen = () => {
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        
+
         <View style={styles.headerTitle}>
           <Text style={styles.title} numberOfLines={1}>
             {groupDetails.name}
@@ -1145,15 +1162,15 @@ const GroupChatScreen = () => {
             {/* Cập nhật số lượng từ API */}
           </Text>
         </View>
-        
+
         <TouchableOpacity style={styles.headerButton}>
           <Ionicons name="videocam" size={24} color="#fff" />
         </TouchableOpacity>
-        
+
         <TouchableOpacity style={styles.headerButton}>
           <Ionicons name="search" size={24} color="#fff" />
         </TouchableOpacity>
-        
+
         <TouchableOpacity
           style={styles.headerButton}
           onPress={() => navigation.navigate("GroupSetting", { groupId })}
@@ -1161,7 +1178,7 @@ const GroupChatScreen = () => {
           <Ionicons name="menu" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
-      
+
       {/* Chat Messages */}
 
       <FlatList
@@ -1192,10 +1209,7 @@ const GroupChatScreen = () => {
               ]}
             >
               {!isMe && (
-
-              <Image 
-
-
+                <Image
                   source={{
                     uri: item.senderAvatar || "https://via.placeholder.com/50",
                   }}
@@ -1211,7 +1225,7 @@ const GroupChatScreen = () => {
                 {!isMe && (
                   <Text style={styles.senderName}>
                     {item.senderName || "Người dùng"}
-          </Text>
+                  </Text>
                 )}
                 {isRecalled ? (
                   <View style={styles.recalledMessageContainer}>
@@ -1229,8 +1243,8 @@ const GroupChatScreen = () => {
                       ]}
                     >
                       Tin nhắn đã bị thu hồi
-          </Text>
-        </View>
+                    </Text>
+                  </View>
                 ) : item.type === "text" ? (
                   <Text
                     style={[
@@ -1239,16 +1253,14 @@ const GroupChatScreen = () => {
                     ]}
                   >
                     {item.content}
-          </Text>
+                  </Text>
                 ) : item.type === "file" ? (
                   <TouchableOpacity
                     style={styles.fileContainer}
                     onPress={() => handleFilePress(item)}
                   >
                     {item.fileType?.startsWith("image/") ? (
-
-                 <Image 
-
+                      <Image
                         source={{ uri: item.content }}
                         style={styles.fileImage}
                         resizeMode="cover"
@@ -1277,10 +1289,8 @@ const GroupChatScreen = () => {
                         />
                         <View style={styles.playButton}>
                           <Ionicons name="play" size={24} color="white" />
-
-             </View>
-
-           </View>
+                        </View>
+                      </View>
                     ) : (
                       <View style={styles.documentContainer}>
                         <Ionicons
@@ -1298,12 +1308,10 @@ const GroupChatScreen = () => {
                           numberOfLines={1}
                         >
                           {item.content.split("/").pop() || "Tài liệu"}
-
-            </Text>
-            </View>
-
+                        </Text>
+                      </View>
                     )}
-          </TouchableOpacity>
+                  </TouchableOpacity>
                 ) : null}
                 <View style={styles.messageFooter}>
                   <Text
@@ -1313,10 +1321,10 @@ const GroupChatScreen = () => {
                     ]}
                   >
                     {formatTime(item.createdAt)}
-          </Text>
+                  </Text>
                   {isMe && (
                     <Text
-                style={[
+                      style={[
                         styles.messageStatus,
                         isMe
                           ? styles.myMessageStatus
@@ -1332,12 +1340,11 @@ const GroupChatScreen = () => {
                         : item.status === "recalled"
                         ? "Đã thu hồi"
                         : ""}
-            </Text>
+                    </Text>
                   )}
                 </View>
               </View>
-          </TouchableOpacity>
-          
+            </TouchableOpacity>
           );
         }}
         onEndReached={loadMoreMessages}
@@ -1348,12 +1355,11 @@ const GroupChatScreen = () => {
           isLoadingMore ? (
             <View style={styles.loadingMoreContainer}>
               <ActivityIndicator size="small" color="#2196F3" />
-        </View>
+            </View>
           ) : null
         }
       />
 
-      
       {/* Message Input */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -1366,7 +1372,7 @@ const GroupChatScreen = () => {
         >
           <Ionicons name="attach-outline" size={24} color="#666" />
         </TouchableOpacity>
-        
+
         <TextInput
           style={styles.input}
           placeholder="Nhập tin nhắn..."
@@ -1375,7 +1381,7 @@ const GroupChatScreen = () => {
           onChangeText={setMessage}
           multiline
         />
-        
+
         <TouchableOpacity
           style={styles.sendButton}
           onPress={handleSendMessage}
@@ -1419,7 +1425,7 @@ const GroupChatScreen = () => {
                       >
                         <Ionicons name="arrow-undo" size={24} color="#1877f2" />
                         <Text style={styles.optionText}>Thu hồi</Text>
-        </TouchableOpacity>
+                      </TouchableOpacity>
                     )}
                     <TouchableOpacity
                       style={styles.optionButton}
