@@ -384,8 +384,9 @@ const GroupChatScreen = () => {
           forceNew: true,
           reconnection: true,
           reconnectionAttempts: 5,
-          reconnectionDelay: 1000,
-          timeout: 20000,
+          reconnectionDelayMax: 5000,
+          randomizationFactor: 0.5,
+          autoConnect: true
         });
 
         newSocket.on("connect", () => {
@@ -395,17 +396,25 @@ const GroupChatScreen = () => {
 
         newSocket.on("connect_error", (error) => {
           console.error("Socket connection error:", error);
-          // Thử kết nối lại sau 5 giây
+          // Thử kết nối lại sau 3 giây
           setTimeout(() => {
-            newSocket.connect();
-          }, 5000);
+            if (!newSocket.connected) {
+              console.log("Attempting to reconnect...");
+              newSocket.connect();
+            }
+          }, 3000);
         });
 
         newSocket.on("disconnect", (reason) => {
           console.log("Socket disconnected:", reason);
-          if (reason === "io server disconnect") {
-            // Server đã ngắt kết nối, thử kết nối lại
-            newSocket.connect();
+          if (reason === "io server disconnect" || reason === "transport close") {
+            // Server đã ngắt kết nối hoặc kết nối bị đóng, thử kết nối lại
+            setTimeout(() => {
+              if (!newSocket.connected) {
+                console.log("Attempting to reconnect after disconnect...");
+                newSocket.connect();
+              }
+            }, 3000);
           }
         });
 

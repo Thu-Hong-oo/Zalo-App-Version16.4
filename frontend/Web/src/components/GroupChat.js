@@ -9,6 +9,7 @@ import {
   forwardGroupMessage,
   uploadFiles,
 } from "../services/group";
+import { getSocket } from "../config/socket";
 import EmojiPicker from "emoji-picker-react";
 import GroupSidebar from "./GroupSidebar";
 import {
@@ -86,12 +87,120 @@ const GroupChat = () => {
   const [uploadingFiles, setUploadingFiles] = useState([]);
   const [uploadErrors, setUploadErrors] = useState([]);
   const [fullscreenMedia, setFullscreenMedia] = useState(null);
+  const socket = useRef(null);
 
   useEffect(() => {
     fetchGroupDetails();
     loadChatHistory();
     getCurrentUserId();
-  }, [groupId]);
+
+    // Initialize socket connection
+    socket.current = getSocket();
+
+    // Join group when component mounts
+    if (groupId) {
+      socket.current.emit("join-group", groupId);
+    }
+
+    // Set up socket event listeners
+    socket.current.on("new-group-message", async (newMessage) => {
+      try {
+        console.log("Received new message from socket:", newMessage);
+
+        if (newMessage.groupId === groupId) {
+          // Nếu tin nhắn không phải của người dùng hiện tại, lấy thông tin người gửi
+          if (newMessage.senderId !== currentUserId) {
+            const senderInfo = await fetchUserInfo(newMessage.senderId);
+            newMessage = {
+              ...newMessage,
+              senderName: senderInfo.name,
+              senderAvatar: senderInfo.avatar,
+            };
+
+            setMessages((prev) => {
+              // Kiểm tra xem tin nhắn đã tồn tại chưa
+              const existingMessage = prev.find(
+                (msg) => msg.groupMessageId === newMessage.groupMessageId
+              );
+
+              if (existingMessage) {
+                return prev;
+              }
+
+              return [...prev, newMessage].sort(
+                (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+              );
+            });
+            scrollToBottom();
+          }
+        }
+      } catch (error) {
+        console.error("Error handling new message:", error);
+      }
+    });
+
+    socket.current.on("group-message-recalled", (recallData) => {
+      if (recallData.groupId === groupId) {
+        setMessages((prev) =>
+          prev.map((msg) => {
+            if (msg.groupMessageId === recallData.messageId) {
+              return {
+                ...msg,
+                content: "Tin nhắn đã bị thu hồi",
+                status: "recalled",
+                metadata: {
+                  ...msg.metadata,
+                  recalledBy: recallData.recalledBy,
+                  recalledAt: recallData.recalledAt,
+                },
+              };
+            }
+            return msg;
+          })
+        );
+      }
+    });
+
+    socket.current.on("group-message-deleted", (deleteData) => {
+      console.log("Received delete event:", deleteData);
+      if (deleteData.groupId === groupId) {
+        // Remove message from UI for all users
+        setMessages((prev) =>
+          prev.filter(
+            (msg) => msg.groupMessageId !== deleteData.deletedMessageId
+          )
+        );
+        console.log("Message removed:", deleteData.deletedMessageId);
+      }
+    });
+
+    socket.current.on("user-joined", ({ userId, metadata }) => {
+      // Handle user joined event
+      console.log(`User ${userId} joined the group`);
+    });
+
+    socket.current.on("user-left", ({ userId }) => {
+      // Handle user left event
+      console.log(`User ${userId} left the group`);
+    });
+
+    socket.current.on("error", ({ message }) => {
+      setError(message);
+    });
+
+    // Cleanup on unmount
+    return () => {
+      if (socket.current) {
+        socket.current.emit("leave-group", groupId);
+        socket.current.off("new-group-message");
+        socket.current.off("group-message-recalled");
+        socket.current.off("group-message-deleted");
+        socket.current.off("user-joined");
+        socket.current.off("user-left");
+        socket.current.off("error");
+      }
+    };
+  }, [groupId, currentUserId]);
 
   const getCurrentUserId = async () => {
     try {
@@ -315,36 +424,72 @@ const GroupChat = () => {
       if (fileData) {
         // Send message for each uploaded file
         for (const file of fileData) {
+          const tempId = `temp-${Date.now()}-${Math.random()
+            .toString(36)
+            .substr(2, 9)}`;
+
+          // First save to database
           const response = await sendGroupMessage(
             groupId,
-            message,
             file.url,
-            file.type,
-            file.name,
-            file.size
+            "file",
+            file.type
           );
 
           if (response.status === "success") {
-            const newMessage = {
-              ...response.data,
+            const messageData = {
+              groupId,
+              groupMessageId: response.data.groupMessageId,
               senderId: currentUserId,
-              isMe: true,
+              content: file.url,
+              fileUrl: file.url,
+              fileType: file.type,
+              fileName: file.name,
+              fileSize: file.size,
+              type: "file",
+              createdAt: new Date().toISOString(),
               status: "sent",
             };
-            setMessages((prev) => [...prev, newMessage]);
+
+            // Add message to UI
+            setMessages((prev) =>
+              [...prev, messageData].sort(
+                (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+              )
+            );
+
+            // Emit socket event with the same format as mobile
+            socket.current.emit("new-group-message", messageData);
           }
         }
       } else if (message.trim()) {
-        // Send text message if no files
-        const response = await sendGroupMessage(groupId, message);
+        const tempId = `temp-${Date.now()}-${Math.random()
+          .toString(36)
+          .substr(2, 9)}`;
+
+        // First save to database
+        const response = await sendGroupMessage(groupId, message.trim());
+
         if (response.status === "success") {
-          const newMessage = {
-            ...response.data,
+          const messageData = {
+            groupId,
+            groupMessageId: response.data.groupMessageId,
             senderId: currentUserId,
-            isMe: true,
+            content: message.trim(),
+            type: "text",
+            createdAt: new Date().toISOString(),
             status: "sent",
           };
-          setMessages((prev) => [...prev, newMessage]);
+
+          // Add message to UI
+          setMessages((prev) =>
+            [...prev, messageData].sort(
+              (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+            )
+          );
+
+          // Emit socket event with the same format as mobile
+          socket.current.emit("new-group-message", messageData);
         }
       }
 
@@ -362,17 +507,10 @@ const GroupChat = () => {
 
   const handleRecallMessage = async (messageId) => {
     try {
-      const response = await recallGroupMessage(groupId, messageId);
-      if (response.status === "success") {
-        setRecalledMessages((prev) => new Set([...prev, messageId]));
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.groupMessageId === messageId
-              ? { ...msg, recallStatus: "recalled" }
-              : msg
-          )
-        );
-      }
+      socket.current.emit("recall-group-message", {
+        groupId,
+        messageId,
+      });
     } catch (error) {
       console.error("Error recalling message:", error);
       setError("Failed to recall message");
@@ -383,10 +521,17 @@ const GroupChat = () => {
     try {
       const response = await deleteGroupMessage(groupId, messageId);
       if (response.status === "success") {
-        setDeletedMessages((prev) => new Set([...prev, messageId]));
+        // Remove message from UI immediately
         setMessages((prev) =>
           prev.filter((msg) => msg.groupMessageId !== messageId)
         );
+
+        // Emit socket event for deletion
+        socket.current.emit("delete-group-message", {
+          groupId,
+          messageId,
+          deletedBy: currentUserId,
+        });
       }
     } catch (error) {
       console.error("Error deleting message:", error);
@@ -544,10 +689,7 @@ const GroupChat = () => {
 
   const renderMessage = (msg) => {
     const isMe = msg.senderId === currentUserId;
-    const isRecalled = recalledMessages.has(msg.groupMessageId);
-    const isDeleted = deletedMessages.has(msg.groupMessageId);
-
-    if (isDeleted) return null;
+    const isRecalled = msg.status === "recalled";
 
     return (
       <div
