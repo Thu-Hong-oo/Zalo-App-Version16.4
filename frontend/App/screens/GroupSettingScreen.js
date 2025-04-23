@@ -62,6 +62,8 @@ const GroupSettingsScreen = () => {
   const [showTransferSuccess, setShowTransferSuccess] = useState(false);
   const [showLeaveSuccess, setShowLeaveSuccess] = useState(false);
   const [showDissolveSuccess, setShowDissolveSuccess] = useState(false);
+  const [showDeleteMemberModal, setShowDeleteMemberModal] = useState(false);
+  const [memberToDelete, setMemberToDelete] = useState(null);
 
   // Initialize socket connection
   useEffect(() => {
@@ -415,6 +417,32 @@ const GroupSettingsScreen = () => {
     }
   };
 
+  const handleDeleteMember = async () => {
+    if (!memberToDelete) return;
+    
+    try {
+      setLoading(true);
+      await removeGroupMember(groupId, memberToDelete.userId);
+      
+      // Emit socket event for realtime update
+      if (socket?.connected) {
+        socket.emit('group:member_removed', {
+          groupId,
+          userId: memberToDelete.userId
+        });
+      }
+      
+      setShowDeleteMemberModal(false);
+      setMemberToDelete(null);
+      await fetchGroupInfo(); // Refresh group info
+    } catch (error) {
+      console.error('Error removing member:', error);
+      Alert.alert('Lỗi', 'Không thể xóa thành viên. Vui lòng thử lại.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const renderMemberItem = ({ item }) => (
     <TouchableOpacity 
       style={styles.memberItem}
@@ -437,6 +465,17 @@ const GroupSettingsScreen = () => {
             selectedMember?.userId === item.userId && styles.radioCircleSelected
           ]} />
         </View>
+      )}
+      {isAdmin && item.userId !== user.userId && !showTransferAdminModal && (
+        <TouchableOpacity 
+          style={styles.deleteButton}
+          onPress={() => {
+            setMemberToDelete(item);
+            setShowDeleteMemberModal(true);
+          }}
+        >
+          <Ionicons name="trash-outline" size={24} color="#ff3b30" />
+        </TouchableOpacity>
       )}
     </TouchableOpacity>
   );
@@ -865,6 +904,19 @@ const GroupSettingsScreen = () => {
           </View>
         </Modal>
       )}
+      {/* Delete Member Modal */}
+      {renderConfirmationModal(
+        showDeleteMemberModal,
+        'Xóa thành viên',
+        `Bạn có chắc chắn muốn xóa ${memberToDelete?.name || 'thành viên này'} khỏi nhóm không?`,
+        () => {
+          setShowDeleteMemberModal(false);
+          setMemberToDelete(null);
+        },
+        handleDeleteMember,
+        'Xóa',
+        'danger'
+      )}
     </SafeAreaView>
   );
 };
@@ -1166,6 +1218,10 @@ const styles = StyleSheet.create({
   successIcon: {
     alignItems: 'center',
     marginBottom: 15,
+  },
+  deleteButton: {
+    padding: 8,
+    marginLeft: 10,
   },
 });
 
