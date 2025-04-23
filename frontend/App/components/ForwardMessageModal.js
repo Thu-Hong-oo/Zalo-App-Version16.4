@@ -193,7 +193,7 @@ const ForwardMessageModal = ({ visible, onClose, onForward }) => {
                       />
                       <View style={styles.itemInfo}>
                         <Text style={styles.itemName}>{contact.name}</Text>
-                        <Text style={styles.itemSubtitle}>{contact.phone}</Text>
+                        {/* <Text style={styles.itemSubtitle}>{contact.phone}</Text> */}
                       </View>
                       {selectedContacts.some(c => c.userId === contact.userId) && (
                         <Ionicons name="checkmark-circle" size={24} color="#2196F3" />

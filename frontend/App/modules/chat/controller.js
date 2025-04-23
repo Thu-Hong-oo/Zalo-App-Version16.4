@@ -1,5 +1,6 @@
 import api from "../../config/api";
 import { getAccessToken } from "../../services/storage";
+import io from "socket.io-client";
 // // Hàm khởi tạo API
 // export const initApi = async () => {
 //   try {
@@ -49,25 +50,12 @@ export const sendMessage = async (receiverPhone, content) => {
       content
     });
 
-    // Thêm token vào header
-    const token = await getAccessToken();
-    const config = {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    };
-
     const response = await api.post("/chat/message", {
       receiverPhone,
       content,
-    }, config);
-
-    console.log("Raw response from server:", {
-      status: response.status,
-      statusText: response.statusText,
-      data: response.data,
-      headers: response.headers
     });
+
+    console.log("Raw response from server:", response);
     
     if (!response || !response.data) {
       throw new Error("Không nhận được phản hồi từ server");
@@ -77,13 +65,27 @@ export const sendMessage = async (receiverPhone, content) => {
     const messageData = response.data;
     console.log("Message data:", messageData);
 
-    // Nếu response không có messageId nhưng có status success thì vẫn coi là thành công
-    if (messageData.status === "success") {
-      return messageData;
+    // Nếu không có messageId, thử tạo một messageId tạm thời
+    if (!messageData.messageId) {
+      messageData.messageId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      messageData.status = 'sending';
     }
 
-    if (!messageData.messageId) {
-      throw new Error("Response không chứa messageId");
+    // Emit socket event để cập nhật real-time
+    try {
+      const socket = io(getBaseUrl(), {
+        auth: { token: await getAccessToken() }
+      });
+      
+      socket.emit('new-message', {
+        messageId: messageData.messageId,
+        receiverPhone,
+        content,
+        status: 'sent'
+      });
+    } catch (socketError) {
+      console.error("Socket error:", socketError);
+      // Không throw error vì đây chỉ là cập nhật real-time
     }
 
     return messageData;
@@ -91,8 +93,7 @@ export const sendMessage = async (receiverPhone, content) => {
     console.error("❌ Error in sendMessage:", {
       error: error.message,
       response: error.response?.data,
-      status: error.response?.status,
-      config: error.config
+      status: error.response?.status
     });
     throw error;
   }
