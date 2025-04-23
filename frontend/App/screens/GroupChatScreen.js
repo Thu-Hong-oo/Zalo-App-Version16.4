@@ -221,9 +221,25 @@ const GroupChatScreen = () => {
   const formatTime = (dateString) => {
     if (!dateString) return "";
     const date = new Date(dateString);
-    return `${date.getHours()}:${
-      date.getMinutes() < 10 ? "0" + date.getMinutes() : date.getMinutes()
-    } Hôm nay`;
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    
+    const hours = date.getHours();
+    const minutes = date.getMinutes() < 10 ? "0" + date.getMinutes() : date.getMinutes();
+    
+    if (isToday) {
+      return `${hours}:${minutes} Hôm nay`;
+    } else {
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      if (date.toDateString() === yesterday.toDateString()) {
+        return `${hours}:${minutes} Hôm qua`;
+      } else {
+        const day = String(date.getDate()).padStart(2, "0");
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        return `${hours}:${minutes} ${day}/${month}`;
+      }
+    }
   };
 
   const formatDate = (timestamp) => {
@@ -490,9 +506,8 @@ const GroupChatScreen = () => {
 
     try {
       if (message.trim()) {
-        const tempId = `temp-${Date.now()}-${Math.random()
-          .toString(36)
-          .substr(2, 9)}`;
+        const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const currentTime = new Date().toISOString();
 
         const newMessage = {
           groupMessageId: tempId,
@@ -500,7 +515,7 @@ const GroupChatScreen = () => {
           senderId: currentUserId,
           content: message.trim(),
           type: "text",
-          createdAt: new Date().toISOString(),
+          createdAt: currentTime,
           status: "sending",
           isTempId: true,
           senderName: "You",
@@ -508,9 +523,7 @@ const GroupChatScreen = () => {
         };
 
         setMessages((prev) => {
-          const uniqueMessages = prev.filter(
-            (msg) => msg.groupMessageId !== tempId
-          );
+          const uniqueMessages = prev.filter((msg) => msg.groupMessageId !== tempId);
           return [...uniqueMessages, newMessage].sort(
             (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
           );
@@ -521,11 +534,11 @@ const GroupChatScreen = () => {
 
         const response = await sendGroupMessage(groupId, message.trim());
         if (response.status === "success") {
+          const serverTimestamp = response.data.createdAt || currentTime;
+          
           setMessages((prev) => {
             const updatedMessages = prev
-              .filter(
-                (msg) => msg.groupMessageId !== response.data.groupMessageId
-              )
+              .filter((msg) => msg.groupMessageId !== response.data.groupMessageId)
               .map((msg) =>
                 msg.tempId === tempId
                   ? {
@@ -533,6 +546,7 @@ const GroupChatScreen = () => {
                       groupMessageId: response.data.groupMessageId,
                       status: "sent",
                       isTempId: false,
+                      createdAt: serverTimestamp,
                     }
                   : msg
               );
@@ -541,7 +555,7 @@ const GroupChatScreen = () => {
             );
           });
 
-          // Update group's lastMessage
+          // Update group's lastMessage with server timestamp
           try {
             const token = await getAccessToken();
             const lastMessageData = {
@@ -549,13 +563,12 @@ const GroupChatScreen = () => {
                 content: message.trim(),
                 type: "text",
                 senderId: currentUserId,
-                timestamp: new Date().toISOString()
-              }
+                timestamp: serverTimestamp
+              },
+              lastMessageAt: serverTimestamp
             };
             
-            console.log("Updating last message with data:", lastMessageData);
-            
-            const updateResponse = await axios.put(
+            await axios.put(
               `${getApiUrl()}/groups/${groupId}`,
               lastMessageData,
               {
@@ -566,14 +579,14 @@ const GroupChatScreen = () => {
               }
             );
             
-            console.log("Last message update response:", updateResponse.data);
-            
-            // Emit socket event to notify other users
             if (socket) {
               socket.emit("group:updated", {
                 groupId,
                 type: "LAST_MESSAGE_UPDATED",
-                data: lastMessageData.lastMessage
+                data: {
+                  ...lastMessageData.lastMessage,
+                  lastMessageAt: serverTimestamp
+                }
               });
             }
           } catch (error) {
@@ -698,6 +711,7 @@ const GroupChatScreen = () => {
       }
 
       console.log("Selected message for forwarding:", selectedMessage);
+      const currentTime = new Date().toISOString();
 
       const results = await Promise.all(
         receivers.map(async (receiver) => {
@@ -705,15 +719,14 @@ const GroupChatScreen = () => {
             if (receiver.type === 'conversation') {
               const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
               
-              // Chuẩn bị dữ liệu tin nhắn
               let messageData = {
                 tempId,
                 receiverPhone: receiver.id,
                 content: selectedMessage.content,
-                type: 'text'
+                type: 'text',
+                timestamp: currentTime
               };
 
-              // Kiểm tra nếu tin nhắn gốc là file hoặc có URL là hình ảnh/video
               if (selectedMessage.type === 'file' || 
                   selectedMessage.content.match(/\.(jpg|jpeg|png|gif|mp4|mov|avi)$/i)) {
                 
@@ -727,16 +740,52 @@ const GroupChatScreen = () => {
                   fileName: selectedMessage.fileName || selectedMessage.content.split('/').pop(),
                   fileSize: selectedMessage.fileSize
                 };
+
+                // Update group's lastMessage for file messages
+                try {
+                  const token = await getAccessToken();
+                  const lastMessageData = {
+                    lastMessage: {
+                      content: messageData.content,
+                      type: 'file',
+                      senderId: currentUserId,
+                      timestamp: currentTime,
+                      fileType: messageData.fileType
+                    },
+                    lastMessageAt: currentTime
+                  };
+                  
+                  await axios.put(
+                    `${getApiUrl()}/groups/${groupId}`,
+                    lastMessageData,
+                    {
+                      headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                      }
+                    }
+                  );
+
+                  if (socket) {
+                    socket.emit("group:updated", {
+                      groupId,
+                      type: "LAST_MESSAGE_UPDATED",
+                      data: {
+                        ...lastMessageData.lastMessage,
+                        lastMessageAt: currentTime
+                      }
+                    });
+                  }
+                } catch (error) {
+                  console.error("Error updating group's lastMessage for file:", error);
+                }
               }
 
-              console.log("Forwarding message data:", messageData);
-
-              // Gửi tin nhắn qua socket
               if (messageData.type === 'file') {
                 socket.emit("send-message", {
                   ...messageData,
-                  fileUrl: messageData.content,  // Thêm fileUrl để đảm bảo preview hoạt động
-                  preview: messageData.content    // Thêm preview để đảm bảo hiển thị
+                  fileUrl: messageData.content,
+                  preview: messageData.content
                 });
               } else {
                 socket.emit("send-message", messageData);
@@ -745,7 +794,7 @@ const GroupChatScreen = () => {
               return { success: true, response: { tempId } };
             }
 
-            // Logic chuyển tiếp đến nhóm giữ nguyên
+            // Logic chuyển tiếp đến nhóm
             const response = await forwardGroupMessage(
               groupId,
               selectedMessage.groupMessageId,
