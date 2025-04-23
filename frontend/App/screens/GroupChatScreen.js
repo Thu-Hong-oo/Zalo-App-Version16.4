@@ -1404,27 +1404,33 @@ const GroupChatScreen = () => {
           style={styles.attachButton}
           onPress={handleAttachPress}
         >
-          <Ionicons name="attach-outline" size={24} color="#666" />
+          <Ionicons name="attach-outline" size={24} color="#65676b" />
         </TouchableOpacity>
         
         <TextInput
           style={styles.input}
           placeholder="Nhập tin nhắn..."
-          placeholderTextColor="#999"
+          placeholderTextColor="#65676b"
           value={message}
           onChangeText={setMessage}
           multiline
         />
         
         <TouchableOpacity
-          style={styles.sendButton}
+          style={[
+            styles.sendButton,
+            (!message.trim() && !selectedFiles.length) && styles.sendButtonDisabled
+          ]}
           onPress={handleSendMessage}
           disabled={!message.trim() && !selectedFiles.length}
         >
           <Ionicons
             name="send"
-            size={24}
-            color={message.trim() || selectedFiles.length ? "#2196F3" : "#999"}
+            size={20}
+            style={[
+              styles.sendIcon,
+              (!message.trim() && !selectedFiles.length) && styles.sendIconDisabled
+            ]}
           />
         </TouchableOpacity>
       </KeyboardAvoidingView>
@@ -1845,27 +1851,58 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     backgroundColor: "#fff",
     borderTopWidth: 1,
-    borderTopColor: "#eee",
+    borderTopColor: "#E8EEF7",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: -2,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 5,
   },
   attachButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: '#f0f2f5',
+    marginRight: 8,
   },
   input: {
     flex: 1,
-    backgroundColor: "#f0f0f0",
+    backgroundColor: "#f0f2f5",
     borderRadius: 20,
-    paddingHorizontal: 15,
+    paddingHorizontal: 16,
     paddingVertical: 8,
     maxHeight: 100,
     fontSize: 16,
+    color: "#1c1e21",
+    marginRight: 8,
   },
   sendButton: {
-    padding: 8,
-    marginLeft: 5,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: '#1877f2',
+    transform: [{ rotate: '45deg' }],
+  },
+  sendButtonDisabled: {
+    backgroundColor: '#f0f2f5',
+  },
+  sendIcon: {
+    transform: [{ rotate: '-45deg' }],
+    color: '#ffffff',
+  },
+  sendIconDisabled: {
+    color: '#bcc0c4',
   },
   containerCentered: {
     flex: 1,
