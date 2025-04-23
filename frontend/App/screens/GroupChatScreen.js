@@ -1,6 +1,4 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-
 
 import {
   View,
@@ -15,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+
   ActivityIndicator,
   Modal,
   Alert,
@@ -47,13 +46,12 @@ import * as MediaLibrary from "expo-media-library";
 import ForwardMessageModal from "../components/ForwardMessageModal";
 import { getApiUrl, getBaseUrl, api } from "../config/api";
 import axios from "axios";
-
 import { WebView } from 'react-native-webview';
 import { sendMessage, forwardMessage } from "../modules/chat/controller";
-
 // import jwt_decode from "jwt-decode"; // Tạm thời comment lại
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
 
 const GroupChatScreen = () => {
   const navigation = useNavigation();
@@ -112,7 +110,7 @@ const GroupChatScreen = () => {
     itemVisiblePercentThreshold: 50,
     minimumViewTime: 300,
   };
-  
+
   useEffect(() => {
     const fetchGroupDetails = async () => {
       if (!groupId) {
@@ -120,14 +118,14 @@ const GroupChatScreen = () => {
         setLoading(false);
         return;
       }
-      
+
       console.log(`Fetching details for groupId: ${groupId}`);
       setLoading(true);
       setError(null);
       try {
         const response = await getGroupInfo(groupId);
         console.log("Fetched group details:", response);
-        if (response && response.groupId) { 
+        if (response && response.groupId) {
           setGroupDetails(response);
           // Thêm tin nhắn hệ thống vào messages khi có groupDetails
           const systemMessage = createSystemMessage(response);
@@ -178,25 +176,26 @@ const GroupChatScreen = () => {
     }
   };
 
+
   // Tạo tin nhắn hệ thống dựa trên dữ liệu nhóm
   const createSystemMessage = (details) => {
     if (!details || !details.members || details.members.length === 0)
       return null;
-    
+
     const creator = details.members.find((m) => m.userId === details.createdBy);
     const creatorName = creator?.name || "Người tạo";
-    
+
     // Lấy tên của tối đa 2 thành viên khác (không phải người tạo)
     const otherMemberNames = details.members
       .filter((m) => m.userId !== details.createdBy)
       .slice(0, 2)
       .map((m) => m.name || "Thành viên");
-      
+
     let displayText = creatorName;
     if (otherMemberNames.length > 0) {
       displayText += `, ${otherMemberNames.join(", ")}`;
     }
-    
+
     // Lấy avatar của những người được hiển thị tên
     const displayUserIds = [
       creator?.userId,
@@ -369,6 +368,8 @@ const GroupChatScreen = () => {
           forceNew: true,
           reconnection: true,
           reconnectionAttempts: 5,
+          reconnectionDelay: 1000,
+          timeout: 20000,
         });
 
         newSocket.on("connect", () => {
@@ -378,6 +379,18 @@ const GroupChatScreen = () => {
 
         newSocket.on("connect_error", (error) => {
           console.error("Socket connection error:", error);
+          // Thử kết nối lại sau 5 giây
+          setTimeout(() => {
+            newSocket.connect();
+          }, 5000);
+        });
+
+        newSocket.on("disconnect", (reason) => {
+          console.log("Socket disconnected:", reason);
+          if (reason === "io server disconnect") {
+            // Server đã ngắt kết nối, thử kết nối lại
+            newSocket.connect();
+          }
         });
 
         newSocket.on("new-group-message", async (newMessage) => {
@@ -445,6 +458,12 @@ const GroupChatScreen = () => {
         });
 
         setSocket(newSocket);
+
+        return () => {
+          if (newSocket) {
+            newSocket.disconnect();
+          }
+        };
       } catch (error) {
         console.error("Socket initialization error:", error);
       }
@@ -454,7 +473,9 @@ const GroupChatScreen = () => {
     loadChatHistory();
 
     return () => {
-      if (socket) socket.disconnect();
+      if (socket) {
+        socket.disconnect();
+      }
     };
   }, [groupId]);
 
@@ -580,8 +601,7 @@ const GroupChatScreen = () => {
         return;
       }
 
-      const messageAge =
-        Date.now() - new Date(targetMessage.createdAt).getTime();
+      const messageAge = Date.now() - new Date(targetMessage.createdAt).getTime();
       const MAX_RECALL_TIME = 24 * 60 * 60 * 1000; // 24h
 
       if (messageAge > MAX_RECALL_TIME) {
@@ -677,42 +697,55 @@ const GroupChatScreen = () => {
         return;
       }
 
-      console.log("Forwarding message:", {
-        selectedMessage,
-        receivers
-      });
+      console.log("Selected message for forwarding:", selectedMessage);
 
       const results = await Promise.all(
         receivers.map(async (receiver) => {
           try {
-            // Nếu là chuyển tiếp đến cá nhân
             if (receiver.type === 'conversation') {
-              console.log("Forwarding to personal chat:", {
-                messageId: selectedMessage.messageId || selectedMessage.groupMessageId,
+              const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+              
+              // Chuẩn bị dữ liệu tin nhắn
+              let messageData = {
+                tempId,
                 receiverPhone: receiver.id,
-                content: selectedMessage.content
-              });
+                content: selectedMessage.content,
+                type: 'text'
+              };
 
-              try {
-                const response = await api.post("/chat/messages/forward", {
-                  messageId: selectedMessage.messageId || selectedMessage.groupMessageId,
-                  receiverPhone: receiver.id,
-                  content: selectedMessage.content
-                });
-
-                if (response.data && response.data.status === "success") {
-                  console.log("Forward message success:", response.data);
-                  return { success: true, response: response.data };
-                }
+              // Kiểm tra nếu tin nhắn gốc là file hoặc có URL là hình ảnh/video
+              if (selectedMessage.type === 'file' || 
+                  selectedMessage.content.match(/\.(jpg|jpeg|png|gif|mp4|mov|avi)$/i)) {
                 
-                return { success: false, error: "Không nhận được phản hồi từ server" };
-              } catch (error) {
-                console.error("Forward message error:", error.response?.data || error.message);
-                return { success: false, error: error.response?.data || error.message };
+                messageData = {
+                  ...messageData,
+                  type: 'file',
+                  fileType: selectedMessage.fileType || 
+                           (selectedMessage.content.match(/\.(jpg|jpeg|png|gif)$/i) ? 'image/jpeg' :
+                            selectedMessage.content.match(/\.(mp4|mov|avi)$/i) ? 'video/mp4' : 
+                            'application/octet-stream'),
+                  fileName: selectedMessage.fileName || selectedMessage.content.split('/').pop(),
+                  fileSize: selectedMessage.fileSize
+                };
               }
+
+              console.log("Forwarding message data:", messageData);
+
+              // Gửi tin nhắn qua socket
+              if (messageData.type === 'file') {
+                socket.emit("send-message", {
+                  ...messageData,
+                  fileUrl: messageData.content,  // Thêm fileUrl để đảm bảo preview hoạt động
+                  preview: messageData.content    // Thêm preview để đảm bảo hiển thị
+                });
+              } else {
+                socket.emit("send-message", messageData);
+              }
+
+              return { success: true, response: { tempId } };
             }
 
-            // Nếu là chuyển tiếp đến nhóm - giữ nguyên logic cũ
+            // Logic chuyển tiếp đến nhóm giữ nguyên
             const response = await forwardGroupMessage(
               groupId,
               selectedMessage.groupMessageId,
@@ -728,20 +761,42 @@ const GroupChatScreen = () => {
       );
 
       const failedForwards = results.filter(r => !r.success);
-      console.log("Failed forwards:", failedForwards);
-
       if (failedForwards.length === 0) {
         setForwardModalVisible(false);
         Alert.alert("Thành công", "Tin nhắn đã được chuyển tiếp");
       } else {
-        const errorMessage = failedForwards[0].error?.message || "Không thể chuyển tiếp tin nhắn";
-        throw new Error(errorMessage);
+        throw new Error(failedForwards[0].error?.message || "Không thể chuyển tiếp tin nhắn");
       }
     } catch (error) {
       console.error("Error forwarding message:", error);
       Alert.alert("Lỗi", error.message || "Không thể chuyển tiếp tin nhắn");
     } finally {
       setSelectedMessage(null);
+    }
+  };
+
+  // Thêm hàm trích xuất tên file từ URL
+  const extractFilenameFromUrl = (url) => {
+    if (!url) return null;
+
+    try {
+      // Try to get the filename from the URL
+      const urlParts = url.split("/");
+      const lastPart = urlParts[urlParts.length - 1];
+
+      // Check if the URL contains a filename parameter
+      const urlParams = new URLSearchParams(url);
+      const filenameParam = urlParams.get("filename");
+
+      if (filenameParam) {
+        return decodeURIComponent(filenameParam);
+      }
+
+      // If no filename parameter, use the last part of the URL
+      return lastPart;
+    } catch (error) {
+      console.error("Error extracting filename from URL:", error);
+      return null;
     }
   };
 
@@ -818,32 +873,32 @@ const GroupChatScreen = () => {
       const uploadUrl = `${getApiUrl()}/chat-group/${groupId}/upload`;
       console.log("Upload URL:", uploadUrl);
 
-      const response = await axios.post(uploadUrl, formData, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "multipart/form-data",
-          Accept: "application/json",
-        },
-        onUploadProgress: (progressEvent) => {
-          const progress = (progressEvent.loaded / progressEvent.total) * 100;
-          setUploadProgress(progress);
-        },
-      });
+      const response = await axios.post(
+        uploadUrl,
+        formData,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
+            Accept: "application/json",
+          },
+          onUploadProgress: (progressEvent) => {
+            const progress = (progressEvent.loaded / progressEvent.total) * 100;
+            setUploadProgress(progress);
+          },
+        }
+      );
 
       console.log("Upload response:", response.data);
 
       if (response.data.status === "success") {
         const uploadedFiles = response.data.data.files;
         const fileUrls = response.data.data.urls;
-
+        
         console.log("Uploaded files:", uploadedFiles);
         console.log("File URLs:", fileUrls);
 
-        if (
-          !uploadedFiles ||
-          !fileUrls ||
-          uploadedFiles.length !== fileUrls.length
-        ) {
+        if (!uploadedFiles || !fileUrls || uploadedFiles.length !== fileUrls.length) {
           throw new Error("Dữ liệu file không hợp lệ từ server");
         }
 
@@ -851,7 +906,7 @@ const GroupChatScreen = () => {
         for (let i = 0; i < uploadedFiles.length; i++) {
           const file = uploadedFiles[i];
           const fileUrl = fileUrls[i];
-
+          
           try {
             // Gọi API để lưu tin nhắn vào DynamoDB
             const messageResponse = await sendGroupMessage(
@@ -899,13 +954,11 @@ const GroupChatScreen = () => {
                   fileType: file.mimetype,
                   createdAt: message.createdAt,
                   status: "sent",
-                  groupMessageId: message.groupMessageId,
+                  groupMessageId: message.groupMessageId
                 });
               }
             } else {
-              throw new Error(
-                messageResponse.message || "Failed to save message"
-              );
+              throw new Error(messageResponse.message || "Failed to save message");
             }
           } catch (error) {
             console.error("Error saving message to DynamoDB:", error);
@@ -930,108 +983,108 @@ const GroupChatScreen = () => {
   };
 
   const handleAttachPress = async () => {
-    Alert.alert("Chọn loại file", "Bạn muốn đính kèm loại file nào?", [
-      {
-        text: "Hình ảnh",
-        onPress: async () => {
-          try {
-            const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: "Images",
-              allowsMultipleSelection: true,
-              selectionLimit: 10,
-              quality: 1,
-            });
+    Alert.alert(
+      "Chọn loại file",
+      "Bạn muốn đính kèm loại file nào?",
+      [
+        {
+          text: "Hình ảnh",
+          onPress: async () => {
+            try {
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: "Images",
+                allowsMultipleSelection: true,
+                selectionLimit: 10,
+                quality: 1,
+              });
 
-            if (!result.canceled) {
-              const newFiles = result.assets.map((asset) => ({
-                uri: asset.uri,
-                type: "image/jpeg",
-                name: `image_${Date.now()}_${Math.random()
-                  .toString(36)
-                  .substr(2, 9)}.jpg`,
-                mimeType: asset.mimeType || "image/jpeg",
-                size: asset.fileSize || 0,
-              }));
-              setSelectedFiles((prev) => [...prev, ...newFiles]);
-              setShowFilePreview(true);
+              if (!result.canceled) {
+                const newFiles = result.assets.map((asset) => ({
+                  uri: asset.uri,
+                  type: "image/jpeg",
+                  name: `image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`,
+                  mimeType: asset.mimeType || "image/jpeg",
+                  size: asset.fileSize || 0,
+                }));
+                setSelectedFiles((prev) => [...prev, ...newFiles]);
+                setShowFilePreview(true);
+              }
+            } catch (error) {
+              console.error("Error picking image:", error);
+              Alert.alert("Lỗi", "Không thể chọn ảnh");
             }
-          } catch (error) {
-            console.error("Error picking image:", error);
-            Alert.alert("Lỗi", "Không thể chọn ảnh");
           }
         },
-      },
-      {
-        text: "Video",
-        onPress: async () => {
-          try {
-            const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: "Videos",
-              allowsMultipleSelection: true,
-              selectionLimit: 5,
-              quality: 1,
-            });
+        {
+          text: "Video",
+          onPress: async () => {
+            try {
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: "Videos",
+                allowsMultipleSelection: true,
+                selectionLimit: 5,
+                quality: 1,
+              });
 
-            if (!result.canceled) {
-              const newFiles = result.assets.map((asset) => ({
-                uri: asset.uri,
-                type: "video/mp4",
-                name: `video_${Date.now()}_${Math.random()
-                  .toString(36)
-                  .substr(2, 9)}.mp4`,
-                mimeType: asset.mimeType || "video/mp4",
-                size: asset.fileSize || 0,
-              }));
-              setSelectedFiles((prev) => [...prev, ...newFiles]);
-              setShowFilePreview(true);
+              if (!result.canceled) {
+                const newFiles = result.assets.map((asset) => ({
+                  uri: asset.uri,
+                  type: "video/mp4",
+                  name: `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.mp4`,
+                  mimeType: asset.mimeType || "video/mp4",
+                  size: asset.fileSize || 0,
+                }));
+                setSelectedFiles((prev) => [...prev, ...newFiles]);
+                setShowFilePreview(true);
+              }
+            } catch (error) {
+              console.error("Error picking video:", error);
+              Alert.alert("Lỗi", "Không thể chọn video");
             }
-          } catch (error) {
-            console.error("Error picking video:", error);
-            Alert.alert("Lỗi", "Không thể chọn video");
           }
         },
-      },
-      {
-        text: "Tài liệu",
-        onPress: async () => {
-          try {
-            const result = await DocumentPicker.getDocumentAsync({
-              type: [
-                "application/pdf",
-                "application/msword",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                "application/vnd.ms-powerpoint",
-                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                "application/vnd.ms-excel",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "text/plain",
-              ],
-              multiple: true,
-              copyToCacheDirectory: true,
-            });
+        {
+          text: "Tài liệu",
+          onPress: async () => {
+            try {
+              const result = await DocumentPicker.getDocumentAsync({
+                type: [
+                  "application/pdf",
+                  "application/msword",
+                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                  "application/vnd.ms-powerpoint",
+                  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                  "application/vnd.ms-excel",
+                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                  "text/plain",
+                ],
+                multiple: true,
+                copyToCacheDirectory: true,
+              });
 
-            if (result.type !== "cancel") {
-              const newFiles = result.assets.map((asset) => ({
-                uri: asset.uri,
-                type: asset.mimeType,
-                name: asset.name,
-                mimeType: asset.mimeType,
-                size: asset.size || 0,
-              }));
-              setSelectedFiles((prev) => [...prev, ...newFiles]);
-              setShowFilePreview(true);
+              if (result.type !== "cancel") {
+                const newFiles = result.assets.map((asset) => ({
+                  uri: asset.uri,
+                  type: asset.mimeType,
+                  name: asset.name,
+                  mimeType: asset.mimeType,
+                  size: asset.size || 0,
+                }));
+                setSelectedFiles((prev) => [...prev, ...newFiles]);
+                setShowFilePreview(true);
+              }
+            } catch (error) {
+              console.error("Error picking document:", error);
+              Alert.alert("Lỗi", "Không thể chọn tài liệu");
             }
-          } catch (error) {
-            console.error("Error picking document:", error);
-            Alert.alert("Lỗi", "Không thể chọn tài liệu");
           }
         },
-      },
-      {
-        text: "Hủy",
-        style: "cancel",
-      },
-    ]);
+        {
+          text: "Hủy",
+          style: "cancel"
+        }
+      ]
+    );
   };
 
   const formatFileSize = (bytes) => {
@@ -1058,23 +1111,15 @@ const GroupChatScreen = () => {
         } else if (message.fileType?.startsWith("video/")) {
           setPreviewVideo(message.content);
           setShowVideoPreview(true);
-        } else if (
-          message.fileType?.includes("pdf") ||
-          message.fileType?.includes("word") ||
-          message.fileType?.includes("powerpoint")
-        ) {
+        } else if (message.fileType?.includes("pdf") || message.fileType?.includes("word") || message.fileType?.includes("powerpoint")) {
           // Mở file trực tiếp với Google Drive Viewer
-          const driveUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(
-            message.content
-          )}`;
+          const driveUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(message.content)}`;
           Linking.openURL(driveUrl);
         } else {
           // Xử lý các loại file khác
           try {
             const fileUrl = message.content;
-            const driveUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(
-              fileUrl
-            )}`;
+            const driveUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
             await Linking.openURL(driveUrl);
           } catch (error) {
             console.error("Error handling file press:", error);
@@ -1107,19 +1152,19 @@ const GroupChatScreen = () => {
       </SafeAreaView>
     );
   }
-  
+
   if (!groupDetails) {
-     return (
+    return (
       <SafeAreaView style={styles.containerCentered}>
         <Text>Không tìm thấy thông tin nhóm.</Text>
-         <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={{ color: "blue", marginTop: 10 }}>Quay lại</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
-  // --- Render UI với groupDetails --- 
+  // --- Render UI với groupDetails ---
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1139,10 +1184,8 @@ const GroupChatScreen = () => {
             {groupDetails.name}
           </Text>
           <Text style={styles.subtitle}>
-            {groupDetails.members
-              ? `${groupDetails.members.length} thành viên`
-              : `${initialMemberCount} thành viên`}{" "}
-            {/* Cập nhật số lượng từ API */}
+
+            {groupDetails.members ? `${groupDetails.members.length} thành viên` : `${initialMemberCount} thành viên`} {/* Cập nhật số lượng từ API */}
           </Text>
         </View>
         
@@ -1154,10 +1197,8 @@ const GroupChatScreen = () => {
           <Ionicons name="search" size={24} color="#fff" />
         </TouchableOpacity>
         
-        <TouchableOpacity
-          style={styles.headerButton}
-          onPress={() => navigation.navigate("GroupSetting", { groupId })}
-        >
+        <TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate('GroupSetting', { groupId })}>
+
           <Ionicons name="menu" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -1169,175 +1210,125 @@ const GroupChatScreen = () => {
         data={messages}
         keyExtractor={(item) => item.groupMessageId || item.id}
         renderItem={({ item }) => {
-          if (item.type === "system") return null;
+          const isMyMessage = item.senderId === currentUserId;
+          if (isMyMessage && item.status === "deleted") return null;
 
-          // Kiểm tra nếu tin nhắn đã bị xóa
-          if (deletedMessages.has(item.groupMessageId)) {
-            console.log("Message is in deletedMessages:", item.groupMessageId);
-            return null;
-          }
+          const renderMessageContent = () => {
+            if (item.status === "recalled") {
+              return (
+                <Text style={[
+                  styles.messageText,
+                  isMyMessage ? styles.myMessageText : styles.otherMessageText,
+                  styles.recalledMessage
+                ]}>
+                  {item.content}
+                </Text>
+              );
+            }
 
-          const isMe = item.isMe || item.senderId === currentUserId;
-          const isRecalled =
-            item.status === "recalled" ||
-            recalledMessages.has(item.groupMessageId);
+            // Nếu là tin nhắn file
+            if (item.type === "file") {
+              // Kiểm tra nếu là hình ảnh
+              if (item.fileType?.startsWith("image/") || item.content.match(/\.(jpg|jpeg|png|gif)$/i)) {
+                return (
+                  <Image
+                    source={{ uri: item.content }}
+                    style={styles.fileImage}
+                    resizeMode="cover"
+                  />
+                );
+              }
+              // Kiểm tra nếu là video
+              else if (item.fileType?.startsWith("video/") || item.content.match(/\.(mp4|mov|avi)$/i)) {
+                return (
+                  <View style={styles.videoContainer}>
+                    <Video
+                      source={{ uri: item.content }}
+                      style={styles.video}
+                      resizeMode="cover"
+                      useNativeControls
+                    />
+                    <View style={styles.playButton}>
+                      <Ionicons name="play" size={24} color="white" />
+                    </View>
+                  </View>
+                );
+              }
+              // Các loại file khác
+              else {
+                return (
+                  <View style={styles.documentContainer}>
+                    <Ionicons
+                      name={getFileIcon(item.fileType)}
+                      size={24}
+                      color={isMyMessage ? "white" : "#666"}
+                    />
+                    <Text style={[
+                      styles.fileName,
+                      isMyMessage ? styles.myMessageText : styles.otherMessageText
+                    ]}>
+                      {item.fileName || item.content.split("/").pop() || "Tài liệu"}
+                    </Text>
+                  </View>
+                );
+              }
+            }
+
+            // Tin nhắn văn bản
+            return (
+              <Text style={[
+                styles.messageText,
+                isMyMessage ? styles.myMessageText : styles.otherMessageText
+              ]}>
+                {item.content}
+              </Text>
+            );
+          };
 
           return (
             <TouchableOpacity
-              key={item.groupMessageId || item.id}
               onLongPress={() => showMessageOptions(item)}
               style={[
                 styles.messageContainer,
-                isMe ? styles.myMessage : styles.otherMessage,
+                isMyMessage ? styles.myMessage : styles.otherMessage,
               ]}
             >
-              {!isMe && (
-
-              <Image 
-
-
-                  source={{
-                    uri: item.senderAvatar || "https://via.placeholder.com/50",
-                  }}
+              {!isMyMessage && (
+                <Image
+                  source={{ uri: item.senderAvatar || "https://via.placeholder.com/50" }}
                   style={styles.avatar}
                 />
               )}
-              <View
-                style={[
-                  styles.messageBubble,
-                  isMe ? styles.myMessageBubble : styles.otherMessageBubble,
-                ]}
-              >
-                {!isMe && (
-                  <Text style={styles.senderName}>
-                    {item.senderName || "Người dùng"}
-          </Text>
+              <View style={[
+                styles.messageBubble,
+                isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble,
+              ]}>
+                {!isMyMessage && (
+                  <Text style={styles.senderName}>{item.senderName || "Người dùng"}</Text>
                 )}
-                {isRecalled ? (
-                  <View style={styles.recalledMessageContainer}>
-                    <Ionicons
-                      name="refresh"
-                      size={16}
-                      color={isMe ? "rgba(255,255,255,0.6)" : "#999"}
-                      style={styles.recalledIcon}
-                    />
-                    <Text
-                      style={[
-                        styles.messageText,
-                        isMe ? styles.myMessageText : styles.otherMessageText,
-                        styles.recalledMessage,
-                      ]}
-                    >
-                      Tin nhắn đã bị thu hồi
-          </Text>
-        </View>
-                ) : item.type === "text" ? (
-                  <Text
-                    style={[
-                      styles.messageText,
-                      isMe ? styles.myMessageText : styles.otherMessageText,
-                    ]}
-                  >
-                    {item.content}
-          </Text>
-                ) : item.type === "file" ? (
-                  <TouchableOpacity
-                    style={styles.fileContainer}
-                    onPress={() => handleFilePress(item)}
-                  >
-                    {item.fileType?.startsWith("image/") ? (
-
-              <Image 
-
-                        source={{ uri: item.content }}
-                        style={styles.fileImage}
-                        resizeMode="cover"
-                        onError={(e) => {
-                          console.error(
-                            "Error loading image:",
-                            e.nativeEvent.error
-                          );
-                          Alert.alert("Lỗi", "Không thể tải ảnh");
-                        }}
-                      />
-                    ) : item.fileType?.startsWith("video/") ? (
-                      <View style={styles.videoContainer}>
-                        <Video
-                          source={{ uri: item.content }}
-                          style={styles.video}
-                          resizeMode="cover"
-                          useNativeControls
-                          onError={(e) => {
-                            console.error(
-                              "Error loading video:",
-                              e.nativeEvent.error
-                            );
-                            Alert.alert("Lỗi", "Không thể tải video");
-                          }}
-                        />
-                        <View style={styles.playButton}>
-                          <Ionicons name="play" size={24} color="white" />
-
-            </View>
-
-                      </View>
-                    ) : (
-                      <View style={styles.documentContainer}>
-                        <Ionicons
-                          name={getFileIcon(item.fileType)}
-                          size={24}
-                          color={isMe ? "white" : "#666"}
-                        />
-                        <Text
-                          style={[
-                            styles.fileName,
-                            isMe
-                              ? styles.myMessageText
-                              : styles.otherMessageText,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {item.content.split("/").pop() || "Tài liệu"}
-
-            </Text>
-          </View>
-
-                    )}
-          </TouchableOpacity>
-                ) : null}
+                {renderMessageContent()}
                 <View style={styles.messageFooter}>
-                  <Text
-                    style={[
-                      styles.messageTime,
-                      isMe ? styles.myMessageTime : styles.otherMessageTime,
-                    ]}
-                  >
+                  <Text style={[
+                    styles.messageTime,
+                    isMyMessage ? styles.myMessageTime : styles.otherMessageTime,
+                  ]}>
                     {formatTime(item.createdAt)}
-          </Text>
-                  {isMe && (
-                    <Text
-                style={[
-                        styles.messageStatus,
-                        isMe
-                          ? styles.myMessageStatus
-                          : styles.otherMessageStatus,
-                      ]}
-                    >
-                      {item.status === "sending"
-                        ? "Đang gửi..."
-                        : item.status === "sent"
-                        ? "✓"
-                        : item.status === "error"
-                        ? "✕"
-                        : item.status === "recalled"
-                        ? "Đã thu hồi"
+                  </Text>
+                  {isMyMessage && (
+                    <Text style={[
+                      styles.messageStatus,
+                      isMyMessage ? styles.myMessageStatus : styles.otherMessageStatus,
+                    ]}>
+                      {item.status === "sending" ? "Đang gửi..."
+                        : item.status === "sent" ? "✓"
+                        : item.status === "error" ? "✕"
+                        : item.status === "recalled" ? "Đã thu hồi"
                         : ""}
-            </Text>
+                    </Text>
                   )}
                 </View>
               </View>
-          </TouchableOpacity>
-
+            </TouchableOpacity>
           );
         }}
         onEndReached={loadMoreMessages}
@@ -1348,7 +1339,7 @@ const GroupChatScreen = () => {
           isLoadingMore ? (
             <View style={styles.loadingMoreContainer}>
               <ActivityIndicator size="small" color="#2196F3" />
-        </View>
+            </View>
           ) : null
         }
       />
@@ -1360,7 +1351,7 @@ const GroupChatScreen = () => {
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
         style={styles.inputContainer}
       >
-        <TouchableOpacity
+        <TouchableOpacity 
           style={styles.attachButton}
           onPress={handleAttachPress}
         >
@@ -1419,7 +1410,7 @@ const GroupChatScreen = () => {
                       >
                         <Ionicons name="arrow-undo" size={24} color="#1877f2" />
                         <Text style={styles.optionText}>Thu hồi</Text>
-        </TouchableOpacity>
+                      </TouchableOpacity>
                     )}
                     <TouchableOpacity
                       style={styles.optionButton}
@@ -1499,11 +1490,7 @@ const GroupChatScreen = () => {
       />
 
       {showImagePreview && (
-        <Modal
-          visible={showImagePreview}
-          transparent={true}
-          animationType="fade"
-        >
+        <Modal visible={showImagePreview} transparent={true} animationType="fade">
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <TouchableOpacity
@@ -1523,11 +1510,7 @@ const GroupChatScreen = () => {
       )}
 
       {showVideoPreview && (
-        <Modal
-          visible={showVideoPreview}
-          transparent={true}
-          animationType="fade"
-        >
+        <Modal visible={showVideoPreview} transparent={true} animationType="fade">
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <TouchableOpacity
@@ -1549,11 +1532,7 @@ const GroupChatScreen = () => {
       )}
 
       {showDocumentPreview && (
-        <Modal
-          visible={showDocumentPreview}
-          transparent={true}
-          animationType="fade"
-        >
+        <Modal visible={showDocumentPreview} transparent={true} animationType="fade">
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <TouchableOpacity
@@ -1779,35 +1758,34 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 8,
-    overflow: "hidden",
-    position: "relative",
+    overflow: 'hidden',
+    position: 'relative',
   },
   video: {
-    width: "100%",
-    height: "100%",
+    width: '100%',
+    height: '100%',
   },
   playButton: {
-    position: "absolute",
-    top: "50%",
-    left: "50%",
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
     transform: [{ translateX: -12 }, { translateY: -12 }],
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+    padding: 8,
   },
   documentContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.1)",
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 8,
+    backgroundColor: 'rgba(0,0,0,0.1)',
     borderRadius: 8,
+    maxWidth: 250,
   },
   fileName: {
-    marginLeft: 5,
+    marginLeft: 8,
     fontSize: 14,
+    flex: 1,
   },
   modalOverlay: {
     flex: 1,
