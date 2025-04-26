@@ -91,7 +91,7 @@ function MainApp({ setIsAuthenticated }) {
       console.log("Fetching conversations...");
       const response = await api.get('/chat/conversations');
       console.log("Conversations response:", response.data);
-      
+
       if (response.data.status === 'success' && response.data.data?.conversations) {
         const directChats = await Promise.all(
           response.data.data.conversations.map(async (conv) => {
@@ -99,10 +99,10 @@ function MainApp({ setIsAuthenticated }) {
               const otherParticipant = conv.participant.isCurrentUser
                 ? conv.otherParticipant
                 : conv.participant;
-    
+
               const userInfo = await fetchUserInfo(otherParticipant.phone);
               console.log("User info for", otherParticipant.phone, ":", userInfo);
-    
+
               return {
                 id: conv.conversationId,
                 title: userInfo?.name || otherParticipant.phone,
@@ -129,7 +129,7 @@ function MainApp({ setIsAuthenticated }) {
           console.error('User not found in localStorage');
           return;
         }
-        
+
         const user = JSON.parse(userStr);
         const groupsResponse = await api.get(`/users/${user.userId}/groups`);
         console.log("Groups response:", groupsResponse.data);
@@ -149,17 +149,17 @@ function MainApp({ setIsAuthenticated }) {
             members: group.members || []
           }));
         }
-  
+
         // Filter out any null conversations
         const validDirectChats = directChats.filter(chat => chat !== null);
-        
+
         // Combine and sort all chats by last message time
         const allChats = [...validDirectChats, ...groupChats].sort((a, b) => {
           const timeA = new Date(a.lastMessageAt || 0);
           const timeB = new Date(b.lastMessageAt || 0);
           return timeB - timeA;
         });
-        
+
         setChats(allChats);
         setError(null);
       } else {
@@ -190,22 +190,22 @@ function MainApp({ setIsAuthenticated }) {
     }
     fetchConversations();
   }, []);
-   // Run only once on mount
+  // Run only once on mount
 
   // Socket event handlers
   useEffect(() => {
     if (!socket) return;
-  
+
     const handleNewMessage = async (data) => {
       console.log("New message received:", data);
-      
+
       // Immediately update the chat list for the specific conversation
       if (data.conversationId || data.groupId) {
         setChats(prevChats => {
           // Find the conversation to update - could be direct chat or group chat
           const chatId = data.conversationId || data.groupId;
           const chatToUpdate = prevChats.find(chat => chat.id === chatId);
-          
+
           if (!chatToUpdate) {
             // If conversation not found, fetch all conversations
             fetchConversations();
@@ -214,7 +214,7 @@ function MainApp({ setIsAuthenticated }) {
 
           // Move the updated chat to the top and update its content
           const otherChats = prevChats.filter(chat => chat.id !== chatId);
-          
+
           // Determine sender name based on message type
           let senderName = '';
           if (data.isFromMe) {
@@ -227,7 +227,7 @@ function MainApp({ setIsAuthenticated }) {
 
           const updatedChat = {
             ...chatToUpdate,
-            message: data.content || data.message || "", 
+            message: data.content || data.message || "",
             time: formatTime(data.timestamp || new Date().getTime()),
             unreadCount: !data.isFromMe ? (chatToUpdate.unreadCount || 0) + 1 : chatToUpdate.unreadCount,
             isFromMe: data.isFromMe || false,
@@ -257,10 +257,10 @@ function MainApp({ setIsAuthenticated }) {
         fetchConversations();
       }
     };
-  
+
     const handleMessageRead = async (data) => {
       console.log("Message read status updated:", data);
-      
+
       if (data.conversationId || data.groupId) {
         setChats(prevChats => {
           const chatId = data.conversationId || data.groupId;
@@ -279,7 +279,7 @@ function MainApp({ setIsAuthenticated }) {
         });
       }
     };
-  
+
     const handleNewConversation = async (data) => {
       console.log("New conversation created:", data);
       await fetchConversations();
@@ -291,10 +291,10 @@ function MainApp({ setIsAuthenticated }) {
       if (data.groupId) {
         const userStr = localStorage.getItem('user');
         if (!userStr) return;
-        
+
         const user = JSON.parse(userStr);
         const response = await api.get(`/users/${user.userId}/groups`);
-        
+
         if (response.data?.groups) {
           setChats(prevChats => {
             const updatedGroup = response.data.groups.find(g => g.groupId === data.groupId);
@@ -319,14 +319,37 @@ function MainApp({ setIsAuthenticated }) {
         }
       }
     };
-    
+
+    // Handler cho conversation-updated
+    const handleConversationUpdated = (data) => {
+      console.log("conversation-updated received:", data);
+      setChats(prevChats => {
+        const chatId = data.conversationId || data.groupId;
+        const chatToUpdate = prevChats.find(chat => chat.id === chatId);
+        if (!chatToUpdate) {
+          fetchConversations();
+          return prevChats;
+        }
+        const otherChats = prevChats.filter(chat => chat.id !== chatId);
+        const updatedChat = {
+          ...chatToUpdate,
+          message: data.lastMessage,
+          time: formatTime(data.timestamp),
+          lastMessageAt: data.timestamp,
+          unreadCount: chatToUpdate.unreadCount + 1 // hoặc logic phù hợp
+        };
+        return [updatedChat, ...otherChats];
+      });
+    };
+
     // Socket listeners
     socket.on("new_message", handleNewMessage);
     socket.on("message_read", handleMessageRead);
     socket.on("new_conversation", handleNewConversation);
     socket.on("group_message", handleNewMessage); // Listen for group messages
     socket.on("group_update", handleGroupUpdate); // Listen for group updates
-  
+    socket.on("conversation-updated", handleConversationUpdated);
+
     //  Dùng Page Visibility API để load lại khi user quay lại tab
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -334,17 +357,18 @@ function MainApp({ setIsAuthenticated }) {
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
-  
+
     return () => {
       socket.off("new_message", handleNewMessage);
       socket.off("message_read", handleMessageRead);
       socket.off("new_conversation", handleNewConversation);
       socket.off("group_message", handleNewMessage);
       socket.off("group_update", handleGroupUpdate);
+      socket.off("conversation-updated", handleConversationUpdated);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [socket, fetchConversations]); // Add fetchConversations to dependencies
-  
+
 
   const formatTime = (timestamp) => {
     const date = new Date(timestamp)
@@ -397,8 +421,8 @@ function MainApp({ setIsAuthenticated }) {
     setSelectedChat(conversationId); // chuyển đến đoạn chat vừa tạo
     navigate(`/app/chat/${conversationId}`);
   };
-  
-  
+
+
   const slides = [
     {
       id: 1,
@@ -432,13 +456,13 @@ function MainApp({ setIsAuthenticated }) {
       const response = await api.get('/chat/conversations');
       if (response.data.status === 'success' && response.data.data?.conversations) {
         const serverChats = response.data.data.conversations;
-        
+
         // Compare with current chats
         const hasNewMessages = serverChats.some((serverChat) => {
           const currentChat = chats.find(chat => chat.id === serverChat.conversationId);
-          return !currentChat || 
-                 currentChat.message !== (serverChat.lastMessage?.content || "") ||
-                 currentChat.time !== formatTime(serverChat.lastMessage?.timestamp);
+          return !currentChat ||
+            currentChat.message !== (serverChat.lastMessage?.content || "") ||
+            currentChat.time !== formatTime(serverChat.lastMessage?.timestamp);
         });
 
         if (hasNewMessages) {
@@ -463,7 +487,7 @@ function MainApp({ setIsAuthenticated }) {
       console.error("Không tìm thấy người dùng");
     }
   };
- 
+
   const fetchGroups = async () => {
     try {
       // Get current user from localStorage
@@ -472,7 +496,7 @@ function MainApp({ setIsAuthenticated }) {
         console.error('User not found in localStorage');
         return;
       }
-      
+
       const user = JSON.parse(userStr);
       const response = await api.get(`/users/${user.userId}/groups`);
       if (response.data && response.data.groups) {
@@ -494,9 +518,9 @@ function MainApp({ setIsAuthenticated }) {
         <div className="sidebar-top">
           <div className="user-profile">
             <div>
-              <img 
-                src={user?.avatar} 
-                alt={user?.name || "User"} 
+              <img
+                src={user?.avatar}
+                alt={user?.name || "User"}
                 className="avatar"
                 title={user?.name || "User"}
                 onError={(e) => {
@@ -518,13 +542,13 @@ function MainApp({ setIsAuthenticated }) {
           <div className="nav-items">
             <button className="nav-item active">
               <MessageCircle size={24} />
-            </button>        
+            </button>
             <button
-                className="nav-item"
-                onClick={() => navigate("/app/contacts")}
+              className="nav-item"
+              onClick={() => navigate("/app/contacts")}
             >
-                <User size={24} />
-              </button>
+              <User size={24} />
+            </button>
             <button className="nav-item">
               <FileText size={24} />
             </button>
@@ -543,7 +567,7 @@ function MainApp({ setIsAuthenticated }) {
           </div>
         </div>
         <div className="sidebar-bottom">
-          <button 
+          <button
             className="nav-item settings"
             onClick={() => setShowProfileMenu(!showProfileMenu)}
           >
@@ -571,9 +595,9 @@ function MainApp({ setIsAuthenticated }) {
           <div className="search-box">
             <div className="search-input-container">
               <Search size={20} className="search-icon" />
-              <input 
-                type="text" 
-                placeholder="Tìm kiếm bạn bè, nhóm chat" 
+              <input
+                type="text"
+                placeholder="Tìm kiếm bạn bè, nhóm chat"
                 className="search-input"
               />
             </div>
@@ -581,8 +605,8 @@ function MainApp({ setIsAuthenticated }) {
               <User size={20} />
             </button>
 
-            <button 
-              className="action-button" 
+            <button
+              className="action-button"
               title="Tạo nhóm chat"
               onClick={() => setShowCreateGroupModal(true)}
             >
@@ -625,9 +649,9 @@ function MainApp({ setIsAuthenticated }) {
               >
                 <div className="chat-avatar">
                   {chat.avatar ? (
-                    <img 
-                      src={chat.avatar} 
-                      alt={chat.title} 
+                    <img
+                      src={chat.avatar}
+                      alt={chat.title}
                       onError={(e) => {
                         e.target.onerror = null;
                         e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(chat.title)}&background=random`;
@@ -642,9 +666,7 @@ function MainApp({ setIsAuthenticated }) {
                       )}
                     </div>
                   )}
-                  {chat.unreadCount > 0 && (
-                    <span className="unread-badge">{chat.unreadCount}</span>
-                  )}
+
                 </div>
                 <div className="chat-info">
                   <div className="chat-header">
@@ -655,7 +677,12 @@ function MainApp({ setIsAuthenticated }) {
                         <span className="member-count"> · {chat.memberCount}</span>
                       )}
                     </h3>
-                    <span className="chat-time">{chat.time}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                      <span className="chat-time">{chat.time}</span>
+                      {chat.unreadCount > 0 && (
+                        <span className="unread-badge unread-badge-below-time">{chat.unreadCount}</span>
+                      )}
+                    </div>
                   </div>
                   <p className={`chat-message ${chat.unreadCount > 0 ? 'unread' : ''}`}>
                     {chat.isFromMe ? 'Bạn: ' : ''}{chat.message}
@@ -695,7 +722,7 @@ function MainApp({ setIsAuthenticated }) {
                   <ChevronRight size={24} />
                 </button>
               </div>
-              
+
               <div className="carousel-indicators">
                 {slides.map((slide, index) => (
                   <button
@@ -717,19 +744,19 @@ function MainApp({ setIsAuthenticated }) {
         </Routes>
       </div>
       {showAddFriendModal && (
-  <AddFriendModal
-    currentUser={user} // ✅ Truyền toàn bộ user object
-    onClose={() => setShowAddFriendModal(false)}
-  />
-)}
+        <AddFriendModal
+          currentUser={user} // ✅ Truyền toàn bộ user object
+          onClose={() => setShowAddFriendModal(false)}
+        />
+      )}
 
       {/* Modals */}
-      <CreateGroupModal 
+      <CreateGroupModal
         isOpen={showCreateGroupModal}
         onClose={() => setShowCreateGroupModal(false)}
         onGroupCreated={(groupData) => {
           console.log('Group created:', groupData);
-          
+
           // Thêm group mới vào đầu danh sách chat
           const newGroup = {
             id: groupData.groupId || groupData.id,
@@ -745,13 +772,13 @@ function MainApp({ setIsAuthenticated }) {
             lastMessage: null,
             unreadCount: 0
           };
-          
+
           setChats(prevChats => {
             // Kiểm tra xem group đã tồn tại chưa
-            const existingGroupIndex = prevChats.findIndex(chat => 
+            const existingGroupIndex = prevChats.findIndex(chat =>
               chat.id === newGroup.id && chat.type === 'group'
             );
-            
+
             if (existingGroupIndex >= 0) {
               // Nếu đã tồn tại, cập nhật thông tin
               const updatedChats = [...prevChats];
@@ -765,11 +792,11 @@ function MainApp({ setIsAuthenticated }) {
               return [newGroup, ...prevChats];
             }
           });
-          
+
           // Chọn group mới tạo và điều hướng
           setSelectedChat(newGroup.id);
           navigate(`/app/groups/${newGroup.id}`);
-          
+
           // Đóng modal
           setShowCreateGroupModal(false);
         }}
@@ -812,7 +839,7 @@ function App() {
     newSocket.on("disconnect", (reason) => {
       console.log("Socket disconnected:", reason);
       setSocketConnected(false);
-      
+
       // Attempt to reconnect if disconnected
       if (reason === "io server disconnect") {
         // Server disconnected us, try to reconnect
@@ -869,7 +896,7 @@ function App() {
 
 function ChatItem({ avatars, name, message, time, count, hasMore }) {
   return (
-    <div className="chat-item" style={{ 
+    <div className="chat-item" style={{
       padding: '12px 16px',
       display: 'flex',
       alignItems: 'flex-start',
@@ -881,15 +908,15 @@ function ChatItem({ avatars, name, message, time, count, hasMore }) {
     }}>
       <div style={{ position: 'relative', marginRight: '12px' }}>
         {avatars.length === 1 ? (
-          <div style={{ 
-            width: '48px', 
-            height: '48px', 
+          <div style={{
+            width: '48px',
+            height: '48px',
             borderRadius: '12px',
             overflow: 'hidden'
           }}>
-            <img 
-              src={avatars[0]} 
-              alt="" 
+            <img
+              src={avatars[0]}
+              alt=""
               style={{
                 width: '100%',
                 height: '100%',
@@ -898,7 +925,7 @@ function ChatItem({ avatars, name, message, time, count, hasMore }) {
             />
           </div>
         ) : (
-          <div style={{ 
+          <div style={{
             position: 'relative',
             width: '48px',
             height: '48px'
@@ -913,8 +940,8 @@ function ChatItem({ avatars, name, message, time, count, hasMore }) {
               overflow: 'hidden',
               border: '2px solid white'
             }}>
-              <img 
-                src={avatars[0]} 
+              <img
+                src={avatars[0]}
                 alt=""
                 style={{
                   width: '100%',
@@ -933,8 +960,8 @@ function ChatItem({ avatars, name, message, time, count, hasMore }) {
               overflow: 'hidden',
               border: '2px solid white'
             }}>
-              <img 
-                src={avatars[1]} 
+              <img
+                src={avatars[1]}
                 alt=""
                 style={{
                   width: '100%',
@@ -948,13 +975,13 @@ function ChatItem({ avatars, name, message, time, count, hasMore }) {
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ 
-          display: 'flex', 
+        <div style={{
+          display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-start',
           marginBottom: '4px'
         }}>
-          <h3 style={{ 
+          <h3 style={{
             margin: 0,
             fontSize: '14px',
             fontWeight: '500',
@@ -965,7 +992,7 @@ function ChatItem({ avatars, name, message, time, count, hasMore }) {
           }}>
             {name}
           </h3>
-          <span style={{ 
+          <span style={{
             fontSize: '12px',
             color: '#7589A3',
             whiteSpace: 'nowrap',
@@ -975,11 +1002,11 @@ function ChatItem({ avatars, name, message, time, count, hasMore }) {
           </span>
         </div>
 
-        <div style={{ 
+        <div style={{
           display: 'flex',
           alignItems: 'center'
         }}>
-          <p style={{ 
+          <p style={{
             margin: 0,
             fontSize: '13px',
             color: '#7589A3',
@@ -991,13 +1018,13 @@ function ChatItem({ avatars, name, message, time, count, hasMore }) {
             {message}
           </p>
 
-          <div style={{ 
+          <div style={{
             display: 'flex',
             alignItems: 'center',
             marginLeft: '8px'
           }}>
             {count && (
-              <span style={{ 
+              <span style={{
                 backgroundColor: '#0068FF',
                 color: 'white',
                 padding: '2px 6px',
@@ -1011,7 +1038,7 @@ function ChatItem({ avatars, name, message, time, count, hasMore }) {
               </span>
             )}
             {hasMore && (
-              <span style={{ 
+              <span style={{
                 backgroundColor: '#E6E8EB',
                 color: '#7589A3',
                 padding: '2px 6px',
@@ -1026,9 +1053,9 @@ function ChatItem({ avatars, name, message, time, count, hasMore }) {
         </div>
       </div>
     </div>
-    
+
   )
-  
+
 }
 
 

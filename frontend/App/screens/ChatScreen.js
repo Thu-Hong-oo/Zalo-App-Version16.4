@@ -59,6 +59,33 @@ export default function ChatListScreen({ navigation }) {
     return unsubscribe;
   }, [navigation, user]);
 
+  useEffect(() => {
+    if (!global.socket) return; // Giả sử bạn lưu socket ở global, hoặc thay bằng biến socket thực tế
+    const handleConversationUpdated = (data) => {
+      setChats(prevChats => {
+        const chatId = data.conversationId || data.groupId;
+        const chatToUpdate = prevChats.find(chat => chat.id === chatId);
+        if (!chatToUpdate) {
+          fetchConversations();
+          return prevChats;
+        }
+        const otherChats = prevChats.filter(chat => chat.id !== chatId);
+        const updatedChat = {
+          ...chatToUpdate,
+          message: data.lastMessage,
+          time: formatTime(data.timestamp),
+          lastMessageAt: data.timestamp,
+          unreadCount: chatToUpdate.unreadCount + 1 // hoặc logic phù hợp
+        };
+        return [updatedChat, ...otherChats];
+      });
+    };
+    global.socket.on("conversation-updated", handleConversationUpdated);
+    return () => {
+      global.socket.off("conversation-updated", handleConversationUpdated);
+    };
+  }, []);
+
   const fetchUserInfo = async (phone) => {
     try {
       // Check cache first
