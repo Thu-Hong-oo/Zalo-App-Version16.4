@@ -342,6 +342,10 @@ function MainApp({ setIsAuthenticated }) {
       });
     };
 
+    const handleRemovedFromGroup = (data) => {
+      setChats(prevChats => prevChats.filter(chat => chat.id !== data.groupId));
+    };
+
     // Socket listeners
     socket.on("new_message", handleNewMessage);
     socket.on("message_read", handleMessageRead);
@@ -349,6 +353,7 @@ function MainApp({ setIsAuthenticated }) {
     socket.on("group_message", handleNewMessage); // Listen for group messages
     socket.on("group_update", handleGroupUpdate); // Listen for group updates
     socket.on("conversation-updated", handleConversationUpdated);
+    socket.on("removed-from-group", handleRemovedFromGroup);
 
     //  Dùng Page Visibility API để load lại khi user quay lại tab
     const handleVisibilityChange = () => {
@@ -365,6 +370,7 @@ function MainApp({ setIsAuthenticated }) {
       socket.off("group_message", handleNewMessage);
       socket.off("group_update", handleGroupUpdate);
       socket.off("conversation-updated", handleConversationUpdated);
+      socket.off("removed-from-group", handleRemovedFromGroup);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [socket, fetchConversations]); // Add fetchConversations to dependencies
@@ -408,6 +414,9 @@ function MainApp({ setIsAuthenticated }) {
   }
 
   const handleChatClick = (chat) => {
+    setChats(prevChats => prevChats.map(c =>
+      c.id === chat.id ? { ...c, unreadCount: 0 } : c
+    ));
     if (chat.type === 'group') {
       setSelectedChat(chat.id);
       navigate(`/app/groups/${chat.id}`);
