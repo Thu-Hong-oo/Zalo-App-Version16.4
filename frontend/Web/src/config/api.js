@@ -33,7 +33,7 @@ export const getApiUrlAsync = async () => {
 // Tạo instance Axios
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 10000,
+  timeout: 40000,
   headers: {
     "Content-Type": "application/json",
   },

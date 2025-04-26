@@ -200,10 +200,12 @@ function MainApp({ setIsAuthenticated }) {
       console.log("New message received:", data);
       
       // Immediately update the chat list for the specific conversation
-      if (data.conversationId) {
+      if (data.conversationId || data.groupId) {
         setChats(prevChats => {
-          // Find the conversation to update
-          const chatToUpdate = prevChats.find(chat => chat.id === data.conversationId);
+          // Find the conversation to update - could be direct chat or group chat
+          const chatId = data.conversationId || data.groupId;
+          const chatToUpdate = prevChats.find(chat => chat.id === chatId);
+          
           if (!chatToUpdate) {
             // If conversation not found, fetch all conversations
             fetchConversations();
@@ -211,16 +213,33 @@ function MainApp({ setIsAuthenticated }) {
           }
 
           // Move the updated chat to the top and update its content
-          const otherChats = prevChats.filter(chat => chat.id !== data.conversationId);
+          const otherChats = prevChats.filter(chat => chat.id !== chatId);
+          
+          // Determine sender name based on message type
+          let senderName = '';
+          if (data.isFromMe) {
+            senderName = 'Bạn';
+          } else if (chatToUpdate.type === 'group') {
+            senderName = data.senderName || 'Unknown';
+          } else {
+            senderName = chatToUpdate.title;
+          }
+
           const updatedChat = {
             ...chatToUpdate,
-            message: data.content || data.message || "", // Handle both content and message fields
+            message: data.content || data.message || "", 
             time: formatTime(data.timestamp || new Date().getTime()),
             unreadCount: !data.isFromMe ? (chatToUpdate.unreadCount || 0) + 1 : chatToUpdate.unreadCount,
             isFromMe: data.isFromMe || false,
-            lastMessageId: data.messageId, // Store message ID if available
-            lastUpdate: new Date().getTime() // Add timestamp to force re-render
+            lastMessageId: data.messageId,
+            lastMessageAt: data.timestamp || new Date().getTime(),
+            lastUpdate: new Date().getTime()
           };
+
+          // For group messages, add sender name to message
+          if (chatToUpdate.type === 'group' && !data.isFromMe) {
+            updatedChat.message = `${senderName}: ${updatedChat.message}`;
+          }
 
           // Log the update for debugging
           console.log("Updating chat:", {
@@ -233,7 +252,7 @@ function MainApp({ setIsAuthenticated }) {
           return [updatedChat, ...otherChats];
         });
       } else {
-        console.warn("Received message without conversationId:", data);
+        console.warn("Received message without conversationId or groupId:", data);
         // Fetch all conversations if we can't update specifically
         fetchConversations();
       }
@@ -242,20 +261,20 @@ function MainApp({ setIsAuthenticated }) {
     const handleMessageRead = async (data) => {
       console.log("Message read status updated:", data);
       
-      if (data.conversationId) {
+      if (data.conversationId || data.groupId) {
         setChats(prevChats => {
+          const chatId = data.conversationId || data.groupId;
           const updatedChats = prevChats.map(chat => {
-            if (chat.id === data.conversationId) {
+            if (chat.id === chatId) {
               return {
                 ...chat,
                 unreadCount: 0,
-                lastReadMessageId: data.messageId // Store last read message ID if available
+                lastReadMessageId: data.messageId
               };
             }
             return chat;
           });
 
-          // Keep the same order
           return updatedChats;
         });
       }
@@ -263,14 +282,50 @@ function MainApp({ setIsAuthenticated }) {
   
     const handleNewConversation = async (data) => {
       console.log("New conversation created:", data);
-      // For new conversations, we need to fetch to get complete data
       await fetchConversations();
+    };
+
+    const handleGroupUpdate = async (data) => {
+      console.log("Group update received:", data);
+      // Handle group updates (member changes, name changes, etc.)
+      if (data.groupId) {
+        const userStr = localStorage.getItem('user');
+        if (!userStr) return;
+        
+        const user = JSON.parse(userStr);
+        const response = await api.get(`/users/${user.userId}/groups`);
+        
+        if (response.data?.groups) {
+          setChats(prevChats => {
+            const updatedGroup = response.data.groups.find(g => g.groupId === data.groupId);
+            if (!updatedGroup) return prevChats;
+
+            const otherChats = prevChats.filter(chat => chat.id !== data.groupId);
+            const updatedChat = {
+              id: updatedGroup.groupId,
+              title: updatedGroup.name,
+              message: updatedGroup.lastMessage?.content || "Chưa có tin nhắn",
+              time: formatTime(updatedGroup.lastMessageAt || updatedGroup.createdAt),
+              avatar: updatedGroup.avatar,
+              unreadCount: updatedGroup.unreadCount || 0,
+              lastMessageAt: updatedGroup.lastMessageAt || updatedGroup.createdAt,
+              type: 'group',
+              memberCount: updatedGroup.memberCount,
+              members: updatedGroup.members || []
+            };
+
+            return [updatedChat, ...otherChats];
+          });
+        }
+      }
     };
     
     // Socket listeners
     socket.on("new_message", handleNewMessage);
     socket.on("message_read", handleMessageRead);
     socket.on("new_conversation", handleNewConversation);
+    socket.on("group_message", handleNewMessage); // Listen for group messages
+    socket.on("group_update", handleGroupUpdate); // Listen for group updates
   
     //  Dùng Page Visibility API để load lại khi user quay lại tab
     const handleVisibilityChange = () => {
@@ -284,6 +339,8 @@ function MainApp({ setIsAuthenticated }) {
       socket.off("new_message", handleNewMessage);
       socket.off("message_read", handleMessageRead);
       socket.off("new_conversation", handleNewConversation);
+      socket.off("group_message", handleNewMessage);
+      socket.off("group_update", handleGroupUpdate);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [socket, fetchConversations]); // Add fetchConversations to dependencies

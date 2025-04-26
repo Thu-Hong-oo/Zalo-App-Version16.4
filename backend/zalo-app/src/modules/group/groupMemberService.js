@@ -56,17 +56,25 @@ class GroupMemberService {
                     groupId,
                     userId
                 },
-                UpdateExpression: 'set isActive = :isActive, role = :role, updatedAt = :updatedAt',
+                UpdateExpression: 'set isActive = :isActive, #role = :role, updatedAt = :updatedAt, joinedAt = :joinedAt',
+                ExpressionAttributeNames: {
+                    '#role': 'role'
+                },
                 ExpressionAttributeValues: {
                     ':isActive': true,
                     ':role': role,
-                    ':updatedAt': timestamp
+                    ':updatedAt': timestamp,
+                    ':joinedAt': timestamp
                 },
                 ReturnValues: 'ALL_NEW'
             };
 
             const { Attributes } = await dynamodb.send(new UpdateCommand(updateParams));
             console.log('Member reactivated:', Attributes);
+            
+            // Update group's member count
+            await groupService.updateMemberCount(groupId, 1);
+            
             return Attributes;
         }
 
