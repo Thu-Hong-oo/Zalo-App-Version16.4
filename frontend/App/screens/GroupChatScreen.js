@@ -2135,10 +2135,9 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,1)", // Màu background của modal khi click vào preview ảnh
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
   },
   modalContent: {
     backgroundColor: "white",
