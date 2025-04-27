@@ -105,6 +105,8 @@ const GroupChatScreen = () => {
   const [deletedMessages, setDeletedMessages] = useState(new Set());
   const [showDocumentPreview, setShowDocumentPreview] = useState(false);
   const [previewDocument, setPreviewDocument] = useState(null);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const viewabilityConfig = {
     itemVisiblePercentThreshold: 50,
@@ -949,6 +951,14 @@ const GroupChatScreen = () => {
 
       console.log("Upload response:", response.data);
 
+      if (response.data.status === "error") {
+        setErrorMessage(response.data.message || "Không thể upload file");
+        setShowErrorModal(true);
+        return;
+      }
+
+      setUploadProgress(100);
+
       if (response.data.status === "success") {
         const uploadedFiles = response.data.data.files;
         const fileUrls = response.data.data.urls;
@@ -957,7 +967,9 @@ const GroupChatScreen = () => {
         console.log("File URLs:", fileUrls);
 
         if (!uploadedFiles || !fileUrls || uploadedFiles.length !== fileUrls.length) {
-          throw new Error("Dữ liệu file không hợp lệ từ server");
+          setErrorMessage("Dữ liệu file không hợp lệ từ server");
+          setShowErrorModal(true);
+          return;
         }
 
         // Tạo và lưu tin nhắn cho mỗi file
@@ -1016,11 +1028,13 @@ const GroupChatScreen = () => {
                 });
               }
             } else {
-              throw new Error(messageResponse.message || "Failed to save message");
+              setErrorMessage(messageResponse.message || "Failed to save message");
+              setShowErrorModal(true);
             }
           } catch (error) {
             console.error("Error saving message to DynamoDB:", error);
-            Alert.alert("Lỗi", "Không thể lưu tin nhắn");
+            setErrorMessage(error.message || "Không thể lưu tin nhắn");
+            setShowErrorModal(true);
           }
         }
 
@@ -1028,12 +1042,11 @@ const GroupChatScreen = () => {
         setShowFilePreview(false);
         setSelectedFiles([]);
         scrollToBottom();
-      } else {
-        throw new Error(response.data.message || "Upload failed");
       }
     } catch (error) {
       console.error("Upload error:", error);
-      Alert.alert("Lỗi", error.message || "Không thể tải lên file");
+      setErrorMessage(error.response?.data?.message || "Không thể tải lên file");
+      setShowErrorModal(true);
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
@@ -1689,6 +1702,33 @@ const GroupChatScreen = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Error Modal */}
+      <Modal
+        visible={showErrorModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowErrorModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Lỗi Upload File</Text>
+            <Text style={styles.errorMessage}>{errorMessage}</Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton]}
+                onPress={() => {
+                  setShowErrorModal(false);
+                  setShowFilePreview(false);
+                  setSelectedFiles([]);
+                }}
+              >
+                <Text style={styles.buttonText}>Xác nhận</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -2067,6 +2107,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "white",
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: '#ff3b30',
+    textAlign: 'center',
+    marginVertical: 20,
+    paddingHorizontal: 20,
+  },
+  confirmButton: {
+    backgroundColor: '#1877f2',
   },
 });
 

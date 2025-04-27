@@ -385,6 +385,20 @@ const initializeSocket = (io) => {
             status: "sent",
           });
 
+          // Emit conversation-updated cho cả người gửi và người nhận
+          const preview = {
+            conversationId,
+            lastMessage: fileUrl ? `[File] ${fileType || "file"}` : content,
+            timestamp,
+            sender: userPhone,
+            type: messageType,
+            fileType: fileUrl ? fileType : null,
+          };
+          socket.emit("conversation-updated", preview);
+          if (receiverSocket) {
+            receiverSocket.emit("conversation-updated", preview);
+          }
+
           console.log("Message sent successfully:", {
             messageId,
             tempId,

@@ -3,7 +3,9 @@ import axios from "axios";
 // Cấu hình API
 
 
-const COMPUTER_IP = "192.168.1.78";
+
+const COMPUTER_IP = "192.168.1.12";
+
 
 const BASE_URL = `http://${COMPUTER_IP}:3000`;
 
@@ -33,7 +35,7 @@ export const getApiUrlAsync = async () => {
 // Tạo instance Axios
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 10000,
+  timeout: 40000,
   headers: {
     "Content-Type": "application/json",
   },

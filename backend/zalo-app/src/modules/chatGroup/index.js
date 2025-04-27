@@ -466,6 +466,22 @@ const sendGroupMessage = async (req, res) => {
       }
     });
 
+    // Emit conversation-updated cho tất cả thành viên nhóm
+    const preview = {
+      groupId,
+      lastMessage: fileUrl ? `[File] ${fileType || "file"}` : content,
+      timestamp: message.createdAt,
+      sender: senderId,
+      type: fileUrl ? "file" : "text",
+      fileType: fileUrl ? fileType : null,
+    };
+    onlineMembers.forEach((member) => {
+      const socket = connectedUsers.get(member.userId);
+      if (socket) {
+        socket.emit("conversation-updated", preview);
+      }
+    });
+
     res.json({ status: "success", data: message });
   } catch (error) {
     console.error("Error sending group message:", error);
