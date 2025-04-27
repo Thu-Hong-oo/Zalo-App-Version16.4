@@ -4,7 +4,10 @@ import { Platform } from "react-native";
 
 // Default configuration
 
-const COMPUTER_IP = "192.168.1.76"; // Your computer's IP address
+
+const COMPUTER_IP = "192.168.1.75"; // Your computer's IP address
+
+
 
 const API_PORT = "3000";
 

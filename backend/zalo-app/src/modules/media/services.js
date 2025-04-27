@@ -4,6 +4,7 @@ const path = require('path');
 const MAX_FILE_SIZE = 10*1024 * 1024; 
 const MAX_TOTAL_SIZE = 10*1024 * 1024;
 
+
 const FILE_TYPE_MATCH = [
     "image/png",
     "image/jpeg",
@@ -70,7 +71,7 @@ const uploadSingleFile = (file) => {
     return s3.upload(params).promise();
 };
 
-const uploadToS3 = async (files, conversationId) => {
+const uploadToS3 = async (files) => {
     // Validate tất cả files trước khi upload
     if (!Array.isArray(files)) {
         const validation = validateFile(files);
@@ -108,8 +109,13 @@ const uploadToS3 = async (files, conversationId) => {
     
     try {
         // Upload tất cả files
-        const results = await Promise.all(files.map(file => uploadSingleFile(file)));
-        return results;
+        const uploads = await Promise.all(files.map(uploadSingleFile));
+        // 👉 trả về { url, key, mime }
+        return uploads.map(u => ({
+            url  : u.Location,
+            key  : u.Key,
+            mime : u.ContentType,
+        }));
     } catch (error) {
         // Nếu là lỗi từ S3
         throw {
@@ -121,4 +127,13 @@ const uploadToS3 = async (files, conversationId) => {
     }
 };
 
-module.exports = { uploadToS3, FILE_TYPE_MATCH }; 
+const deleteFromS3 = (key) => {
+    if (!key) return Promise.resolve();
+    return s3.deleteObject({
+      Bucket: BUCKETS.MEDIA,
+      Key   : key,
+    }).promise();
+  };
+
+  
+module.exports = { uploadToS3, deleteFromS3, FILE_TYPE_MATCH }; 
