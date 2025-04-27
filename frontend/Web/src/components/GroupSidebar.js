@@ -242,13 +242,22 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate }) => {
 
   const handleUpdateName = async () => {
     if (!newGroupName.trim()) return;
-
+  
     try {
       setLoading(true);
       await api.put(`/groups/${groupId}/name`, { name: newGroupName.trim() });
       await fetchGroupInfo();
-      if (onGroupUpdate) onGroupUpdate();
+      if (onGroupUpdate) onGroupUpdate(); // <-- Đảm bảo gọi callback này!
       setShowEditName(false);
+  
+      // Emit event cho các tab khác (nếu backend không làm)
+      if (socket) {
+        socket.emit('group:updated', {
+          groupId,
+          type: 'NAME_UPDATED',
+          data: { name: newGroupName.trim() }
+        });
+      }
     } catch (error) {
       console.error('Error updating group name:', error);
     } finally {

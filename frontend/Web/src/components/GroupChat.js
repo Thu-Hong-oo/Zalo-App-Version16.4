@@ -89,6 +89,7 @@ const GroupChat = ({ onNewMessage }) => {
   const [uploadErrors, setUploadErrors] = useState([]);
   const [fullscreenMedia, setFullscreenMedia] = useState(null);
   const socket = useRef(null);
+  const [forceUpdate, setForceUpdate] = useState(0);
 
   useEffect(() => {
     fetchGroupDetails();
@@ -310,6 +311,84 @@ const GroupChat = ({ onNewMessage }) => {
       socket.current.off('group:member-added', handleMemberAdded);
       socket.current.off('group:member-removed', handleMemberRemoved);
       socket.current.off('group:dissolved', handleGroupDissolved);
+    };
+  }, [socket, groupId, navigate]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    let timeoutId = null;
+
+    const handleGroupNameUpdated = (data) => {
+      if (data.groupId === groupId && data.type === 'NAME_UPDATED') {
+        setGroupDetails(prev => ({
+          ...prev,
+          name: data.data.name
+        }));
+        setForceUpdate(f => f + 1);
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(async () => {
+          try {
+            const response = await getGroupDetails(groupId);
+            if (response.status === "success") {
+              setGroupDetails(response.data);
+            }
+          } catch (err) {
+            console.error('Error fetching group details after name update:', err);
+          }
+        }, 2000);
+      }
+    };
+
+    const handleGroupAvatarUpdated = (data) => {
+      if (data.groupId === groupId && data.type === 'AVATAR_UPDATED') {
+        setGroupDetails(prev => ({
+          ...prev,
+          avatar: data.data.avatarUrl
+        }));
+        setForceUpdate(f => f + 1);
+      }
+    };
+
+    const handleMemberAdded = (data) => {
+      if (data.groupId === groupId && data.userId) {
+        setGroupDetails(prev => ({
+          ...prev,
+          members: prev?.members ? [...prev.members, data.userId] : [data.userId]
+        }));
+        setForceUpdate(f => f + 1);
+      }
+    };
+
+    const handleMemberRemoved = (data) => {
+      if (data.groupId === groupId && data.userId) {
+        setGroupDetails(prev => ({
+          ...prev,
+          members: prev?.members ? prev.members.filter(id => id !== data.userId) : []
+        }));
+        setForceUpdate(f => f + 1);
+      }
+    };
+
+    const handleGroupDissolved = (data) => {
+      if (data.groupId === groupId) {
+        navigate('/app');
+      }
+    };
+
+    socket.current?.on('group:updated', handleGroupNameUpdated);
+    socket.current?.on('group:updated', handleGroupAvatarUpdated);
+    socket.current?.on('group:member-added', handleMemberAdded);
+    socket.current?.on('group:member-removed', handleMemberRemoved);
+    socket.current?.on('group:dissolved', handleGroupDissolved);
+
+    return () => {
+      socket.current?.off('group:updated', handleGroupNameUpdated);
+      socket.current?.off('group:updated', handleGroupAvatarUpdated);
+      socket.current?.off('group:member-added', handleMemberAdded);
+      socket.current?.off('group:member-removed', handleMemberRemoved);
+      socket.current?.off('group:dissolved', handleGroupDissolved);
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, [socket, groupId, navigate]);
 
@@ -1017,7 +1096,7 @@ const GroupChat = ({ onNewMessage }) => {
             <ChevronLeft size={24} />
           </button>
           <div className="header-title">
-            <h1>{groupDetails?.name}</h1>
+            <h1 key={forceUpdate}>{groupDetails?.name}</h1>
             <p>{groupDetails?.members?.length || 0} thành viên</p>
           </div>
           <div className="header-actions">

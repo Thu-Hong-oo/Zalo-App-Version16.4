@@ -7,7 +7,7 @@ const COMPUTER_IP = "192.168.1.75";
 const BASE_URL = `http://${COMPUTER_IP}:3000`;
 
 const API_URL = `${BASE_URL}/api`;
-const SOCKET_URL = BASE_URL;
+const SOCKET_URL = `http://${COMPUTER_IP}:3000`; // hoặc "http://localhost:3000"
 
 // Hàm lấy base URL cho socket
 export const getSocketUrl = () => {

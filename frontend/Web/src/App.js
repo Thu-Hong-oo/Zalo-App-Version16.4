@@ -363,25 +363,83 @@ function MainApp({ setIsAuthenticated }) {
     // Khi thông tin nhóm được cập nhật
     const handleGroupUpdated = (data) => {
       console.log('Group updated:', data);
-      fetchConversations();
+      if (data.type === 'NAME_UPDATED') {
+        setChats(prevChats =>
+          prevChats.map(chat =>
+            chat.id === data.groupId
+              ? {
+                  ...chat,
+                  title: data.data.name,
+                  message: data.data.lastMessage || chat.message,
+                  time: data.data.lastMessageAt ? formatTime(data.data.lastMessageAt) : chat.time
+                }
+              : chat
+          )
+        );
+        setTimeout(() => {
+          fetchConversations();
+        }, 2000);
+      } else if (data.type === 'AVATAR_UPDATED') {
+        setChats(prevChats =>
+          prevChats.map(chat =>
+            chat.id === data.groupId
+              ? {
+                  ...chat,
+                  avatar: data.data.avatarUrl
+                }
+              : chat
+          )
+        );
+        setTimeout(() => {
+          fetchConversations();
+        }, 2000);
+      } else {
+        fetchConversations();
+      }
     };
 
     // Khi có thành viên mới được thêm vào nhóm
     const handleMemberAdded = (data) => {
       console.log('Member added to group:', data);
-      fetchConversations();
+      setChats(prevChats =>
+        prevChats.map(chat =>
+          chat.id === data.groupId
+            ? {
+                ...chat,
+                members: chat.members ? [...chat.members, data.userId] : [data.userId]
+              }
+            : chat
+        )
+      );
+      setTimeout(() => {
+        fetchConversations();
+      }, 2000);
     };
 
     // Khi có thành viên bị xóa khỏi nhóm
     const handleMemberRemoved = (data) => {
       console.log('Member removed from group:', data);
-      fetchConversations();
+      setChats(prevChats =>
+        prevChats.map(chat =>
+          chat.id === data.groupId
+            ? {
+                ...chat,
+                members: chat.members ? chat.members.filter(id => id !== data.userId) : []
+              }
+            : chat
+        )
+      );
+      setTimeout(() => {
+        fetchConversations();
+      }, 2000);
     };
 
     // Khi nhóm bị giải tán
     const handleGroupDissolved = (data) => {
-      console.log('Group dissolved:', data);
-      fetchConversations();
+      setChats(prevChats => prevChats.filter(chat => chat.id !== data.groupId));
+      setTimeout(() => {
+        fetchConversations();
+      }, 2000);
     };
 
     // Socket listeners

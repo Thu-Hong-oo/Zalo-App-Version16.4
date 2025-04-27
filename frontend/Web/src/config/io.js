@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 
-const SOCKET_URL = 'http://localhost:3001';
+const SOCKET_URL = 'http://localhost:3000';
 
 class SocketIOService {
   constructor() {
@@ -9,13 +9,20 @@ class SocketIOService {
 
   connect() {
     if (!this.socket) {
+      // Lấy token từ localStorage
+      const token = localStorage.getItem("accessToken");
+
       this.socket = io(SOCKET_URL, {
         transports: ['websocket'],
         autoConnect: true,
         reconnection: true,
         reconnectionDelay: 10000,
         reconnectionDelayMax: 50000,
-        reconnectionAttempts: 5
+        reconnectionAttempts: 5,
+        // Thêm dòng này để xác thực
+        auth: {
+          token: token,
+        },
       });
 
       this.socket.on('connect', () => {
@@ -60,4 +67,4 @@ class SocketIOService {
 }
 
 const socketService = new SocketIOService();
-export default socketService; 
+export default socketService;
