@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useContext } from "react";
+import { SocketContext } from "../App"; 
 import {
   getGroupDetails,
   getGroupMessages,
@@ -9,7 +11,6 @@ import {
   forwardGroupMessage,
   uploadFiles,
 } from "../services/group";
-import { getSocket } from "../config/socket";
 import EmojiPicker from "emoji-picker-react";
 import GroupSidebar from "./GroupSidebar";
 import {
@@ -87,120 +88,119 @@ const GroupChat = () => {
   const [uploadingFiles, setUploadingFiles] = useState([]);
   const [uploadErrors, setUploadErrors] = useState([]);
   const [fullscreenMedia, setFullscreenMedia] = useState(null);
-  const socket = useRef(null);
+  const socket = useContext(SocketContext);
 
   useEffect(() => {
     fetchGroupDetails();
     loadChatHistory();
     getCurrentUserId();
 
-    // Initialize socket connection
-    socket.current = getSocket();
-
     // Join group when component mounts
-    if (groupId) {
-      socket.current.emit("join-group", groupId);
+    if (socket && groupId) {
+      socket.emit("join-group", groupId);
     }
 
     // Set up socket event listeners
-    socket.current.on("new-group-message", async (newMessage) => {
-      try {
-        console.log("Received new message from socket:", newMessage);
+    if (socket) {
+      socket.on("new-group-message", async (newMessage) => {
+        try {
+          console.log("Received new message from socket:", newMessage);
 
-        if (newMessage.groupId === groupId) {
-          // Nếu tin nhắn không phải của người dùng hiện tại, lấy thông tin người gửi
-          if (newMessage.senderId !== currentUserId) {
-            const senderInfo = await fetchUserInfo(newMessage.senderId);
-            newMessage = {
-              ...newMessage,
-              senderName: senderInfo.name,
-              senderAvatar: senderInfo.avatar,
-            };
-
-            setMessages((prev) => {
-              // Kiểm tra xem tin nhắn đã tồn tại chưa
-              const existingMessage = prev.find(
-                (msg) => msg.groupMessageId === newMessage.groupMessageId
-              );
-
-              if (existingMessage) {
-                return prev;
-              }
-
-              return [...prev, newMessage].sort(
-                (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
-              );
-            });
-            scrollToBottom();
-          }
-        }
-      } catch (error) {
-        console.error("Error handling new message:", error);
-      }
-    });
-
-    socket.current.on("group-message-recalled", (recallData) => {
-      if (recallData.groupId === groupId) {
-        setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.groupMessageId === recallData.messageId) {
-              return {
-                ...msg,
-                content: "Tin nhắn đã bị thu hồi",
-                status: "recalled",
-                metadata: {
-                  ...msg.metadata,
-                  recalledBy: recallData.recalledBy,
-                  recalledAt: recallData.recalledAt,
-                },
+          if (newMessage.groupId === groupId) {
+            // Nếu tin nhắn không phải của người dùng hiện tại, lấy thông tin người gửi
+            if (newMessage.senderId !== currentUserId) {
+              const senderInfo = await fetchUserInfo(newMessage.senderId);
+              newMessage = {
+                ...newMessage,
+                senderName: senderInfo.name,
+                senderAvatar: senderInfo.avatar,
               };
+
+              setMessages((prev) => {
+                // Kiểm tra xem tin nhắn đã tồn tại chưa
+                const existingMessage = prev.find(
+                  (msg) => msg.groupMessageId === newMessage.groupMessageId
+                );
+
+                if (existingMessage) {
+                  return prev;
+                }
+
+                return [...prev, newMessage].sort(
+                  (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+                );
+              });
+              scrollToBottom();
             }
-            return msg;
-          })
-        );
-      }
-    });
+          }
+        } catch (error) {
+          console.error("Error handling new message:", error);
+        }
+      });
 
-    socket.current.on("group-message-deleted", (deleteData) => {
-      console.log("Received delete event:", deleteData);
-      if (deleteData.groupId === groupId) {
-        // Remove message from UI for all users
-        setMessages((prev) =>
-          prev.filter(
-            (msg) => msg.groupMessageId !== deleteData.deletedMessageId
-          )
-        );
-        console.log("Message removed:", deleteData.deletedMessageId);
-      }
-    });
+      socket.on("group-message-recalled", (recallData) => {
+        if (recallData.groupId === groupId) {
+          setMessages((prev) =>
+            prev.map((msg) => {
+              if (msg.groupMessageId === recallData.messageId) {
+                return {
+                  ...msg,
+                  content: "Tin nhắn đã bị thu hồi",
+                  status: "recalled",
+                  metadata: {
+                    ...msg.metadata,
+                    recalledBy: recallData.recalledBy,
+                    recalledAt: recallData.recalledAt,
+                  },
+                };
+              }
+              return msg;
+            })
+          );
+        }
+      });
 
-    socket.current.on("user-joined", ({ userId, metadata }) => {
-      // Handle user joined event
-      console.log(`User ${userId} joined the group`);
-    });
+      socket.on("group-message-deleted", (deleteData) => {
+        console.log("Received delete event:", deleteData);
+        if (deleteData.groupId === groupId) {
+          // Remove message from UI for all users
+          setMessages((prev) =>
+            prev.filter(
+              (msg) => msg.groupMessageId !== deleteData.deletedMessageId
+            )
+          );
+          console.log("Message removed:", deleteData.deletedMessageId);
+        }
+      });
 
-    socket.current.on("user-left", ({ userId }) => {
-      // Handle user left event
-      console.log(`User ${userId} left the group`);
-    });
+      socket.on("user-joined", ({ userId, metadata }) => {
+        // Handle user joined event
+        console.log(`User ${userId} joined the group`);
+      });
 
-    socket.current.on("error", ({ message }) => {
-      setError(message);
-    });
+      socket.on("user-left", ({ userId }) => {
+        // Handle user left event
+        console.log(`User ${userId} left the group`);
+      });
+
+      socket.on("error", ({ message }) => {
+        setError(message);
+      });
+    }
 
     // Cleanup on unmount
     return () => {
-      if (socket.current) {
-        socket.current.emit("leave-group", groupId);
-        socket.current.off("new-group-message");
-        socket.current.off("group-message-recalled");
-        socket.current.off("group-message-deleted");
-        socket.current.off("user-joined");
-        socket.current.off("user-left");
-        socket.current.off("error");
+      if (socket && groupId) {
+        socket.emit("leave-group", groupId);
+        socket.off("new-group-message");
+        socket.off("group-message-recalled");
+        socket.off("group-message-deleted");
+        socket.off("user-joined");
+        socket.off("user-left");
+        socket.off("error");
       }
     };
-  }, [groupId, currentUserId]);
+  }, [socket, groupId]);
 
   const getCurrentUserId = async () => {
     try {
@@ -459,7 +459,7 @@ const GroupChat = () => {
             );
 
             // Emit socket event with the same format as mobile
-            socket.current.emit("new-group-message", messageData);
+            socket.emit("new-group-message", messageData);
           }
         }
       } else if (message.trim()) {
@@ -489,7 +489,7 @@ const GroupChat = () => {
           );
 
           // Emit socket event with the same format as mobile
-          socket.current.emit("new-group-message", messageData);
+          socket.emit("new-group-message", messageData);
         }
       }
 
@@ -507,7 +507,7 @@ const GroupChat = () => {
 
   const handleRecallMessage = async (messageId) => {
     try {
-      socket.current.emit("recall-group-message", {
+      socket.emit("recall-group-message", {
         groupId,
         messageId,
       });
@@ -527,7 +527,7 @@ const GroupChat = () => {
         );
 
         // Emit socket event for deletion
-        socket.current.emit("delete-group-message", {
+        socket.emit("delete-group-message", {
           groupId,
           messageId,
           deletedBy: currentUserId,

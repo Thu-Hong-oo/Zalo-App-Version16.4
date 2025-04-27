@@ -1,4 +1,3 @@
-"use client"
 
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
@@ -9,8 +8,8 @@ import 'bootstrap/dist/css/bootstrap.min.css'
 export default function Login({ setIsAuthenticated }) {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState("phone")
-  const [phoneNumber, setPhoneNumber] = useState("")
-  const [password, setPassword] = useState("")
+  const [phoneNumber, setPhoneNumber] = useState("0123456789")
+  const [password, setPassword] = useState("123456")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 

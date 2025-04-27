@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getGroupDetails, getRecentContacts } from '../services/group';
 import './css/GroupSidebar.css';
 import { Users, Camera, Pencil, ChevronLeft, MoreVertical, UserPlus, Crown } from 'lucide-react';
 import api from '../config/api';
-import socketService from '../config/io';
+import { SocketContext } from '../App';
 
 const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate }) => {
   const navigate = useNavigate();
@@ -39,7 +39,7 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate }) => {
   const [showTransferSuccess, setShowTransferSuccess] = useState(false);
   const [showLeaveSuccess, setShowLeaveSuccess] = useState(false);
 
-  const socket = socketService.connect();
+  const socket = useContext(SocketContext);
 
   useEffect(() => {
     if (isOpen && groupId) {

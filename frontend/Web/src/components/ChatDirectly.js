@@ -8,7 +8,6 @@ import React, {
   useCallback,
 } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { io } from "socket.io-client";
 import EmojiPicker from "emoji-picker-react";
 import {
   ChevronLeft,
@@ -43,6 +42,7 @@ import "./css/ChatDirectly.css";
 import MessageContextMenu from "./MessageContextMenu";
 import ForwardMessageModal from "./ForwardMessageModal";
 import ConfirmModal from "../../../Web/src/components/ConfirmModal";
+import { SocketContext } from "../App";
 
 const ChatDirectly = () => {
   const { phone } = useParams();
@@ -50,7 +50,7 @@ const ChatDirectly = () => {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [socket, setSocket] = useState(null);
+  const socket = useContext(SocketContext);
   const [userInfo, setUserInfo] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -519,31 +519,12 @@ const ChatDirectly = () => {
   };
 
   useEffect(() => {
-    const token = localStorage.getItem("accessToken");
-    if (!token) {
-      navigate("/login");
-      return;
-    }
+    if (!socket) return;
+    setLoading(true);
+    socket.emit("join-chat", { receiverPhone: phone });
 
-    setLoading(true); // Set loading when starting to fetch data
-
-    const newSocket = io(getBaseUrl(), {
-      auth: { token },
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-      transports: ["websocket"],
-      withCredentials: true,
-    });
-
-    newSocket.on("connect", () => {
-      console.log("Socket connected");
-      newSocket.emit("join-chat", { receiverPhone: phone });
-    });
-
-    newSocket.on("new-message", (msg) => {
+    socket.on("new-message", (msg) => {
       if (!msg || !msg.messageId) return;
-
       setMessages((prev) => {
         const exists = prev.some(
           (m) =>
@@ -552,18 +533,13 @@ const ChatDirectly = () => {
               m.senderPhone === msg.senderPhone &&
               Math.abs(m.timestamp - msg.timestamp) < 1000)
         );
-
         if (exists) return prev;
-
-        // Cập nhật newest timestamp
         setOldestMessageDate(Math.min(msg.timestamp, oldestMessageDate || 0));
-
         return [...prev, { ...msg, status: "received" }];
       });
       scrollToBottom();
     });
-
-    newSocket.on("typing", ({ senderPhone }) => {
+    socket.on("typing", ({ senderPhone }) => {
       if (senderPhone === phone) {
         setIsTyping(true);
         if (typingTimeoutRef.current) {
@@ -572,14 +548,12 @@ const ChatDirectly = () => {
         typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 3000);
       }
     });
-
-    newSocket.on("stop_typing", ({ senderPhone }) => {
+    socket.on("stop_typing", ({ senderPhone }) => {
       if (senderPhone === phone) {
         setIsTyping(false);
       }
     });
-
-    newSocket.on("message-recalled", ({ messageId }) => {
+    socket.on("message-recalled", ({ messageId }) => {
       setMessages((prev) =>
         prev.map((msg) =>
           msg.messageId === messageId
@@ -588,16 +562,13 @@ const ChatDirectly = () => {
         )
       );
     });
-
-    newSocket.on("message-deleted", ({ messageId }) => {
+    socket.on("message-deleted", ({ messageId }) => {
       setMessages((prev) =>
         prev.map((msg) =>
           msg.messageId === messageId ? { ...msg, status: "deleted" } : msg
         )
       );
     });
-
-    setSocket(newSocket);
 
     // Initial load
     Promise.all([fetchUserInfo(), loadChatHistory()])
@@ -606,19 +577,23 @@ const ChatDirectly = () => {
         setError("Không thể tải dữ liệu chat");
       })
       .finally(() => {
-        setLoading(false); // Ensure loading is set to false after all initial loads
+        setLoading(false);
       });
 
     return () => {
-      if (newSocket) {
-        newSocket.emit("leave-chat", { receiverPhone: phone });
-        newSocket.disconnect();
+      if (socket) {
+        socket.emit("leave-chat", { receiverPhone: phone });
+        socket.off("new-message");
+        socket.off("typing");
+        socket.off("stop_typing");
+        socket.off("message-recalled");
+        socket.off("message-deleted");
       }
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
     };
-  }, [phone, navigate, loadChatHistory]);
+  }, [socket, phone, loadChatHistory]);
 
   const handleRecallMessage = async () => {
     try {

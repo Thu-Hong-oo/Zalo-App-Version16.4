@@ -2,46 +2,74 @@
   display: flex;
   height: 100%;
   background-color: #f5f7fa;
+  margin-left: 72px;
+  width: calc(100vw - 72px);
 }
 
 .friend-panel-sidebar {
   width: 280px;
-  background: white;
-  padding: 16px 12px;
+  background: #fff;
+  padding: 20px 14px 16px 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  border-right: 1px solid #ddd;
+  gap: 14px;
+  border-right: 1px solid #e3e8f0;
+  box-shadow: none;
+  border-radius: 0;
+  margin: 0;
 }
 
 .friend-panel-search {
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-  font-size: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1.5px solid #e3e8f0;
+  font-size: 15px;
+  background: #f7fafd;
+  margin-bottom: 10px;
+  transition: border 0.2s, box-shadow 0.2s;
+  outline: none;
+}
+.friend-panel-search:focus {
+  border: 1.5px solid #0068ff;
+  box-shadow: 0 2px 8px 0 rgba(0,104,255,0.08);
+  background: #fff;
 }
 
 .friend-panel-option {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border-radius: 8px;
+  gap: 12px;
+  padding: 12px 10px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: 0.2s;
-  font-size: 14px;
+  transition: 0.18s;
+  font-size: 15px;
   color: #1d1d1f;
+  font-weight: 400;
+  background: none;
+  border: none;
 }
 
-.friend-panel-option:hover,
-.friend-panel-option.active {
-  background-color: #edf0f5;
-  font-weight: 500;
+.friend-panel-option:hover {
+  background-color: #eaf3ff;
   color: #0068ff;
+  font-weight: 500;
+  box-shadow: 0 2px 8px 0 rgba(0,104,255,0.06);
+}
+
+.friend-panel-option.active {
+  background-color: #0068ff;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 2px 12px 0 rgba(0,104,255,0.10);
 }
 
 .friend-panel-content {
   flex: 1;
-  padding: 16px;
+  padding: 24px 24px 24px 32px;
   overflow-y: auto;
+  background: none;
+  border-radius: 0;
+  margin: 0;
+  box-shadow: none;
 }
