@@ -50,10 +50,11 @@ import {
 import "./css/GroupChat.css";
 import api, { getBaseUrl, getApiUrl } from "../config/api";
 
-const GroupChat = () => {
+const GroupChat = ({ onNewMessage }) => {
   const { groupId } = useParams();
   const navigate = useNavigate();
   const [groupDetails, setGroupDetails] = useState(null);
+  const [groupInfo, setGroupInfo] = useState(null);
   const [messages, setMessages] = useState([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -132,6 +133,7 @@ const GroupChat = () => {
               );
             });
             scrollToBottom();
+            if (onNewMessage) onNewMessage();
           }
         }
       } catch (error) {
@@ -200,7 +202,115 @@ const GroupChat = () => {
         socket.current.off("error");
       }
     };
-  }, [groupId, currentUserId]);
+  }, [groupId, currentUserId, onNewMessage]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    // Khi có tin nhắn mới
+    const handleNewMessage = (data) => {
+      if (data.groupId === groupId) {
+        setMessages(prev => [...prev, data]);
+        scrollToBottom();
+      }
+    };
+
+    // Khi tin nhắn bị thu hồi
+    const handleMessageRecalled = (data) => {
+      if (data.groupId === groupId) {
+        setMessages(prev => prev.map(msg => 
+          msg.messageId === data.messageId 
+            ? { ...msg, content: 'Tin nhắn đã bị thu hồi', isRecalled: true }
+            : msg
+        ));
+      }
+    };
+
+    // Khi tin nhắn bị xóa
+    const handleMessageDeleted = (data) => {
+      if (data.groupId === groupId) {
+        setMessages(prev => prev.filter(msg => msg.messageId !== data.messageId));
+      }
+    };
+
+    // Khi thông tin nhóm được cập nhật
+    const handleGroupUpdated = (data) => {
+      if (data.groupId === groupId) {
+        console.log('Group updated:', data);
+        if (data.type === 'NAME_UPDATED') {
+          setGroupInfo(prev => ({
+            ...prev,
+            name: data.data.name
+          }));
+        } else if (data.type === 'AVATAR_UPDATED') {
+          setGroupInfo(prev => ({
+            ...prev,
+            avatar: data.data.avatarUrl
+          }));
+        } else if (data.type === 'LAST_MESSAGE_UPDATED') {
+          setGroupInfo(prev => ({
+            ...prev,
+            lastMessage: data.data,
+            lastMessageAt: data.data.timestamp
+          }));
+        }
+      }
+    };
+
+    // Khi có thành viên mới tham gia
+    const handleMemberAdded = (data) => {
+      if (data.groupId === groupId) {
+        setGroupInfo(prev => ({
+          ...prev,
+          members: [...prev.members, data.userId]
+        }));
+      }
+    };
+
+    // Khi có thành viên rời nhóm
+    const handleMemberRemoved = (data) => {
+      if (data.groupId === groupId) {
+        setGroupInfo(prev => ({
+          ...prev,
+          members: prev.members.filter(memberId => memberId !== data.userId)
+        }));
+      }
+    };
+
+    // Khi nhóm bị giải tán
+    const handleGroupDissolved = (data) => {
+      if (data.groupId === groupId) {
+        console.log('Group dissolved:', data);
+        navigate('/app');
+      }
+    };
+
+    // Join group room
+    socket.current.emit('join-group', groupId);
+
+    // Add event listeners
+    socket.current.on('new-group-message', handleNewMessage);
+    socket.current.on('group-message-recalled', handleMessageRecalled);
+    socket.current.on('group-message-deleted', handleMessageDeleted);
+    socket.current.on('group:updated', handleGroupUpdated);
+    socket.current.on('group:member-added', handleMemberAdded);
+    socket.current.on('group:member-removed', handleMemberRemoved);
+    socket.current.on('group:dissolved', handleGroupDissolved);
+
+    return () => {
+      // Leave group room
+      socket.current.emit('leave-group', groupId);
+      
+      // Remove event listeners
+      socket.current.off('new-group-message', handleNewMessage);
+      socket.current.off('group-message-recalled', handleMessageRecalled);
+      socket.current.off('group-message-deleted', handleMessageDeleted);
+      socket.current.off('group:updated', handleGroupUpdated);
+      socket.current.off('group:member-added', handleMemberAdded);
+      socket.current.off('group:member-removed', handleMemberRemoved);
+      socket.current.off('group:dissolved', handleGroupDissolved);
+    };
+  }, [socket, groupId, navigate]);
 
   const getCurrentUserId = async () => {
     try {
@@ -246,6 +356,12 @@ const GroupChat = () => {
 
   const fetchUserInfo = async (userId) => {
     try {
+      // Check if userId is valid
+      if (!userId) {
+        console.warn('Invalid userId:', userId);
+        return null;
+      }
+
       // Check cache first
       if (userCache[userId]) {
         return userCache[userId];
@@ -308,7 +424,7 @@ const GroupChat = () => {
 
               // Nếu là tin nhắn của người khác, fetch thông tin người gửi
               let senderInfo = {};
-              if (!isMe) {
+              if (!isMe && msg.senderId) { // Add check for msg.senderId
                 const userInfo = await fetchUserInfo(msg.senderId);
                 if (userInfo) {
                   senderInfo = {

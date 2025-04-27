@@ -354,6 +354,36 @@ function MainApp({ setIsAuthenticated }) {
       fetchConversations();
     };
 
+    // Khi có nhóm mới được tạo
+    const handleGroupCreated = (data) => {
+      console.log('New group created:', data);
+      fetchConversations();
+    };
+
+    // Khi thông tin nhóm được cập nhật
+    const handleGroupUpdated = (data) => {
+      console.log('Group updated:', data);
+      fetchConversations();
+    };
+
+    // Khi có thành viên mới được thêm vào nhóm
+    const handleMemberAdded = (data) => {
+      console.log('Member added to group:', data);
+      fetchConversations();
+    };
+
+    // Khi có thành viên bị xóa khỏi nhóm
+    const handleMemberRemoved = (data) => {
+      console.log('Member removed from group:', data);
+      fetchConversations();
+    };
+
+    // Khi nhóm bị giải tán
+    const handleGroupDissolved = (data) => {
+      console.log('Group dissolved:', data);
+      fetchConversations();
+    };
+
     // Socket listeners
     socket.on("new_message", handleNewMessage);
     socket.on("message_read", handleMessageRead);
@@ -363,6 +393,11 @@ function MainApp({ setIsAuthenticated }) {
     socket.on("conversation-updated", handleConversationUpdated);
     socket.on("removed-from-group", handleRemovedFromGroup);
     socket.on("added-to-group", handleAddedToGroup);
+    socket.on('group:created', handleGroupCreated);
+    socket.on('group:updated', handleGroupUpdated);
+    socket.on('group:member-added', handleMemberAdded);
+    socket.on('group:member-removed', handleMemberRemoved);
+    socket.on('group:dissolved', handleGroupDissolved);
 
     //  Dùng Page Visibility API để load lại khi user quay lại tab
     const handleVisibilityChange = () => {
@@ -381,6 +416,11 @@ function MainApp({ setIsAuthenticated }) {
       socket.off("conversation-updated", handleConversationUpdated);
       socket.off("removed-from-group", handleRemovedFromGroup);
       socket.off("added-to-group", handleAddedToGroup);
+      socket.off('group:created', handleGroupCreated);
+      socket.off('group:updated', handleGroupUpdated);
+      socket.off('group:member-added', handleMemberAdded);
+      socket.off('group:member-removed', handleMemberRemoved);
+      socket.off('group:dissolved', handleGroupDissolved);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [socket, fetchConversations]); // Add fetchConversations to dependencies
@@ -758,7 +798,7 @@ function MainApp({ setIsAuthenticated }) {
           <Route path="contacts" element={<FriendPanel />} />
           <Route path="chat/:conversationId" element={<ChatDirectly />} />
           <Route path="chat/id/:userId" element={<ChatDirectly />} />
-          <Route path="groups/:groupId" element={<GroupChat />} />
+          <Route path="groups/:groupId" element={<GroupChat onNewMessage={fetchConversations} />} />
           <Route path="friend-requests" element={<FriendRequests onRefreshConversations={handleRefreshConversations} />} />
         </Routes>
       </div>

@@ -96,16 +96,62 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate }) => {
       }
     };
 
+    // Khi thông tin nhóm được cập nhật (tên, avatar, v.v.)
+    const handleGroupUpdated = (data) => {
+      if (data.groupId === groupId) {
+        console.log('Group updated:', data);
+        if (data.type === 'NAME_UPDATED') {
+          setGroupInfo(prev => ({
+            ...prev,
+            name: data.data.name
+          }));
+        } else if (data.type === 'AVATAR_UPDATED') {
+          setGroupInfo(prev => ({
+            ...prev,
+            avatar: data.data.avatarUrl
+          }));
+        } else if (data.type === 'LAST_MESSAGE_UPDATED') {
+          setGroupInfo(prev => ({
+            ...prev,
+            lastMessage: data.data,
+            lastMessageAt: data.data.timestamp
+          }));
+        }
+        if (onGroupUpdate) onGroupUpdate();
+      }
+    };
+
+    // Khi nhóm bị giải tán
+    const handleGroupDissolved = (data) => {
+      if (data.groupId === groupId) {
+        console.log('Group dissolved:', data);
+        onClose();
+        navigate('/app');
+      }
+    };
+
+    // Join group room
+    socket.emit('join-group', groupId);
+
+    // Add event listeners
     socket.on('added-to-group', handleAddedToGroup);
     socket.on('group:member-added', handleMemberAdded);
     socket.on('group:member-removed', handleMemberRemoved);
+    socket.on('group:updated', handleGroupUpdated);
+    socket.on('group:dissolved', handleGroupDissolved);
 
     return () => {
+      // Leave group room
+      socket.emit('leave-group', groupId);
+      
+      // Remove event listeners
       socket.off('added-to-group', handleAddedToGroup);
       socket.off('group:member-added', handleMemberAdded);
       socket.off('group:member-removed', handleMemberRemoved);
+      socket.off('group:updated', handleGroupUpdated);
+      socket.off('group:dissolved', handleGroupDissolved);
     };
-  }, [socket, groupId, onGroupUpdate]);
+  }, [socket, groupId, onGroupUpdate, onClose, navigate]);
 
   const fetchGroupInfo = async () => {
     try {
