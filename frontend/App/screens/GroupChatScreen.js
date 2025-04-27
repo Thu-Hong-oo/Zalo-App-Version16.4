@@ -1209,15 +1209,14 @@ const GroupChatScreen = () => {
         } else if (message.fileType?.includes("pdf") || 
                   message.fileType?.includes("word") || 
                   message.fileType?.includes("powerpoint")) {
-          // Mở file trực tiếp với Google Drive Viewer
-          const driveUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(message.content)}`;
-          Linking.openURL(driveUrl);
+          // Hiển thị modal với thông tin file và các tùy chọn
+          setPreviewDocument(message.content);
+          setShowDocumentPreview(true);
         } else {
           // Xử lý các loại file khác
           try {
             const fileUrl = message.content;
-            const driveUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
-            await Linking.openURL(driveUrl);
+            await Linking.openURL(fileUrl);
           } catch (error) {
             console.error("Error handling file press:", error);
             Alert.alert("Lỗi", "Không thể mở file: " + error.message);
@@ -1228,6 +1227,20 @@ const GroupChatScreen = () => {
       console.error("Error handling file press:", error);
       Alert.alert("Lỗi", "Không thể mở file: " + error.message);
     }
+  };
+
+  const getFileTypeName = (extension) => {
+    const types = {
+      'pdf': 'PDF Document',
+      'doc': 'Microsoft Word',
+      'docx': 'Microsoft Word',
+      'xls': 'Microsoft Excel',
+      'xlsx': 'Microsoft Excel',
+      'ppt': 'Microsoft PowerPoint',
+      'pptx': 'Microsoft PowerPoint',
+      'txt': 'Text Document'
+    };
+    return types[extension?.toLowerCase()] || 'Unknown File Type';
   };
 
   if (loading) {
@@ -1653,30 +1666,52 @@ const GroupChatScreen = () => {
       {/* Document Preview Modal */}
       <Modal visible={showDocumentPreview} transparent={true} animationType="fade">
         <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setShowDocumentPreview(false)}
-            >
-              <Ionicons name="close" size={30} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.downloadButton}
-              onPress={() => downloadFile(previewDocument)}
-            >
-              <Ionicons name="download" size={30} color="white" />
-            </TouchableOpacity>
+          <View style={styles.modalContent}>
+            <View style={styles.documentHeader}>
+              <Ionicons 
+                name={getFileIcon(previewDocument?.split('.').pop())} 
+                size={50} 
+                color="#1877f2" 
+              />
+              <Text style={styles.documentTitle}>
+                {previewDocument?.split('/').pop() || 'Tài liệu'}
+              </Text>
+            </View>
+            
+            <View style={styles.documentInfo}>
+              <Text style={styles.documentInfoText}>
+                Loại file: {getFileTypeName(previewDocument?.split('.').pop())}
+              </Text>
+              <Text style={styles.documentInfoText}>
+                Kích thước: {formatFileSize(message?.fileSize || 0)}
+              </Text>
+            </View>
+
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={[styles.button, styles.downloadButton]}
+                onPress={() => downloadFile(previewDocument)}
+              >
+                <Ionicons name="download" size={24} color="white" />
+                <Text style={styles.buttonText}>Tải về</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.button, styles.openButton]}
+                onPress={() => Linking.openURL(previewDocument)}
+              >
+                <Ionicons name="open-outline" size={24} color="white" />
+                <Text style={styles.buttonText}>Tải về</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.button, styles.closeButton]}
+                onPress={() => setShowDocumentPreview(false)}
+              >
+                <Text style={styles.closeButtonText}>Đóng</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <WebView
-            source={{ uri: previewDocument }}
-            style={styles.fullscreenDocument}
-            startInLoadingState={true}
-            renderLoading={() => (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#1877f2" />
-              </View>
-            )}
-          />
         </View>
       </Modal>
 
@@ -2061,10 +2096,11 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: "white",
-    borderRadius: 10,
+    borderRadius: 15,
     padding: 20,
     width: "90%",
-    maxHeight: "80%",
+    maxWidth: 400,
+    alignItems: "center",
   },
   modalTitle: {
     fontSize: 18,
@@ -2167,6 +2203,48 @@ const styles = StyleSheet.create({
   },
   confirmButton: {
     backgroundColor: '#1877f2',
+  },
+  documentHeader: {
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  documentTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginTop: 10,
+    textAlign: "center",
+  },
+  documentInfo: {
+    width: "100%",
+    padding: 15,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 10,
+    marginBottom: 20,
+  },
+  documentInfoText: {
+    fontSize: 14,
+    color: "#666",
+    marginVertical: 5,
+  },
+  buttonContainer: {
+    width: "100%",
+    gap: 10,
+  },
+  button: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 12,
+    borderRadius: 8,
+    width: "100%",
+  },
+  openButton: {
+    backgroundColor: "#4CAF50",
+  },
+  closeButtonText: {
+    color: "#666",
+    fontSize: 16,
+    fontWeight: "500",
   },
 });
 
