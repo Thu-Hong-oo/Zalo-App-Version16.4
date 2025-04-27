@@ -1648,7 +1648,7 @@ const GroupChatScreen = () => {
                 size={50} 
                 color="#1877f2" 
               />
-              <Text style={styles.documentTitle} numberOfLines={2}>
+              <Text style={styles.documentTitle} numberOfLines={10}>
                 {previewDocument?.split('/').pop() || 'Tài liệu'}
               </Text>
             </View>
@@ -1656,9 +1656,6 @@ const GroupChatScreen = () => {
             <View style={styles.documentInfo}>
               <Text style={styles.documentInfoText}>
                 Loại file: {getFileTypeName(previewDocument?.split('.').pop())}
-              </Text>
-              <Text style={styles.documentInfoText}>
-                Kích thước: {formatFileSize(message?.fileSize || 0)}
               </Text>
             </View>
 
@@ -1711,6 +1708,20 @@ const GroupChatScreen = () => {
                       style={styles.fileThumbnail}
                       resizeMode="cover"
                     />
+                  ) : file.type.startsWith('video/') ? (
+                    <View style={styles.videoThumbnailContainer}>
+                      <Video
+                        source={{ uri: file.uri }}
+                        style={styles.fileThumbnail}
+                        resizeMode="cover"
+                        shouldPlay={false}
+                        isMuted={true}
+                        isLooping={false}
+                      />
+                      <View style={styles.playIconContainer}>
+                        <Ionicons name="play" size={20} color="white" />
+                      </View>
+                    </View>
                   ) : (
                     <Ionicons
                       name={getFileIcon(file.type)}
@@ -2329,6 +2340,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: '#333',
+  },
+  videoThumbnailContainer: {
+    position: 'relative',
+    marginRight: 10,
+  },
+  playIconContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 4,
   },
 });
 
