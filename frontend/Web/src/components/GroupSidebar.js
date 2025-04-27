@@ -69,6 +69,44 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate }) => {
     };
   }, [isOpen, groupId, socket]);
 
+  useEffect(() => {
+    if (!socket) return;
+
+    // Khi user được thêm vào nhóm
+    const handleAddedToGroup = (data) => {
+      if (data.groupId === groupId) {
+        fetchGroupInfo();
+        if (onGroupUpdate) onGroupUpdate();
+      }
+    };
+
+    // Khi có thành viên mới được thêm vào nhóm
+    const handleMemberAdded = (data) => {
+      if (data.groupId === groupId) {
+        fetchGroupInfo();
+        if (onGroupUpdate) onGroupUpdate();
+      }
+    };
+
+    // Khi có thành viên bị xóa khỏi nhóm
+    const handleMemberRemoved = (data) => {
+      if (data.groupId === groupId) {
+        fetchGroupInfo();
+        if (onGroupUpdate) onGroupUpdate();
+      }
+    };
+
+    socket.on('added-to-group', handleAddedToGroup);
+    socket.on('group:member-added', handleMemberAdded);
+    socket.on('group:member-removed', handleMemberRemoved);
+
+    return () => {
+      socket.off('added-to-group', handleAddedToGroup);
+      socket.off('group:member-added', handleMemberAdded);
+      socket.off('group:member-removed', handleMemberRemoved);
+    };
+  }, [socket, groupId, onGroupUpdate]);
+
   const fetchGroupInfo = async () => {
     try {
       setLoading(true);
