@@ -107,6 +107,7 @@ const GroupChatScreen = () => {
   const [previewDocument, setPreviewDocument] = useState(null);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [showFileTypeModal, setShowFileTypeModal] = useState(false);
 
   const viewabilityConfig = {
     itemVisiblePercentThreshold: 50,
@@ -943,7 +944,7 @@ const GroupChatScreen = () => {
             Accept: "application/json",
           },
           onUploadProgress: (progressEvent) => {
-            const progress = (progressEvent.loaded / progressEvent.total) * 100;
+            const progress = ((progressEvent.loaded / progressEvent.total) * 100).toFixed(2);
             setUploadProgress(progress);
           },
         }
@@ -1054,108 +1055,82 @@ const GroupChatScreen = () => {
   };
 
   const handleAttachPress = async () => {
-    Alert.alert(
-      "Chọn loại file",
-      "Bạn muốn đính kèm loại file nào?",
-      [
-        {
-          text: "Hình ảnh",
-          onPress: async () => {
-            try {
-              const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: "Images",
-                allowsMultipleSelection: true,
-                selectionLimit: 10,
-                quality: 1,
-              });
+    setShowFileTypeModal(true);
+  };
 
-              if (!result.canceled) {
-                const newFiles = result.assets.map((asset) => ({
-                  uri: asset.uri,
-                  type: "image/jpeg",
-                  name: `image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`,
-                  mimeType: asset.mimeType || "image/jpeg",
-                  size: asset.fileSize || 0,
-                }));
-                setSelectedFiles((prev) => [...prev, ...newFiles]);
-                setShowFilePreview(true);
-              }
-            } catch (error) {
-              console.error("Error picking image:", error);
-              Alert.alert("Lỗi", "Không thể chọn ảnh");
-            }
-          }
-        },
-        {
-          text: "Video",
-          onPress: async () => {
-            try {
-              const result = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: "Videos",
-                allowsMultipleSelection: true,
-                selectionLimit: 5,
-                quality: 1,
-              });
+  const handleFileTypeSelect = async (type) => {
+    setShowFileTypeModal(false);
+    try {
+      if (type === 'image') {
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: "Images",
+          allowsMultipleSelection: true,
+          selectionLimit: 10,
+          quality: 1,
+        });
 
-              if (!result.canceled) {
-                const newFiles = result.assets.map((asset) => ({
-                  uri: asset.uri,
-                  type: "video/mp4",
-                  name: `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.mp4`,
-                  mimeType: asset.mimeType || "video/mp4",
-                  size: asset.fileSize || 0,
-                }));
-                setSelectedFiles((prev) => [...prev, ...newFiles]);
-                setShowFilePreview(true);
-              }
-            } catch (error) {
-              console.error("Error picking video:", error);
-              Alert.alert("Lỗi", "Không thể chọn video");
-            }
-          }
-        },
-        {
-          text: "Tài liệu",
-          onPress: async () => {
-            try {
-              const result = await DocumentPicker.getDocumentAsync({
-                type: [
-                  "application/pdf",
-                  "application/msword",
-                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                  "application/vnd.ms-powerpoint",
-                  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                  "application/vnd.ms-excel",
-                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                  "text/plain",
-                ],
-                multiple: true,
-                copyToCacheDirectory: true,
-              });
-
-              if (result.type !== "cancel") {
-                const newFiles = result.assets.map((asset) => ({
-                  uri: asset.uri,
-                  type: asset.mimeType,
-                  name: asset.name,
-                  mimeType: asset.mimeType,
-                  size: asset.size || 0,
-                }));
-                setSelectedFiles((prev) => [...prev, ...newFiles]);
-                setShowFilePreview(true);
-              }
-            } catch (error) {
-              console.error("Error picking document:", error);
-              Alert.alert("Lỗi", "Không thể chọn tài liệu");
-            }
-          }
-        },
-        {
-          text: "Hủy",
-          style: "cancel"
+        if (!result.canceled) {
+          const newFiles = result.assets.map((asset) => ({
+            uri: asset.uri,
+            type: "image/jpeg",
+            name: `image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`,
+            mimeType: asset.mimeType || "image/jpeg",
+            size: asset.fileSize || 0,
+          }));
+          setSelectedFiles((prev) => [...prev, ...newFiles]);
+          setShowFilePreview(true);
         }
-      ]
-    );
+      } else if (type === 'video') {
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: "Videos",
+          allowsMultipleSelection: true,
+          selectionLimit: 5,
+          quality: 1,
+        });
+
+        if (!result.canceled) {
+          const newFiles = result.assets.map((asset) => ({
+            uri: asset.uri,
+            type: "video/mp4",
+            name: `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.mp4`,
+            mimeType: asset.mimeType || "video/mp4",
+            size: asset.fileSize || 0,
+          }));
+          setSelectedFiles((prev) => [...prev, ...newFiles]);
+          setShowFilePreview(true);
+        }
+      } else if (type === 'document') {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: [
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "text/plain",
+          ],
+          multiple: true,
+          copyToCacheDirectory: true,
+        });
+
+        if (result.type !== "cancel") {
+          const newFiles = result.assets.map((asset) => ({
+            uri: asset.uri,
+            type: asset.mimeType,
+            name: asset.name,
+            mimeType: asset.mimeType,
+            size: asset.size || 0,
+          }));
+          setSelectedFiles((prev) => [...prev, ...newFiles]);
+          setShowFilePreview(true);
+        }
+      }
+    } catch (error) {
+      console.error(`Error picking ${type}:`, error);
+      Alert.alert("Lỗi", `Không thể chọn ${type === 'image' ? 'ảnh' : type === 'video' ? 'video' : 'tài liệu'}`);
+    }
   };
 
   const formatFileSize = (bytes) => {
@@ -1811,6 +1786,57 @@ const GroupChatScreen = () => {
           </View>
         </View>
       </Modal>
+
+      {/* File Type Selection Modal */}
+      <Modal
+        visible={showFileTypeModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowFileTypeModal(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowFileTypeModal(false)}
+        >
+          <View style={styles.fileTypeModalContent}>
+            <View style={styles.fileTypeModalHeader}>
+              <Text style={styles.fileTypeModalTitle}>Chọn loại file</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowFileTypeModal(false)}
+              >
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            
+            <Text style={styles.fileTypeModalSubtitle}>Bạn muốn đính kèm loại file nào?</Text>
+            
+            <View style={styles.fileTypeOptions}>
+              <TouchableOpacity
+                style={styles.fileTypeOption}
+                onPress={() => handleFileTypeSelect('image')}
+              >
+                <Text style={styles.fileTypeOptionText}>HÌNH ẢNH</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.fileTypeOption}
+                onPress={() => handleFileTypeSelect('video')}
+              >
+                <Text style={styles.fileTypeOptionText}>VIDEO</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.fileTypeOption}
+                onPress={() => handleFileTypeSelect('document')}
+              >
+                <Text style={styles.fileTypeOptionText}>TÀI LIỆU</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -2245,6 +2271,43 @@ const styles = StyleSheet.create({
     color: "#666",
     fontSize: 16,
     fontWeight: "500",
+  },
+  fileTypeModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 15,
+    padding: 20,
+    width: '80%',
+    maxWidth: 400,
+  },
+  fileTypeModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  fileTypeModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  fileTypeModalSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+  },
+  fileTypeOptions: {
+    gap: 10,
+  },
+  fileTypeOption: {
+    padding: 15,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  fileTypeOptionText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
   },
 });
 
