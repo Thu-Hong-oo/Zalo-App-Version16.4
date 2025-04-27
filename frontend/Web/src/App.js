@@ -85,6 +85,7 @@ function MainApp({ setIsAuthenticated }) {
       return null
     }
   }
+  
 
   const fetchConversations = async () => {
     try {
@@ -190,6 +191,7 @@ function MainApp({ setIsAuthenticated }) {
     }
     fetchConversations();
   }, []);
+  
   // Run only once on mount
 
   // Socket event handlers
@@ -346,6 +348,12 @@ function MainApp({ setIsAuthenticated }) {
       setChats(prevChats => prevChats.filter(chat => chat.id !== data.groupId));
     };
 
+    // Khi user được thêm vào nhóm
+    const handleAddedToGroup = (data) => {
+      console.log("Bạn vừa được thêm vào nhóm:", data);
+      fetchConversations();
+    };
+
     // Socket listeners
     socket.on("new_message", handleNewMessage);
     socket.on("message_read", handleMessageRead);
@@ -354,6 +362,7 @@ function MainApp({ setIsAuthenticated }) {
     socket.on("group_update", handleGroupUpdate); // Listen for group updates
     socket.on("conversation-updated", handleConversationUpdated);
     socket.on("removed-from-group", handleRemovedFromGroup);
+    socket.on("added-to-group", handleAddedToGroup);
 
     //  Dùng Page Visibility API để load lại khi user quay lại tab
     const handleVisibilityChange = () => {
@@ -371,6 +380,7 @@ function MainApp({ setIsAuthenticated }) {
       socket.off("group_update", handleGroupUpdate);
       socket.off("conversation-updated", handleConversationUpdated);
       socket.off("removed-from-group", handleRemovedFromGroup);
+      socket.off("added-to-group", handleAddedToGroup);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [socket, fetchConversations]); // Add fetchConversations to dependencies

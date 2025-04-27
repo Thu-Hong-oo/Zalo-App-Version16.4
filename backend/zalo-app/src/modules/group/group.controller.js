@@ -14,10 +14,10 @@ class GroupController {
     try {
       const userId = req.user.userId; // Lấy userId từ token
       console.log('Getting groups for user:', userId);
-      
+
       const groups = await groupService.getUserGroups(userId);
       console.log('Found groups:', groups.length);
-      
+
       res.json(groups);
     } catch (error) {
       console.error('Error getting user groups:', error);
@@ -92,6 +92,17 @@ class GroupController {
     try {
       const group = await groupService.deleteGroup(req.params.groupId);
       emitEvent(GROUP_EVENTS.DELETED, group);
+      const io = req.app.get('io');
+      if (io) {
+        // Gửi event cho user bị xóa
+        io.to(req.params.memberId).emit('removed-from-group', { groupId: req.params.groupId });
+
+        // Gửi event cho các thành viên còn lại trong nhóm
+        io.to(`group:${req.params.groupId}`).emit('group:member-removed', {
+          groupId: req.params.groupId,
+          userId: req.params.memberId
+        });
+      }
       res.json({ message: 'Group deleted successfully' });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -115,6 +126,19 @@ class GroupController {
       );
 
       emitEvent(GROUP_EVENTS.MEMBER_ADDED, member);
+
+      // Emit socket event cho user mới được thêm và các thành viên còn lại
+      const io = req.app.get('io');
+      if (io) {
+        // Gửi event cho user mới được thêm
+        io.to(req.body.userId).emit('added-to-group', { groupId: req.params.groupId });
+        // Gửi event cho các thành viên còn lại trong nhóm
+        io.to(`group:${req.params.groupId}`).emit('group:member-added', {
+          groupId: req.params.groupId,
+          userId: req.body.userId
+        });
+      }
+
       res.status(201).json(member);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -166,15 +190,20 @@ class GroupController {
         groupId: req.params.groupId,
         userId: req.params.memberId
       });
-  
+
       const io = req.app.get('io');
       if (io) {
         // Gửi sự kiện cho user bị xóa khỏi nhóm
         io.to(req.params.memberId).emit('removed-from-group', {
           groupId: req.params.groupId
         });
+        // Gửi event cho các thành viên còn lại trong nhóm
+        io.to(`group:${req.params.groupId}`).emit('group:member-removed', {
+          groupId: req.params.groupId,
+          userId: req.params.memberId
+        });
       }
-  
+
       res.json({ message: 'Member removed successfully' });
     } catch (error) {
       res.status(500).json({ error: error.message });
