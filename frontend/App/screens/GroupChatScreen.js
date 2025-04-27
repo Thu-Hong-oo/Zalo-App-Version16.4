@@ -1648,7 +1648,7 @@ const GroupChatScreen = () => {
                 size={50} 
                 color="#1877f2" 
               />
-              <Text style={styles.documentTitle}>
+              <Text style={styles.documentTitle} numberOfLines={2}>
                 {previewDocument?.split('/').pop() || 'Tài liệu'}
               </Text>
             </View>
@@ -1705,11 +1705,19 @@ const GroupChatScreen = () => {
             <ScrollView style={styles.fileList}>
               {selectedFiles.map((file, index) => (
                 <View key={index} style={styles.fileItem}>
-                  <Ionicons
-                    name={getFileIcon(file.type)}
-                    size={24}
-                    color="#1877f2"
-                  />
+                  {file.type.startsWith('image/') ? (
+                    <Image
+                      source={{ uri: file.uri }}
+                      style={styles.fileThumbnail}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <Ionicons
+                      name={getFileIcon(file.type)}
+                      size={24}
+                      color="#1877f2"
+                    />
+                  )}
                   <View style={styles.fileInfo}>
                     <Text style={styles.fileName} numberOfLines={1}>
                       {file.name}
@@ -2119,14 +2127,15 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     alignItems: "center",
+    padding: 20,
   },
   modalContent: {
     backgroundColor: "white",
     borderRadius: 15,
-    padding: 20,
-    width: "90%",
+    width: "100%",
     maxWidth: 400,
-    alignItems: "center",
+    maxHeight: "80%",
+    padding: 20,
   },
   modalTitle: {
     fontSize: 18,
@@ -2146,14 +2155,24 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 8,
   },
+  fileThumbnail: {
+    width: 50,
+    height: 50,
+    borderRadius: 4,
+    marginRight: 10,
+  },
   fileInfo: {
     flex: 1,
     marginLeft: 10,
   },
+  fileName: {
+    fontSize: 14,
+    color: "#333",
+    marginBottom: 4,
+  },
   fileSize: {
     fontSize: 12,
     color: "#666",
-    marginTop: 2,
   },
   removeFileButton: {
     padding: 5,
@@ -2233,12 +2252,14 @@ const styles = StyleSheet.create({
   documentHeader: {
     alignItems: "center",
     marginBottom: 20,
+    paddingHorizontal: 10,
   },
   documentTitle: {
     fontSize: 18,
     fontWeight: "bold",
     marginTop: 10,
     textAlign: "center",
+    color: "#333",
   },
   documentInfo: {
     width: "100%",
