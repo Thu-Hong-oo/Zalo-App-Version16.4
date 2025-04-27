@@ -6,7 +6,8 @@ const dynamoDB = new DynamoDB.DocumentClient();
 const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
-const { uploadToS3 } = require("../media/services");
+const { uploadToS3, deleteFromS3 } = require("../media/services");
+const { hardDeleteMessage }        = require("../../utils/hardDeleteMessage");
 
 // Map để lưu trữ các kết nối socket theo số điện thoại
 const connectedUsers = new Map();
@@ -447,49 +448,32 @@ const recallMessage = async (req, res) => {
 
     const messages = await dynamoDB.query(queryParams).promise();
     if (!messages.Items || messages.Items.length === 0) {
-      return res
-        .status(404)
-        .json({ status: "error", message: "Không tìm thấy tin nhắn" });
+      return res.status(404).json({ status: "error", message: "Không tìm thấy tin nhắn" });
     }
 
     const message = messages.Items[0];
     if (message.senderPhone !== senderPhone) {
-      return res.status(403).json({
-        status: "error",
-        message: "Bạn không có quyền thu hồi tin nhắn này",
-      });
+      return res.status(403).json({ status: "error", message: "Không có quyền thu hồi" });
     }
 
-    // Check if message is too old to recall (e.g., older than 2 minutes)
-    const messageAge = Date.now() - message.timestamp;
-    const MAX_RECALL_TIME = 24 * 60 * 60 * 1000; // 2 minutes in milliseconds
-
-    if (messageAge > MAX_RECALL_TIME) {
-      return res.status(400).json({
-        status: "error",
-        message: "Không thể thu hồi tin nhắn sau 24h",
-      });
+    const expired = Date.now() - message.timestamp > 24 * 60 * 60 * 1000;
+    if (expired) {
+      return res.status(400).json({ status: "error", message: "Hết hạn thu hồi (>24h)" });
     }
 
-    const updateParams = {
-      TableName: process.env.MESSAGE_TABLE,
-      Key: { messageId: messageId, timestamp: message.timestamp },
-      UpdateExpression: "set #status = :status, content = :content",
-      ExpressionAttributeNames: { "#status": "status" },
-      ExpressionAttributeValues: {
-        ":status": "recalled",
-        ":content": "Tin nhắn đã bị thu hồi",
-      },
-      ReturnValues: "ALL_NEW",
-    };
-
-    const result = await dynamoDB.update(updateParams).promise();
-
-    // Format conversation content based on message type
-    let recallContent = "Tin nhắn đã bị thu hồi";
+    // 📁 Xoá file khỏi S3 nếu là file
     if (message.type === "file") {
-      recallContent = `[File] ${message.fileType || "file"} đã bị thu hồi`;
+      const key = decodeURIComponent(message.content.split("/").pop());
+      await deleteFromS3(key);
     }
+
+    // 🗑️ Xoá record khỏi DynamoDB
+    await hardDeleteMessage(message);
+
+    // 🧾 Cập nhật preview conversation
+    const recallContent = (message.type === 'file')
+      ? `[File] ${message.fileType?.split('/').pop() || 'file'} đã bị thu hồi`
+      : "Tin nhắn đã bị thu hồi";
 
     await upsertConversation(senderPhone, receiverPhone, {
       content: recallContent,
@@ -508,20 +492,13 @@ const recallMessage = async (req, res) => {
       });
     }
 
-    res.json({
-      status: "success",
-      message: "Đã thu hồi tin nhắn thành công",
-      data: result.Attributes,
-    });
+    res.json({ status: "success", message: "Đã thu hồi", data: { messageId } });
   } catch (error) {
-    console.error("Error recalling message:", error);
-    res.status(500).json({
-      status: "error",
-      message: "Không thể thu hồi tin nhắn sau 2 phút",
-      error: error.message,
-    });
+    console.error("Recall Error:", error);
+    res.status(500).json({ status: "error", message: "Thu hồi thất bại", error: error.message });
   }
 };
+
 
 const deleteMessage = async (req, res) => {
   try {
@@ -666,6 +643,91 @@ const forwardMessage = async (req, res) => {
   }
 };
 
+const getGroupMedia = async (req, res) => {
+  const { groupId } = req.params;
+  const { type, date, limit = 50, before = true } = req.query;
+
+  try {
+    const params = {
+      TableName: process.env.GROUP_MESSAGE_TABLE,
+      IndexName: "groupIndex",
+      KeyConditionExpression: "groupId = :gid",
+      ExpressionAttributeValues: { ":gid": groupId },
+      ScanIndexForward: !before,
+      Limit: Number(limit),
+    };
+    // thêm mốc thời gian nếu client truyền
+    if (date) {
+      const ts = new Date(date).getTime();
+      params.KeyConditionExpression += before ? " AND #ts < :ts"
+                                              : " AND #ts > :ts";
+      params.ExpressionAttributeNames  = { "#ts": "timestamp" };
+      params.ExpressionAttributeValues[":ts"] = ts;
+    }
+
+    // 👉 thử query trước
+    const { Items } = await dynamoDB.query(params).promise();
+    return res.json(formatMedia(Items, type));
+  } catch (err) {
+    // ⚠️ Nếu chưa có index thì fallback sang scan
+    if (err.code === "ValidationException" &&
+        /specified index: groupIndex/.test(err.message)) {
+      const scanParams = {
+        TableName: process.env.MESSAGE_TABLE,
+        FilterExpression: "groupId = :gid",
+        ExpressionAttributeValues: { ":gid": groupId }
+      };
+      const { Items } = await dynamoDB.scan(scanParams).promise();
+      return res.json(formatMedia(Items, type));
+    }
+    console.error("getGroupMedia error:", err);
+    return res.status(500).json({ status: "error", message: "Không thể lấy media" });
+  }
+};
+
+// Hàm gom nhóm & lọc type
+function formatMedia(items) {
+  const result = {           // 👉 2 nhóm cố định
+    media : {},              // ảnh / video
+    docs  : {}               // file & link
+  };
+
+  items.forEach(m => {
+    const tsRaw = m.timestamp ?? m.createdAt;
+      const ts = tsRaw
+        ? Number(tsRaw) || Date.parse(tsRaw)      // "171395..."  hoặc  "2025-04-24T16:42:55Z"
+        : NaN;
+    if (!ts) return;                               // skip sai timestamp
+
+    // ==== Chia nhóm ngày "dd/MM/yyyy" ====
+    const day = new Date(ts).toLocaleDateString("vi-VN",
+                 { day:"2-digit", month:"2-digit", year:"numeric" });
+
+    // ==== Xác định bucket ====
+    let bucket = null;
+    if (m.type === "file") {
+      if (m.fileType?.startsWith("image/") || m.fileType?.startsWith("video/"))
+        bucket = "media";
+      else
+        bucket = "docs";
+    } else if (m.type === "text" && /https?:\/\//.test(m.content)) {
+      bucket = "docs";        // link
+    }
+
+    if (!bucket) return;      // bỏ tin nhắn thường
+
+    (result[bucket][day] ||= []).push({      // chỉ trả field cần dùng
+      messageId : m.messageId,
+      content   : m.content,
+      fileType  : m.fileType,
+      timestamp : ts
+    });
+  });
+
+  return { status:"success", data: result };
+}
+
+
 // Route to handle file uploads
 router.post(
   "/upload",
@@ -719,10 +781,13 @@ router.get("/history/:phone", authMiddleware, getChatHistory);
 router.put("/messages/recall", authMiddleware, recallMessage);
 router.delete("/messages/delete", authMiddleware, deleteMessage);
 router.post("/messages/forward", authMiddleware, forwardMessage);
+router.get('/media/:groupId', authMiddleware, getGroupMedia);
+
 
 // Export
 module.exports = {
   routes: router,
   socket: initializeSocket,
   connectedUsers,
+  hardDeleteMessage,
 };
