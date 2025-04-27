@@ -1173,6 +1173,30 @@ const GroupChatScreen = () => {
     return "document-outline";
   };
 
+  const downloadFile = async (url) => {
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Lỗi", "Cần quyền truy cập thư viện để tải file");
+        return;
+      }
+
+      const fileUri = FileSystem.documentDirectory + url.split("/").pop();
+      const downloadResult = await FileSystem.downloadAsync(url, fileUri);
+
+      if (downloadResult.status === 200) {
+        const asset = await MediaLibrary.createAssetAsync(downloadResult.uri);
+        await MediaLibrary.createAlbumAsync("Zalo Lite", asset, false);
+        Alert.alert("Thành công", "File đã được tải xuống thư viện");
+      } else {
+        Alert.alert("Lỗi", "Không thể tải file");
+      }
+    } catch (error) {
+      console.error("Error downloading file:", error);
+      Alert.alert("Lỗi", "Không thể tải file");
+    }
+  };
+
   const handleFilePress = async (message) => {
     try {
       if (message.type === "file" && message.content) {
@@ -1182,7 +1206,9 @@ const GroupChatScreen = () => {
         } else if (message.fileType?.startsWith("video/")) {
           setPreviewVideo(message.content);
           setShowVideoPreview(true);
-        } else if (message.fileType?.includes("pdf") || message.fileType?.includes("word") || message.fileType?.includes("powerpoint")) {
+        } else if (message.fileType?.includes("pdf") || 
+                  message.fileType?.includes("word") || 
+                  message.fileType?.includes("powerpoint")) {
           // Mở file trực tiếp với Google Drive Viewer
           const driveUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(message.content)}`;
           Linking.openURL(driveUrl);
@@ -1302,45 +1328,51 @@ const GroupChatScreen = () => {
               // Kiểm tra nếu là hình ảnh
               if (item.fileType?.startsWith("image/") || item.content.match(/\.(jpg|jpeg|png|gif)$/i)) {
                 return (
-                  <Image
-                    source={{ uri: item.content }}
-                    style={styles.fileImage}
-                    resizeMode="cover"
-                  />
+                  <TouchableOpacity onPress={() => handleFilePress(item)}>
+                    <Image
+                      source={{ uri: item.content }}
+                      style={styles.fileImage}
+                      resizeMode="cover"
+                    />
+                  </TouchableOpacity>
                 );
               }
               // Kiểm tra nếu là video
               else if (item.fileType?.startsWith("video/") || item.content.match(/\.(mp4|mov|avi)$/i)) {
                 return (
-                  <View style={styles.videoContainer}>
-                    <Video
-                      source={{ uri: item.content }}
-                      style={styles.video}
-                      resizeMode="cover"
-                      useNativeControls
-                    />
-                    <View style={styles.playButton}>
-                      <Ionicons name="play" size={24} color="white" />
+                  <TouchableOpacity onPress={() => handleFilePress(item)}>
+                    <View style={styles.videoContainer}>
+                      <Video
+                        source={{ uri: item.content }}
+                        style={styles.video}
+                        resizeMode="cover"
+                        useNativeControls
+                      />
+                      <View style={styles.playButton}>
+                        <Ionicons name="play" size={24} color="white" />
+                      </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               }
               // Các loại file khác
               else {
                 return (
-                  <View style={styles.documentContainer}>
-                    <Ionicons
-                      name={getFileIcon(item.fileType)}
-                      size={24}
-                      color={isMyMessage ? "white" : "#666"}
-                    />
-                    <Text style={[
-                      styles.fileName,
-                      isMyMessage ? styles.myMessageText : styles.otherMessageText
-                    ]}>
-                      {item.fileName || item.content.split("/").pop() || "Tài liệu"}
-                    </Text>
-                  </View>
+                  <TouchableOpacity onPress={() => handleFilePress(item)}>
+                    <View style={styles.documentContainer}>
+                      <Ionicons
+                        name={getFileIcon(item.fileType)}
+                        size={24}
+                        color={isMyMessage ? "white" : "#666"}
+                      />
+                      <Text style={[
+                        styles.fileName,
+                        isMyMessage ? styles.myMessageText : styles.otherMessageText
+                      ]}>
+                        {item.fileName || item.content.split("/").pop() || "Tài liệu"}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
                 );
               }
             }
@@ -1566,72 +1598,87 @@ const GroupChatScreen = () => {
         onForward={handleForwardMessage}
       />
 
-      {showImagePreview && (
-        <Modal visible={showImagePreview} transparent={true} animationType="fade">
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setShowImagePreview(false)}
-              >
-                <Ionicons name="close" size={30} color="white" />
-              </TouchableOpacity>
-            </View>
-            <Image
-              source={{ uri: previewImage }}
-              style={styles.fullscreenImage}
-              resizeMode="contain"
-            />
+      {/* Image Preview Modal */}
+      <Modal visible={showImagePreview} transparent={true} animationType="fade">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setShowImagePreview(false)}
+            >
+              <Ionicons name="close" size={30} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.downloadButton}
+              onPress={() => downloadFile(previewImage)}
+            >
+              <Ionicons name="download" size={30} color="white" />
+            </TouchableOpacity>
           </View>
-        </Modal>
-      )}
+          <Image
+            source={{ uri: previewImage }}
+            style={styles.fullscreenImage}
+            resizeMode="contain"
+          />
+        </View>
+      </Modal>
 
-      {showVideoPreview && (
-        <Modal visible={showVideoPreview} transparent={true} animationType="fade">
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setShowVideoPreview(false)}
-              >
-                <Ionicons name="close" size={30} color="white" />
-              </TouchableOpacity>
-            </View>
-            <Video
-              source={{ uri: previewVideo }}
-              style={styles.fullscreenVideo}
-              resizeMode="contain"
-              useNativeControls
-              shouldPlay
-            />
+      {/* Video Preview Modal */}
+      <Modal visible={showVideoPreview} transparent={true} animationType="fade">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setShowVideoPreview(false)}
+            >
+              <Ionicons name="close" size={30} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.downloadButton}
+              onPress={() => downloadFile(previewVideo)}
+            >
+              <Ionicons name="download" size={30} color="white" />
+            </TouchableOpacity>
           </View>
-        </Modal>
-      )}
+          <Video
+            source={{ uri: previewVideo }}
+            style={styles.fullscreenVideo}
+            resizeMode="contain"
+            useNativeControls
+            shouldPlay
+          />
+        </View>
+      </Modal>
 
-      {showDocumentPreview && (
-        <Modal visible={showDocumentPreview} transparent={true} animationType="fade">
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setShowDocumentPreview(false)}
-              >
-                <Ionicons name="close" size={30} color="white" />
-              </TouchableOpacity>
-            </View>
-            <WebView
-              source={{ uri: previewDocument }}
-              style={styles.fullscreenDocument}
-              startInLoadingState={true}
-              renderLoading={() => (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="large" color="#1877f2" />
-                </View>
-              )}
-            />
+      {/* Document Preview Modal */}
+      <Modal visible={showDocumentPreview} transparent={true} animationType="fade">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setShowDocumentPreview(false)}
+            >
+              <Ionicons name="close" size={30} color="white" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.downloadButton}
+              onPress={() => downloadFile(previewDocument)}
+            >
+              <Ionicons name="download" size={30} color="white" />
+            </TouchableOpacity>
           </View>
-        </Modal>
-      )}
+          <WebView
+            source={{ uri: previewDocument }}
+            style={styles.fullscreenDocument}
+            startInLoadingState={true}
+            renderLoading={() => (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#1877f2" />
+              </View>
+            )}
+          />
+        </View>
+      </Modal>
 
       {/* File Preview Modal */}
       <Modal
@@ -2086,6 +2133,9 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   closeButton: {
+    padding: 10,
+  },
+  downloadButton: {
     padding: 10,
   },
   fullscreenImage: {
