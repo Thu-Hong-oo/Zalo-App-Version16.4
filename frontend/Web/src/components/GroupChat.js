@@ -728,7 +728,7 @@ const GroupChat = () => {
             <span className="message-time">{formatTime(msg.createdAt)}</span>
             {isMe && (
               <div className="message-status">
-                {msg.status === "sent" && <Clock size={12} />}
+                {msg.status === "sent" && <Check size={12} />}
                 {msg.status === "delivered" && <Check size={12} />}
                 {msg.status === "read" && <CheckCheck size={12} />}
               </div>
