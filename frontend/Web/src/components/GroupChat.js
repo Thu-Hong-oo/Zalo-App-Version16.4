@@ -254,6 +254,7 @@ const GroupChat = ({ onNewMessage }) => {
             lastMessageAt: data.data.timestamp
           }));
         }
+        if (onNewMessage) onNewMessage();
       }
     };
 
@@ -576,6 +577,40 @@ const GroupChat = ({ onNewMessage }) => {
 
             // Emit socket event with the same format as mobile
             socket.current.emit("new-group-message", messageData);
+
+            // --- Cập nhật lastMessage cho nhóm và emit event ---
+            try {
+              await api.put(`/groups/${groupId}`, {
+                lastMessage: {
+                  content: file.url,
+                  type: "file",
+                  senderId: currentUserId,
+                  fileType: file.type,
+                  fileName: file.name,
+                  fileSize: file.size,
+                  timestamp: messageData.createdAt
+                },
+                lastMessageAt: messageData.createdAt
+              });
+              socket.current.emit("group:updated", {
+                groupId,
+                type: "LAST_MESSAGE_UPDATED",
+                data: {
+                  content: file.url,
+                  type: "file",
+                  senderId: currentUserId,
+                  fileType: file.type,
+                  fileName: file.name,
+                  fileSize: file.size,
+                  timestamp: messageData.createdAt,
+                  lastMessageAt: messageData.createdAt
+                }
+              });
+            } catch (err) {
+              console.error("Error updating lastMessage (file):", err);
+            }
+
+            if (onNewMessage) onNewMessage();
           }
         }
       } else if (message.trim()) {
@@ -606,6 +641,34 @@ const GroupChat = ({ onNewMessage }) => {
 
           // Emit socket event with the same format as mobile
           socket.current.emit("new-group-message", messageData);
+
+          // --- Cập nhật lastMessage cho nhóm và emit event ---
+          try {
+            await api.put(`/groups/${groupId}`, {
+              lastMessage: {
+                content: message.trim(),
+                type: "text",
+                senderId: currentUserId,
+                timestamp: messageData.createdAt
+              },
+              lastMessageAt: messageData.createdAt
+            });
+            socket.current.emit("group:updated", {
+              groupId,
+              type: "LAST_MESSAGE_UPDATED",
+              data: {
+                content: message.trim(),
+                type: "text",
+                senderId: currentUserId,
+                timestamp: messageData.createdAt,
+                lastMessageAt: messageData.createdAt
+              }
+            });
+          } catch (err) {
+            console.error("Error updating lastMessage (text):", err);
+          }
+
+          if (onNewMessage) onNewMessage();
         }
       }
 

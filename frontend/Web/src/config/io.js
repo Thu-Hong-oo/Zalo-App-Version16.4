@@ -13,8 +13,8 @@ class SocketIOService {
         transports: ['websocket'],
         autoConnect: true,
         reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
+        reconnectionDelay: 10000,
+        reconnectionDelayMax: 50000,
         reconnectionAttempts: 5
       });
 
