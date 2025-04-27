@@ -182,7 +182,7 @@ class GroupService {
 
     // Process each field in updateData
     Object.entries(updateData).forEach(([key, value]) => {
-      if (key !== 'groupId' && key !== 'createdAt' && key !== 'members') {
+      if (key !== 'groupId' && key !== 'createdAt' ) {
         updateExpressions.push(`#${key} = :${key}`);
         expressionAttributeNames[`#${key}`] = key;
         expressionAttributeValues[`:${key}`] = value;
@@ -530,6 +530,33 @@ class GroupService {
       throw error;
     }
   }
+   // Cập nhật tên nhóm
+  async updateGroupName(groupId, name) {
+    try {
+      const command = new UpdateCommand({
+        TableName: GROUPS_TABLE,
+        Key: {
+          groupId
+        },
+        UpdateExpression: 'SET #name = :name',
+        ExpressionAttributeNames: {
+          '#name': 'name'
+        },
+        ExpressionAttributeValues: {
+          ':name': name
+        },
+        ReturnValues: 'ALL_NEW'
+      });
+
+      const result = await dynamodb.send(command);
+      return result.Attributes;
+    } catch (error) {
+      console.error('Update group name error:', error);
+      throw error;
+    }
+  }
+
+
 }
 
 module.exports = new GroupService(); 

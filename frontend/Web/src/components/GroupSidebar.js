@@ -6,6 +6,8 @@ import { Users, Camera, Pencil, ChevronLeft, MoreVertical, UserPlus, Crown } fro
 import api from '../config/api';
 import socketService from '../config/io';
 
+import GroupMediaPanel from './GroupMediaPanel';
+
 const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate }) => {
   const navigate = useNavigate();
   const [groupInfo, setGroupInfo] = useState(null);
@@ -39,6 +41,8 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate }) => {
   const [showTransferSuccess, setShowTransferSuccess] = useState(false);
   const [showLeaveSuccess, setShowLeaveSuccess] = useState(false);
 
+  const [showMediaPanel, setShowMediaPanel] = useState(false);
+
   const socket = socketService.connect();
 
   useEffect(() => {
@@ -64,6 +68,44 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate }) => {
       }
     };
   }, [isOpen, groupId, socket]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    // Khi user được thêm vào nhóm
+    const handleAddedToGroup = (data) => {
+      if (data.groupId === groupId) {
+        fetchGroupInfo();
+        if (onGroupUpdate) onGroupUpdate();
+      }
+    };
+
+    // Khi có thành viên mới được thêm vào nhóm
+    const handleMemberAdded = (data) => {
+      if (data.groupId === groupId) {
+        fetchGroupInfo();
+        if (onGroupUpdate) onGroupUpdate();
+      }
+    };
+
+    // Khi có thành viên bị xóa khỏi nhóm
+    const handleMemberRemoved = (data) => {
+      if (data.groupId === groupId) {
+        fetchGroupInfo();
+        if (onGroupUpdate) onGroupUpdate();
+      }
+    };
+
+    socket.on('added-to-group', handleAddedToGroup);
+    socket.on('group:member-added', handleMemberAdded);
+    socket.on('group:member-removed', handleMemberRemoved);
+
+    return () => {
+      socket.off('added-to-group', handleAddedToGroup);
+      socket.off('group:member-added', handleMemberAdded);
+      socket.off('group:member-removed', handleMemberRemoved);
+    };
+  }, [socket, groupId, onGroupUpdate]);
 
   const fetchGroupInfo = async () => {
     try {
@@ -476,15 +518,23 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate }) => {
                 </div>
               </div>
 
-              <div className="menu-item">
-                <i className="fa-solid fa-image"></i>
-                <div className="menu-item-content">
-                  <span>Ảnh, file, link</span>
-                  <div className="media-preview">
-                    <span>Hình mới nhất của trò chuyện sẽ xuất hiện tại đây</span>
+              <div className="menu-item" onClick={() => setShowMediaPanel(true)}>
+                  <i className="fa-solid fa-image"></i>
+                  <div className="menu-item-content">
+                    <span>Xem ảnh, video, file</span>
+                    <span className="menu-item-subtitle">Xem tất cả media từ cuộc trò chuyện</span>
                   </div>
                 </div>
-              </div>
+
+                {showMediaPanel && (
+                  <div className="group-media-panel-container">
+                    <GroupMediaPanel
+                      groupId={groupId}
+                      onClose={() => setShowMediaPanel(false)}
+                    />
+                  </div>
+                )}
+
 
               <div className="menu-item">
                 <i className="fa-regular fa-calendar"></i>
