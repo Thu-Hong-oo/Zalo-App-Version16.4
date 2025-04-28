@@ -4,10 +4,10 @@ const auth = require("../../middleware/auth");
 const userController = require("./controller");
 
 // Debug logs for each middleware
-console.log("=== Debug Middleware ===");
-console.log("1. authMiddleware:", auth);
-console.log("2. userController:", userController);
-console.log("3. updateAvatar method:", userController.updateAvatar);
+// console.log("=== Debug Middleware ===");
+// console.log("1. authMiddleware:", auth);
+// console.log("2. userController:", userController);
+// console.log("3. updateAvatar method:", userController.updateAvatar);
 
 // Cấu hình multer
 const multer = require("multer");
@@ -32,9 +32,9 @@ const upload = multer({
 
 // Debug log để kiểm tra multer
 const uploadMiddleware = upload.single("avatar");
-console.log("4. uploadMiddleware:", uploadMiddleware);
-console.log("5. upload.single:", upload.single);
-console.log("=== End Debug ===");
+// console.log("4. uploadMiddleware:", uploadMiddleware);
+// console.log("5. upload.single:", upload.single);
+// console.log("=== End Debug ===");
 
 // Kiểm tra từng middleware trước khi sử dụng
 if (!auth) {

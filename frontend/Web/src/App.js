@@ -31,6 +31,7 @@ import FriendRequests from "./components/FriendRequests";
 import AddFriendModal from "./components/AddFriendModal";
 import CreateGroupModal from "./components/CreateGroupModal";
 import ChatList from "./components/ChatList";
+import GroupSidebar from "./components/GroupSidebar";
 
 // Tạo context cho socket
 export const SocketContext = createContext(null);
@@ -58,6 +59,7 @@ function MainApp({ setIsAuthenticated }) {
   const [groups, setGroups] = useState([]);
   const [socket, setSocket] = useState(null);
   const [selectedChat, setSelectedChat] = useState(null);
+  const [groupUpdates, setGroupUpdates] = useState(null);
 
   const navigate = useNavigate()
 
@@ -86,6 +88,16 @@ function MainApp({ setIsAuthenticated }) {
       }
     }
   }, []);
+
+  // Lắng nghe socket event group:updated
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (data) => {
+      setGroupUpdates(data);
+    };
+    socket.on('group:updated', handler);
+    return () => socket.off('group:updated', handler);
+  }, [socket]);
 
   const handleLogout = () => {
     localStorage.removeItem("accessToken")
@@ -224,6 +236,7 @@ function MainApp({ setIsAuthenticated }) {
                   socket={socket}
                   selectedChat={selectedChat}
                   setSelectedChat={setSelectedChat}
+                  groupUpdates={groupUpdates}
                 />
                 <div className="main-content">
                   <Routes>
@@ -268,7 +281,7 @@ function MainApp({ setIsAuthenticated }) {
                     <Route path="contacts" element={<FriendPanel />} />
                     <Route path="chat/:conversationId" element={<ChatDirectly />} />
                     <Route path="chat/id/:userId" element={<ChatDirectly />} />
-                    <Route path="groups/:groupId" element={<GroupChat selectedChat={selectedChat} />} />
+                    <Route path="groups/:groupId" element={<GroupChat selectedChat={selectedChat} groupUpdates={groupUpdates} />} />
                     <Route path="friend-requests" element={<FriendRequests />} />
                   </Routes>
                 </div>
@@ -292,6 +305,12 @@ function MainApp({ setIsAuthenticated }) {
           isOpen={showCreateGroupModal}
           onClose={() => setShowCreateGroupModal(false)}
           onGroupCreated={null} // Xử lý group mới sẽ do ChatList quản lý
+        />
+
+        <GroupSidebar
+          groupUpdates={groupUpdates}
+          isOpen={showProfileMenu}
+          onClose={() => setShowProfileMenu(false)}
         />
 
       </div>

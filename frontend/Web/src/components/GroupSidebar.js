@@ -6,7 +6,7 @@ import { Users, Camera, Pencil, ChevronLeft, MoreVertical, UserPlus, Crown } fro
 import api from '../config/api';
 import { SocketContext } from '../App';
 
-const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate }) => {
+const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates }) => {
   const navigate = useNavigate();
   const [groupInfo, setGroupInfo] = useState(null);
   const [members, setMembers] = useState([]);
@@ -64,6 +64,17 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate }) => {
       }
     };
   }, [isOpen, groupId, socket]);
+
+  useEffect(() => {
+    if (!groupUpdates || groupUpdates.groupId !== groupId) return;
+    if (groupUpdates.type === 'NAME_UPDATED') {
+      setGroupInfo(prev => ({ ...prev, name: groupUpdates.data.name }));
+    }
+    if (groupUpdates.type === 'AVATAR_UPDATED') {
+      setGroupInfo(prev => ({ ...prev, avatar: groupUpdates.data.avatarUrl }));
+    }
+    // Có thể bổ sung các loại event khác
+  }, [groupUpdates, groupId]);
 
   const fetchGroupInfo = async () => {
     try {

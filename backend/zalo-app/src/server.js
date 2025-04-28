@@ -40,7 +40,7 @@ const io = new Server(httpServer, {
   pingTimeout: 60000,
   pingInterval: 25000,
 });
-
+app.set('io', io);
 // Multer config
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {

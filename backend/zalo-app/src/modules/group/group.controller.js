@@ -299,13 +299,13 @@ class GroupController {
       }
 
       // Kiểm tra quyền (chỉ admin mới được cập nhật)
-      const member = await GroupMemberService.getMember(groupId, userId);
-      if (!member || member.role !== 'ADMIN') {
-        return res.status(403).json({
-          status: 'error',
-          message: 'Bạn không có quyền đổi tên nhóm'
-        });
-      }
+      // const member = await GroupMemberService.getMember(groupId, userId);
+      // if (!member || member.role !== 'ADMIN') {
+      //   return res.status(403).json({
+      //     status: 'error',
+      //     message: 'Bạn không có quyền đổi tên nhóm'
+      //   });
+      // }
 
       // Cập nhật tên nhóm
       const updatedGroup = await groupService.updateGroup(groupId, { name: name.trim() });

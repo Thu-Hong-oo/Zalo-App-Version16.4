@@ -91,6 +91,7 @@ const GroupChat = ({ selectedChat }) => {
   const [uploadErrors, setUploadErrors] = useState([]);
   const [fullscreenMedia, setFullscreenMedia] = useState(null);
   const socket = useContext(SocketContext);
+  const [groupUpdates, setGroupUpdates] = useState(null);
 
   useEffect(() => {
     fetchGroupDetails();
@@ -958,6 +959,62 @@ const GroupChat = ({ selectedChat }) => {
     }
   };
 
+  useEffect(() => {
+    if (!groupUpdates || groupUpdates.groupId !== groupId) return;
+
+    // Gọi lại API để lấy thông tin nhóm mới nhất khi có cập nhật
+    fetchGroupDetails();
+
+    // Có thể thêm thông báo hệ thống nếu muốn
+    if (groupUpdates.type === 'NAME_UPDATED') {
+      setMessages(prev => [...prev, {
+        type: 'system',
+        content: `Tên nhóm đã đổi thành ${groupUpdates.data.name}`,
+        createdAt: new Date().toISOString()
+      }]);
+    }
+    if (groupUpdates.type === 'AVATAR_UPDATED') {
+      setMessages(prev => [...prev, {
+        type: 'system',
+        content: `Avatar nhóm đã được cập nhật.`,
+        createdAt: new Date().toISOString()
+      }]);
+    }
+    // Có thể bổ sung các loại event khác
+  }, [groupUpdates, groupId]);
+
+  useEffect(() => {
+    if (!socket || !groupId) return;
+
+    // Lắng nghe event cập nhật nhóm
+    const handleGroupUpdated = (payload) => {
+      if (payload.groupId === groupId) {
+        fetchGroupDetails(); // Gọi lại API lấy thông tin mới nhất
+        // Có thể thêm thông báo hệ thống nếu muốn
+        if (payload.type === 'NAME_UPDATED') {
+          setMessages(prev => [...prev, {
+            type: 'system',
+            content: `Tên nhóm đã đổi thành ${payload.data.name}`,
+            createdAt: new Date().toISOString()
+          }]);
+        }
+        if (payload.type === 'AVATAR_UPDATED') {
+          setMessages(prev => [...prev, {
+            type: 'system',
+            content: `Avatar nhóm đã được cập nhật.`,
+            createdAt: new Date().toISOString()
+          }]);
+        }
+        // Có thể bổ sung các loại event khác
+      }
+    };
+    socket.on('group:updated', handleGroupUpdated);
+
+    return () => {
+      socket.off('group:updated', handleGroupUpdated);
+    };
+  }, [socket, groupId]);
+
   if (loading) {
     return <div className="loading">Đang tải...</div>;
   }
@@ -1031,7 +1088,11 @@ const GroupChat = ({ selectedChat }) => {
             </span>
           </div>
 
-          {messages.map(renderMessage)}
+          {messages.map((msg, idx) => (
+            <React.Fragment key={msg.groupMessageId || msg.createdAt || idx}>
+              {renderMessage(msg)}
+            </React.Fragment>
+          ))}
           <div ref={messagesEndRef} />
         </div>
 

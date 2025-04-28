@@ -18,7 +18,7 @@ function debounce(func, wait) {
   };
 }
 
-function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket, selectedChat, setSelectedChat }) {
+function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket, selectedChat, setSelectedChat, groupUpdates }) {
   const [activeTab, setActiveTab] = useState("Ưu tiên");
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -402,7 +402,21 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
     };
   }, [socket]);
 
-  // Show loading if user or socket are not ready
+  useEffect(() => {
+    if (!groupUpdates) return;
+    setChats(prevChats => prevChats.map(chat => {
+      if (chat.type === 'group' && chat.id === groupUpdates.groupId) {
+        let updated = { ...chat };
+        if (groupUpdates.type === 'NAME_UPDATED') updated.title = groupUpdates.data.name;
+        if (groupUpdates.type === 'AVATAR_UPDATED') updated.avatar = groupUpdates.data.avatarUrl;
+        // Có thể bổ sung các loại event khác
+        return updated;
+      }
+      return chat;
+    }));
+  }, [groupUpdates]);
+
+  // Sau khi đã gọi hết các hook, mới đến các return điều kiện
   if (!user || !socket) return <div className="loading">Đang tải...</div>;
   if (loading) return <div className="loading">Đang tải...</div>;
   if (error) return <div className="error">{error}</div>;
