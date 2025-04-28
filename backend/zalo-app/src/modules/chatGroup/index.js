@@ -690,6 +690,18 @@ const initializeSocket = (io) => {
             socket.join(`group:${groupId}`);
             console.log(`User ${userId} joined socket room group:${groupId}`);
 
+            // Update last read time
+            const updateParams = {
+              TableName: "group_members-zalolite",
+              Key: { groupId, userId },
+              UpdateExpression: 'set lastReadAt = :now',
+              ExpressionAttributeValues: { ':now': new Date().toISOString() },
+            };
+            await dynamoDB.update(updateParams).promise();
+
+            // Get unread messages count
+            const unreadCount = await getUnreadMessagesCount(userId, groupId, member.lastReadAt);
+
             // Lấy danh sách tin nhắn cũ
             const params = {
               TableName: process.env.GROUP_MESSAGE_TABLE,
@@ -703,16 +715,15 @@ const initializeSocket = (io) => {
             };
 
             const result = await dynamoDB.query(params).promise();
-            // console.log("Retrieved messages from DynamoDB:", result.Items);
-
             const messages = result.Items.filter(
               (msg) => msg.type !== "delete_record"
             );
 
-            // Gửi tin nhắn cũ cho user vừa join
+            // Gửi tin nhắn cũ và số tin nhắn chưa đọc cho user vừa join
             socket.emit("group-history", {
               groupId,
               messages,
+              unreadCount
             });
 
             // Thông báo cho các thành viên khác
@@ -944,6 +955,23 @@ const getDeletedMessages = async (userId, groupId) => {
     .filter(Boolean);
 };
 
+// Helper function to get unread messages count
+const getUnreadMessagesCount = async (userId, groupId, lastReadAt) => {
+  const params = {
+    TableName: process.env.GROUP_MESSAGE_TABLE,
+    IndexName: "groupIndex",
+    KeyConditionExpression: "groupId = :groupId AND createdAt > :lastReadAt",
+    FilterExpression: "senderId <> :userId",
+    ExpressionAttributeValues: {
+      ":groupId": groupId,
+      ":lastReadAt": lastReadAt || "1970-01-01T00:00:00.000Z",
+      ":userId": userId
+    }
+  };
+
+  const result = await dynamoDB.query(params).promise();
+  return result.Items.length;
+};
 
 // Route to handle file uploads in group
 router.post(
@@ -1016,6 +1044,25 @@ router.post(
     }
   }
 );
+// Đánh dấu đã đọc cho chat nhóm
+router.post('/:groupId/read', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const groupId = req.params.groupId;
+
+    const updateParams = {
+      TableName: "group_members-zalolite",
+      Key: { groupId, userId },
+      UpdateExpression: 'set lastReadAt = :now',
+      ExpressionAttributeValues: { ':now': new Date().toISOString() },
+    };
+    await dynamoDB.update(updateParams).promise();
+
+    res.json({ status: 'success' });
+  } catch (error) {
+    console.error("Update lastReadAt error:", error);
+    res.status(500).json({ status: 'error', message: error.message, stack: error.stack });  }
+});
 
 // Routes
 router.get("/:groupId/messages", authMiddleware, getGroupMessages);
@@ -1031,6 +1078,38 @@ router.put(
   recallGroupMessage
 );
 router.post("/:groupId/messages/forward", authMiddleware, forwardGroupMessage);
+
+// Add new route to get unread messages count
+router.get('/:groupId/unread', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const groupId = req.params.groupId;
+
+    // Get member info to get lastReadAt
+    const member = await GroupMemberService.getMember(groupId, userId);
+    if (!member) {
+      return res.status(403).json({
+        status: "error",
+        message: "Bạn không phải là thành viên của nhóm này"
+      });
+    }
+
+    const unreadCount = await getUnreadMessagesCount(userId, groupId, member.lastReadAt);
+
+    res.json({
+      status: "success",
+      data: {
+        unreadCount
+      }
+    });
+  } catch (error) {
+    console.error("Get unread messages error:", error);
+    res.status(500).json({
+      status: "error",
+      message: error.message
+    });
+  }
+});
 
 // Export both router and socket initialization
 module.exports = {

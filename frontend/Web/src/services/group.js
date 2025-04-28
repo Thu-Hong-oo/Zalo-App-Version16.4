@@ -26,6 +26,15 @@ const getCurrentUser = () => {
     return null;
   }
 };
+export const markAsReadGroup = async (groupId) => {
+  try {
+    const response = await api.post(`/chat-group/${groupId}/read`);
+    return response.data;
+  } catch (error) {
+    console.error("❌ Error in markAsReadGroup:", error);
+    throw error;
+  }
+};
 
 /**
  * Create a new group

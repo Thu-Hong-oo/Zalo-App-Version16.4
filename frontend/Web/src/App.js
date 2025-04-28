@@ -57,6 +57,7 @@ function MainApp({ setIsAuthenticated }) {
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [groups, setGroups] = useState([]);
   const [socket, setSocket] = useState(null);
+  const [selectedChat, setSelectedChat] = useState(null);
 
   const navigate = useNavigate()
 
@@ -221,6 +222,8 @@ function MainApp({ setIsAuthenticated }) {
                   setShowAddFriendModal={setShowAddFriendModal}
                   setShowCreateGroupModal={setShowCreateGroupModal}
                   socket={socket}
+                  selectedChat={selectedChat}
+                  setSelectedChat={setSelectedChat}
                 />
                 <div className="main-content">
                   <Routes>
@@ -265,7 +268,7 @@ function MainApp({ setIsAuthenticated }) {
                     <Route path="contacts" element={<FriendPanel />} />
                     <Route path="chat/:conversationId" element={<ChatDirectly />} />
                     <Route path="chat/id/:userId" element={<ChatDirectly />} />
-                    <Route path="groups/:groupId" element={<GroupChat />} />
+                    <Route path="groups/:groupId" element={<GroupChat selectedChat={selectedChat} />} />
                     <Route path="friend-requests" element={<FriendRequests />} />
                   </Routes>
                 </div>

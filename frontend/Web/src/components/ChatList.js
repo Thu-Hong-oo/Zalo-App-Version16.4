@@ -4,6 +4,7 @@ import './css/ChatList.css';
 import api from '../config/api';
 import { Search, User, Users } from 'lucide-react';
 import { SocketContext } from '../App';
+import { markAsReadGroup, getGroupMessages } from '../services/group';
 
 function debounce(func, wait) {
   let timeout;
@@ -17,14 +18,14 @@ function debounce(func, wait) {
   };
 }
 
-function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket }) {
+function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket, selectedChat, setSelectedChat }) {
   const [activeTab, setActiveTab] = useState("Ưu tiên");
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [userCache, setUserCache] = useState({});
-  const [selectedChat, setSelectedChat] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(Date.now());
+  const [unreadCounts, setUnreadCounts] = useState({});
   const navigate = useNavigate();
   const hasFetchedRef = useRef(false);
 
@@ -113,17 +114,31 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
         const groupsResponse = await api.get(`/users/${userObj.userId}/groups`);
         let groupChats = [];
         if (groupsResponse.data?.groups) {
-          groupChats = groupsResponse.data.groups.map(group => ({
-            id: group.groupId,
-            title: group.name,
-            message: group.lastMessage?.content || "Chưa có tin nhắn",
-            time: formatTime(group.lastMessageAt || group.createdAt),
-            avatar: group.avatar,
-            unreadCount: group.unreadCount || 0,
-            lastMessageAt: group.lastMessageAt || group.createdAt,
-            type: 'group',
-            memberCount: group.memberCount,
-            members: group.members || []
+          groupChats = await Promise.all(groupsResponse.data.groups.map(async group => {
+            let unreadCount = 0;
+            if (group.lastMessage && group.lastReadAt && new Date(group.lastMessage.timestamp) > new Date(group.lastReadAt)) {
+              // Fetch messages mới hơn lastReadAt để đếm số chưa đọc
+              try {
+                const res = await getGroupMessages(group.groupId, { after: group.lastReadAt });
+                unreadCount = Object.values(res.data.messages || {}).flat().length;
+              } catch (e) {
+                unreadCount = 1; // fallback nếu lỗi
+              }
+            }
+            return {
+              id: group.groupId,
+              title: group.name,
+              message: group.lastMessage?.content || "Chưa có tin nhắn",
+              time: formatTime(group.lastMessageAt || group.createdAt),
+              avatar: group.avatar,
+              lastMessageAt: group.lastMessageAt || group.createdAt,
+              lastMessageTimestamp: group.lastMessage?.timestamp,
+              lastReadAt: group.lastReadAt,
+              unreadCount,
+              type: 'group',
+              memberCount: group.memberCount,
+              members: group.members || []
+            };
           }));
         }
         const validDirectChats = directChats.filter(chat => chat !== null);
@@ -177,14 +192,14 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
           } else {
             senderName = chatToUpdate.title;
           }
+          const isCurrentChat = selectedChat === (chatToUpdate.type === 'group' ? chatToUpdate.id : chatToUpdate.otherParticipantPhone);
           const updatedChat = {
             ...chatToUpdate,
             message: data.content || data.message || "",
             time: formatTime(data.timestamp || new Date().getTime()),
-            unreadCount: !data.isFromMe ? (chatToUpdate.unreadCount || 0) + 1 : chatToUpdate.unreadCount,
             isFromMe: data.isFromMe || false,
-            lastMessageId: data.messageId,
-            lastMessageAt: data.timestamp || new Date().getTime(),
+            lastMessageId: data.groupMessageId || data.messageId || chatToUpdate.lastMessageId,
+            lastMessageAt: data.timestamp || data.createdAt || new Date().getTime(),
             lastUpdate: new Date().getTime()
           };
           if (chatToUpdate.type === 'group' && !data.isFromMe) {
@@ -258,12 +273,13 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
           return prevChats;
         }
         const otherChats = prevChats.filter(chat => chat.id !== chatId);
+        const isCurrentChat = selectedChat === (chatToUpdate.type === 'group' ? chatToUpdate.id : chatToUpdate.otherParticipantPhone);
         const updatedChat = {
           ...chatToUpdate,
           message: data.lastMessage,
           time: formatTime(data.timestamp),
           lastMessageAt: data.timestamp,
-          unreadCount: chatToUpdate.unreadCount + 1
+          unreadCount: isCurrentChat ? 0 : chatToUpdate.unreadCount + 1
         };
         return [updatedChat, ...otherChats];
       });
@@ -317,15 +333,74 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
     return () => clearInterval(intervalId);
   }, [user, socket, chats, debouncedFetchConversations, formatTime]);
 
-  const handleChatClick = (chat) => {
+  // Set unreadCount về 0 mỗi khi selectedChat thay đổi (đang xem đoạn chat nào thì đoạn đó không có unread)
+  useEffect(() => {
+    if (!selectedChat) return;
+    setChats(prevChats => prevChats.map(c =>
+      ((c.id === selectedChat || c.otherParticipantPhone === selectedChat) ? { ...c, unreadCount: 0 } : c)
+    ));
+  }, [selectedChat]);
+
+  const handleChatClick = async (chat) => {
     if (chat.type === 'group') {
       setSelectedChat(chat.id);
+      await markAsReadGroup(chat.id); // cập nhật lastReadAt trên backend
       navigate(`/app/groups/${chat.id}`);
     } else {
       setSelectedChat(chat.otherParticipantPhone);
       navigate(`/app/chat/${chat.otherParticipantPhone}`);
     }
   };
+
+  // Helper to get unread count based on localStorage and lastMessageId only
+  const getUnreadCount = (chat) => {
+    const key = chat.type === 'group' ? chat.id : chat.otherParticipantPhone;
+    const lastRead = localStorage.getItem(`lastRead_${key}`);
+    if (!chat.lastMessageId) return 0;
+    // Nếu chưa từng đọc, luôn hiện badge
+    if (!lastRead) return 1;
+    if (lastRead === chat.lastMessageId) return 0;
+    return 1;
+  };
+
+  // Add function to fetch unread counts
+  const fetchUnreadCounts = async () => {
+    try {
+      const counts = {};
+      for (const group of chats.filter(chat => chat.type === 'group')) {
+        const response = await api.get(`/chat-group/${group.id}/unread`);
+        if (response.status === 200) {
+          counts[group.id] = response.data.data.unreadCount;
+        }
+      }
+      setUnreadCounts(counts);
+    } catch (error) {
+      console.error("Error fetching unread counts:", error);
+    }
+  };
+
+  // Update useEffect to fetch unread counts
+  useEffect(() => {
+    fetchUnreadCounts();
+  }, [chats]);
+
+  // Add socket event listener for unread counts
+  useEffect(() => {
+    if (socket) {
+      socket.on("group-history", ({ groupId, unreadCount }) => {
+        setUnreadCounts(prev => ({
+          ...prev,
+          [groupId]: unreadCount
+        }));
+      });
+    }
+
+    return () => {
+      if (socket) {
+        socket.off("group-history");
+      }
+    };
+  }, [socket]);
 
   // Show loading if user or socket are not ready
   if (!user || !socket) return <div className="loading">Đang tải...</div>;
@@ -409,6 +484,7 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
                     )}
                   </div>
                 )}
+
               </div>
               <div className="chat-info">
                 <div className="chat-header">
@@ -421,8 +497,10 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
                   </h3>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                     <span className="chat-time">{chat.time}</span>
-                    {chat.unreadCount > 0 && (
-                      <span className="unread-badge unread-badge-below-time">{chat.unreadCount}</span>
+                    {chat.type === 'group' && unreadCounts[chat.id] > 0 && (
+                      <span className="unread-badge">
+                        {unreadCounts[chat.id] > 99 ? "99+" : unreadCounts[chat.id]}
+                      </span>
                     )}
                   </div>
                 </div>

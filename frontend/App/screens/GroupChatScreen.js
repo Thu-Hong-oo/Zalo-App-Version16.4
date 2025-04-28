@@ -148,6 +148,31 @@ const GroupChatScreen = () => {
 
     fetchGroupDetails();
   }, [groupId]);
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      navigation.getParent()?.setOptions({
+        tabBarStyle: { display: "none" },
+        tabBarVisible: false,
+      });
+    });
+
+    const unsubscribeBlur = navigation.addListener("blur", () => {
+      navigation.getParent()?.setOptions({
+        tabBarStyle: undefined,
+        tabBarVisible: true,
+      });
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeBlur();
+      navigation.getParent()?.setOptions({
+        tabBarStyle: undefined,
+        tabBarVisible: true,
+      });
+    };
+  }, [navigation]);
+
 
   const getUserIdFromToken = async () => {
     try {

@@ -726,6 +726,27 @@ router.post(
     }
   }
 );
+// Đánh dấu đã đọc cho chat cá nhân
+router.post('/read/:phone', authMiddleware, async (req, res) => {
+  try {
+    const currentUserPhone = req.user.phone;
+    const otherPhone = req.params.phone;
+    const conversationId = createParticipantId(currentUserPhone, otherPhone);
+
+    // Cập nhật unreadCount về 0 cho currentUserPhone trong conversation
+    const updateParams = {
+      TableName: process.env.CONVERSATION_TABLE,
+      Key: { conversationId, participantId: currentUserPhone },
+      UpdateExpression: 'set unreadCount = :zero',
+      ExpressionAttributeValues: { ':zero': 0 },
+    };
+    await dynamoDB.update(updateParams).promise();
+
+    res.json({ status: 'success' });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
 
 // Đăng ký routes
 router.get("/conversations", authMiddleware, getConversations);

@@ -51,7 +51,7 @@ import {
 import "./css/GroupChat.css";
 import api, { getBaseUrl, getApiUrl } from "../config/api";
 
-const GroupChat = () => {
+const GroupChat = ({ selectedChat }) => {
   const { groupId } = useParams();
   const navigate = useNavigate();
   const [groupDetails, setGroupDetails] = useState(null);
@@ -78,6 +78,8 @@ const GroupChat = () => {
   const [showMembersList, setShowMembersList] = useState(true);
   const [showGroupInfo, setShowGroupInfo] = useState(true);
   const [showMediaList, setShowMediaList] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [lastReadMessageId, setLastReadMessageId] = useState(null);
   const messagesEndRef = useRef(null);
   const emojiPickerRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -98,6 +100,8 @@ const GroupChat = () => {
     // Join group when component mounts
     if (socket && groupId) {
       socket.emit("join-group", groupId);
+      // Mark messages as read when joining group
+      markMessagesAsRead();
     }
 
     // Set up socket event listeners
@@ -132,6 +136,8 @@ const GroupChat = () => {
               });
               scrollToBottom();
             }
+            // Luôn mark as read khi có tin nhắn mới trong phòng đang mở
+            markMessagesAsRead();
           }
         } catch (error) {
           console.error("Error handling new message:", error);
@@ -186,6 +192,11 @@ const GroupChat = () => {
       socket.on("error", ({ message }) => {
         setError(message);
       });
+
+      // Add new socket event for unread count
+      socket.on("group-history", ({ messages, unreadCount }) => {
+        setUnreadCount(unreadCount);
+      });
     }
 
     // Cleanup on unmount
@@ -198,9 +209,25 @@ const GroupChat = () => {
         socket.off("user-joined");
         socket.off("user-left");
         socket.off("error");
+        socket.off("group-history");
       }
     };
   }, [socket, groupId]);
+
+  // Load lastReadMessageId from localStorage when component mounts
+  useEffect(() => {
+    const storedLastRead = localStorage.getItem(`lastRead_${groupId}`);
+    if (storedLastRead) {
+      setLastReadMessageId(storedLastRead);
+    }
+  }, [groupId]);
+
+  // Save lastReadMessageId to localStorage when it changes
+  useEffect(() => {
+    if (lastReadMessageId) {
+      localStorage.setItem(`lastRead_${groupId}`, lastReadMessageId);
+    }
+  }, [lastReadMessageId, groupId]);
 
   const getCurrentUserId = async () => {
     try {
@@ -460,6 +487,38 @@ const GroupChat = () => {
 
             // Emit socket event with the same format as mobile
             socket.emit("new-group-message", messageData);
+
+            // Update group's lastMessage
+            try {
+              const lastMessageData = {
+                lastMessage: {
+                  content: `[File] ${file.type}`,
+                  type: "file",
+                  senderId: currentUserId,
+                  timestamp: messageData.createdAt,
+                  fileType: file.type
+                },
+                lastMessageAt: messageData.createdAt
+              };
+              
+              await api.put(
+                `/groups/${groupId}`,
+                lastMessageData
+              );
+              
+              if (socket) {
+                socket.emit("group:updated", {
+                  groupId,
+                  type: "LAST_MESSAGE_UPDATED",
+                  data: {
+                    ...lastMessageData.lastMessage,
+                    lastMessageAt: messageData.createdAt
+                  }
+                });
+              }
+            } catch (error) {
+              console.error("Error updating group's lastMessage:", error);
+            }
           }
         }
       } else if (message.trim()) {
@@ -490,6 +549,37 @@ const GroupChat = () => {
 
           // Emit socket event with the same format as mobile
           socket.emit("new-group-message", messageData);
+
+          // Update group's lastMessage
+          try {
+            const lastMessageData = {
+              lastMessage: {
+                content: message.trim(),
+                type: "text",
+                senderId: currentUserId,
+                timestamp: messageData.createdAt
+              },
+              lastMessageAt: messageData.createdAt
+            };
+            
+            await api.put(
+              `/groups/${groupId}`,
+              lastMessageData
+            );
+            
+            if (socket) {
+              socket.emit("group:updated", {
+                groupId,
+                type: "LAST_MESSAGE_UPDATED",
+                data: {
+                  ...lastMessageData.lastMessage,
+                  lastMessageAt: messageData.createdAt
+                }
+              });
+            }
+          } catch (error) {
+            console.error("Error updating group's lastMessage:", error);
+          }
         }
       }
 
@@ -690,11 +780,14 @@ const GroupChat = () => {
   const renderMessage = (msg) => {
     const isMe = msg.senderId === currentUserId;
     const isRecalled = msg.status === "recalled";
+    const isUnread = unreadCount > 0 && msg.groupMessageId === lastReadMessageId;
 
     return (
       <div
         key={msg.groupMessageId}
-        className={`message-container ${isMe ? "my-message" : "other-message"}`}
+        className={`message-container ${isMe ? "my-message" : "other-message"} ${
+          isUnread ? "unread" : ""
+        }`}
         onContextMenu={(e) => {
           e.preventDefault();
           setSelectedMessage(msg);
@@ -803,6 +896,66 @@ const GroupChat = () => {
         </button>
       </div>
     );
+  };
+
+  // Add new function to mark messages as read
+  const markMessagesAsRead = async () => {
+    try {
+      const response = await api.post(`/chat-group/${groupId}/read`);
+      if (response.status === 200) {
+        setUnreadCount(0);
+      }
+    } catch (error) {
+      console.error("Error marking messages as read:", error);
+    }
+  };
+
+  // Update useEffect for socket connection
+  useEffect(() => {
+    fetchGroupDetails();
+    loadChatHistory();
+    getCurrentUserId();
+
+    // Join group when component mounts
+    if (socket && groupId) {
+      socket.emit("join-group", groupId);
+      // Mark messages as read when joining group
+      markMessagesAsRead();
+    }
+
+    // ... existing socket event listeners ...
+
+    // Add new socket event for unread count
+    if (socket) {
+      socket.on("group-history", ({ messages, unreadCount }) => {
+        setUnreadCount(unreadCount);
+      });
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (socket && groupId) {
+        socket.emit("leave-group", groupId);
+        socket.off("new-group-message");
+        socket.off("group-message-recalled");
+        socket.off("group-message-deleted");
+        socket.off("user-joined");
+        socket.off("user-left");
+        socket.off("error");
+        socket.off("group-history");
+      }
+    };
+  }, [socket, groupId]);
+
+  // Update handleScroll to mark messages as read when scrolling to bottom
+  const handleScroll = () => {
+    const element = messagesEndRef.current;
+    if (element) {
+      const { scrollTop, scrollHeight, clientHeight } = element;
+      if (scrollHeight - scrollTop === clientHeight) {
+        markMessagesAsRead();
+      }
+    }
   };
 
   if (loading) {
