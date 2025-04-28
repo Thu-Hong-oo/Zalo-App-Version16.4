@@ -361,6 +361,7 @@ const GroupChat = ({ selectedChat }) => {
 
         // Filter out messages that have been recalled or deleted
         const filteredMessages = messageArray.filter((msg) => {
+          if (msg.type === 'system') return true; // luôn giữ lại system message
           const isRecalled = msg.recallStatus === "recalled";
           const isDeleted =
             msg.deleteStatus === "deleted" && msg.deletedBy === currentUserId;
@@ -779,6 +780,22 @@ const GroupChat = ({ selectedChat }) => {
   };
 
   const renderMessage = (msg) => {
+    if (msg.type === 'system') {
+      let icon = null;
+      if (msg.content.toLowerCase().includes('tên nhóm')) {
+        icon = <FileEdit size={13} color="#2e89ff" style={{ marginRight: 6 }} />;
+      } else if (msg.content.toLowerCase().includes('avatar') || msg.content.toLowerCase().includes('ảnh đại diện')) {
+        icon = <ImageIcon size={13} color="#2e89ff" style={{ marginRight: 6 }} />;
+      } else {
+        icon = <Info size={13} color="#2e89ff" style={{ marginRight: 6 }} />;
+      }
+      return (
+        <div className="system-message">
+          {icon}
+          <span dangerouslySetInnerHTML={{ __html: msg.content }} />
+        </div>
+      );
+    }
     const isMe = msg.senderId === currentUserId;
     const isRecalled = msg.status === "recalled";
     const isUnread = unreadCount > 0 && msg.groupMessageId === lastReadMessageId;

@@ -5,6 +5,8 @@ const { emitEvent } = require('../events');
 const userController = require('../user/controller');
 const { s3 } = require('../../config/aws');
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
+const { DynamoDB } = require('aws-sdk');
 
 class GroupController {
   /**
@@ -241,6 +243,26 @@ class GroupController {
         // Cập nhật URL avatar trong database
         const updatedGroup = await groupService.updateGroupAvatar(groupId, s3Response.Location);
 
+        // Lưu tin nhắn hệ thống vào bảng group-message
+        const dynamoDB = new DynamoDB.DocumentClient();
+        const messageId = uuidv4();
+        const timestamp = new Date().toISOString();
+        const systemMessage = {
+          groupMessageId: messageId,
+          groupId,
+          senderId: userId,
+          content: `Ảnh đại diện nhóm đã thay đổi`,
+          type: 'system',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          status: 'sent',
+          metadata: { event: 'AVATAR_UPDATED', avatarUrl: s3Response.Location }
+        };
+        await dynamoDB.put({
+          TableName: process.env.GROUP_MESSAGE_TABLE,
+          Item: systemMessage
+        }).promise();
+
         // Thông báo cho các thành viên qua socket
         const io = req.app.get('io');
         if (io) {
@@ -248,6 +270,9 @@ class GroupController {
             groupId,
             type: 'AVATAR_UPDATED',
             data: { avatarUrl: s3Response.Location }
+          });
+          io.to(`group:${groupId}`).emit('new-group-message', {
+            ...systemMessage
           });
         }
 
@@ -298,17 +323,28 @@ class GroupController {
         });
       }
 
-      // Kiểm tra quyền (chỉ admin mới được cập nhật)
-      // const member = await GroupMemberService.getMember(groupId, userId);
-      // if (!member || member.role !== 'ADMIN') {
-      //   return res.status(403).json({
-      //     status: 'error',
-      //     message: 'Bạn không có quyền đổi tên nhóm'
-      //   });
-      // }
-
       // Cập nhật tên nhóm
       const updatedGroup = await groupService.updateGroup(groupId, { name: name.trim() });
+
+      // Lưu tin nhắn hệ thống vào bảng group-message
+      const dynamoDB = new DynamoDB.DocumentClient();
+      const messageId = uuidv4();
+      const timestamp = new Date().toISOString();
+      const systemMessage = {
+        groupMessageId: messageId,
+        groupId,
+        senderId: userId,
+        content: `Tên nhóm đã đổi thành <b>\"${name.trim()}\"</b>`,
+        type: 'system',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        status: 'sent',
+        metadata: { event: 'NAME_UPDATED' }
+      };
+      await dynamoDB.put({
+        TableName: process.env.GROUP_MESSAGE_TABLE,
+        Item: systemMessage
+      }).promise();
 
       // Thông báo cho các thành viên qua socket
       const io = req.app.get('io');
@@ -317,6 +353,9 @@ class GroupController {
           groupId,
           type: 'NAME_UPDATED',
           data: { name: name.trim() }
+        });
+        io.to(`group:${groupId}`).emit('new-group-message', {
+          ...systemMessage
         });
       }
 

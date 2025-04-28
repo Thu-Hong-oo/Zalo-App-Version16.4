@@ -496,7 +496,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin: 12px 0;
+  margin: 6px 0;
 }
 
 .system-message-avatars {
@@ -514,8 +514,8 @@
 }
 
 .system-message-text {
-  font-size: 13px;
-  color: #65676b;
+  font-size: 10px;
+  color: #8b8c8f;
   margin: 0;
   text-align: center;
 }
@@ -1249,4 +1249,20 @@
   height: 8px;
   background-color: #1890ff;
   border-radius: 50%;
+}
+
+.system-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f4f6fa;
+  color: #52585e;
+  border-radius: 18px;
+  padding: 8px 18px;
+  margin: 12px auto;
+  font-size: 11px;
+  font-style: italic;
+  max-width: 80%;
+  box-shadow: 0 1px 4px rgba(46,137,255,0.07);
+  font-weight: 500;
 }

@@ -95,8 +95,8 @@ const getGroupMessages = async (req, res) => {
             deletedAt: message.createdAt,
           });
         }
-      } else if (message.type === "text" || message.type === "file") {
-        // Nếu là tin nhắn gốc
+      } else if (message.type === "text" || message.type === "file" || message.type === "system") {
+        // Nếu là tin nhắn gốc hoặc system message
         messageMap.set(message.groupMessageId, {
           ...message,
           isRecalled: false,
