@@ -21,6 +21,8 @@ import "bootstrap/dist/css/bootstrap.min.css"
 import "./App.css"
 import { Provider } from 'react-redux';
 import { store } from './redux/store';
+import { useDispatch } from 'react-redux';
+import { updateGroup, updateGroupMembers, removeGroup } from './redux/slices/groupSlice';
 
 import { io } from "socket.io-client";
 import { getSocketUrl } from "./config/api";
@@ -61,9 +63,9 @@ function MainApp({ setIsAuthenticated }) {
   const [groups, setGroups] = useState([]);
   const [socket, setSocket] = useState(null);
   const [selectedChat, setSelectedChat] = useState(null);
-  const [groupUpdates, setGroupUpdates] = useState(null);
 
   const navigate = useNavigate()
+  const dispatch = useDispatch();
 
   // Khởi tạo socket khi đăng nhập
   useEffect(() => {
@@ -91,15 +93,37 @@ function MainApp({ setIsAuthenticated }) {
     }
   }, []);
 
-  // Lắng nghe socket event group:updated
+  // Lắng nghe tất cả các event nhóm và dispatch redux
   useEffect(() => {
     if (!socket) return;
-    const handler = (data) => {
-      setGroupUpdates(data);
+
+    const handleGroupUpdated = (payload) => {
+      dispatch(updateGroup(payload));
     };
-    socket.on('group:updated', handler);
-    return () => socket.off('group:updated', handler);
-  }, [socket]);
+    const handleMemberJoined = (payload) => {
+      dispatch(updateGroupMembers({ groupId: payload.groupId, members: payload.members }));
+    };
+    const handleMemberRemoved = (payload) => {
+      dispatch(updateGroupMembers({ groupId: payload.groupId, members: payload.members }));
+    };
+    const handleGroupDissolved = (groupId) => {
+      dispatch(removeGroup(groupId));
+      // Optionally: chuyển hướng về trang chủ nếu đang ở group đó
+      // navigate('/app');
+    };
+
+    socket.on('group:updated', handleGroupUpdated);
+    socket.on('group:member_joined', handleMemberJoined);
+    socket.on('group:member_removed', handleMemberRemoved);
+    socket.on('group:dissolved', handleGroupDissolved);
+
+    return () => {
+      socket.off('group:updated', handleGroupUpdated);
+      socket.off('group:member_joined', handleMemberJoined);
+      socket.off('group:member_removed', handleMemberRemoved);
+      socket.off('group:dissolved', handleGroupDissolved);
+    };
+  }, [socket, dispatch]);
 
   const handleLogout = () => {
     localStorage.removeItem("accessToken")
@@ -238,7 +262,6 @@ function MainApp({ setIsAuthenticated }) {
                   socket={socket}
                   selectedChat={selectedChat}
                   setSelectedChat={setSelectedChat}
-                  groupUpdates={groupUpdates}
                 />
                 <div className="main-content">
                   <Routes>
@@ -283,7 +306,7 @@ function MainApp({ setIsAuthenticated }) {
                     <Route path="contacts" element={<FriendPanel />} />
                     <Route path="chat/:conversationId" element={<ChatDirectly />} />
                     <Route path="chat/id/:userId" element={<ChatDirectly />} />
-                    <Route path="groups/:groupId" element={<GroupChat selectedChat={selectedChat} groupUpdates={groupUpdates} />} />
+                    <Route path="groups/:groupId" element={<GroupChat selectedChat={selectedChat} />} />
                     <Route path="friend-requests" element={<FriendRequests />} />
                   </Routes>
                 </div>
@@ -310,7 +333,6 @@ function MainApp({ setIsAuthenticated }) {
         />
 
         <GroupSidebar
-          groupUpdates={groupUpdates}
           isOpen={showProfileMenu}
           onClose={() => setShowProfileMenu(false)}
         />

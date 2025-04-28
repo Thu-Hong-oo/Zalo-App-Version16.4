@@ -14,8 +14,11 @@ const groupSlice = createSlice({
     },
     updateGroup(state, action) {
       const updated = action.payload;
-      state.groups = state.groups.map(g => g.groupId === updated.groupId ? { ...g, ...updated } : g);
-      if (state.selectedGroup?.groupId === updated.groupId) {
+      const idx = state.groups.findIndex(g => g.groupId === updated.groupId);
+      if (idx !== -1) {
+        state.groups[idx] = { ...state.groups[idx], ...updated };
+      }
+      if (state.selectedGroup && state.selectedGroup.groupId === updated.groupId) {
         state.selectedGroup = { ...state.selectedGroup, ...updated };
       }
     },
@@ -24,9 +27,12 @@ const groupSlice = createSlice({
     },
     updateGroupMembers(state, action) {
       const { groupId, members } = action.payload;
-      state.groups = state.groups.map(g => g.groupId === groupId ? { ...g, members } : g);
-      if (state.selectedGroup?.groupId === groupId) {
-        state.selectedGroup = { ...state.selectedGroup, members };
+      const idx = state.groups.findIndex(g => g.groupId === groupId);
+      if (idx !== -1) {
+        state.groups[idx].members = members;
+      }
+      if (state.selectedGroup && state.selectedGroup.groupId === groupId) {
+        state.selectedGroup.members = members;
       }
     },
     updateGroupAvatar(state, action) {
@@ -43,8 +49,15 @@ const groupSlice = createSlice({
         state.selectedGroup = { ...state.selectedGroup, name };
       }
     },
+    removeGroup(state, action) {
+      const groupId = action.payload;
+      state.groups = state.groups.filter(g => g.groupId !== groupId);
+      if (state.selectedGroup && state.selectedGroup.groupId === groupId) {
+        state.selectedGroup = null;
+      }
+    },
   },
 });
 
-export const { setGroups, updateGroup, setSelectedGroup, updateGroupMembers, updateGroupAvatar, updateGroupName } = groupSlice.actions;
+export const { setGroups, updateGroup, setSelectedGroup, updateGroupMembers, updateGroupAvatar, updateGroupName, removeGroup } = groupSlice.actions;
 export default groupSlice.reducer; 

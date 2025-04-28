@@ -6,7 +6,7 @@ import { Users, Camera, Pencil, ChevronLeft, MoreVertical, UserPlus, Crown } fro
 import api from '../config/api';
 import { SocketContext } from '../App';
 import { useDispatch, useSelector } from 'react-redux';
-import { setSelectedGroup, updateGroupName, updateGroupAvatar, updateGroupMembers } from '../redux/slices/groupSlice';
+import { setSelectedGroup, updateGroupName, updateGroupAvatar, updateGroupMembers, updateGroup, removeGroup } from '../redux/slices/groupSlice';
 
 const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates }) => {
   const navigate = useNavigate();
@@ -81,6 +81,55 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
     }
     // Có thể bổ sung các loại event khác
   }, [groupUpdates, groupId]);
+
+  useEffect(() => {
+    if (!socket || !groupId) return;
+
+    // Cập nhật thông tin nhóm khi có thay đổi
+    const handleGroupUpdated = (payload) => {
+      if (payload.groupId === groupId) {
+        dispatch(updateGroup(payload));
+        fetchGroupInfo();
+      }
+    };
+
+    // Khi nhóm bị giải tán
+    const handleGroupDissolved = (dissolvedGroupId) => {
+      if (dissolvedGroupId === groupId) {
+        dispatch(removeGroup(groupId));
+        onClose();
+        navigate('/app');
+      }
+    };
+
+    // Khi có thành viên mới
+    const handleMemberJoined = (payload) => {
+      if (payload.groupId === groupId) {
+        dispatch(updateGroupMembers({ groupId, members: payload.members }));
+        fetchGroupInfo();
+      }
+    };
+
+    // Khi có thành viên rời nhóm hoặc bị xóa
+    const handleMemberRemoved = (payload) => {
+      if (payload.groupId === groupId) {
+        dispatch(updateGroupMembers({ groupId, members: payload.members }));
+        fetchGroupInfo();
+      }
+    };
+
+    socket.on('group:updated', handleGroupUpdated);
+    socket.on('group:dissolved', handleGroupDissolved);
+    socket.on('group:member_joined', handleMemberJoined);
+    socket.on('group:member_removed', handleMemberRemoved);
+
+    return () => {
+      socket.off('group:updated', handleGroupUpdated);
+      socket.off('group:dissolved', handleGroupDissolved);
+      socket.off('group:member_joined', handleMemberJoined);
+      socket.off('group:member_removed', handleMemberRemoved);
+    };
+  }, [socket, groupId, dispatch, navigate, onClose]);
 
   const fetchGroupInfo = async () => {
     try {
