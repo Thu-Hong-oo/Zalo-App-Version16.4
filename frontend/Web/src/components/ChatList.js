@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import './css/ChatList.css';
 import api from '../config/api';
 import { Search, User, Users } from 'lucide-react';
-import { SocketContext } from '../App';
 import { markAsReadGroup, getGroupMessages } from '../services/group';
 import { useDispatch, useSelector } from 'react-redux';
 import { setGroups, updateGroup, setSelectedGroup } from '../redux/slices/groupSlice';
+import { formatDistanceToNow, format } from 'date-fns';
+import vi from 'date-fns/locale/vi';
 
 function debounce(func, wait) {
   let timeout;
@@ -31,29 +32,38 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
   const navigate = useNavigate();
   const hasFetchedRef = useRef(false);
   const dispatch = useDispatch();
-  const reduxGroups = useSelector(state => state.group.groups);
 
   // Memoize formatTime function
-  const formatTime = useCallback((timestamp) => {
-    const date = new Date(timestamp)
-    const now = new Date()
-    const diff = now - date
+  const formatTime = (timestamp) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    const now = new Date();
 
-    if (diff < 24 * 60 * 60 * 1000) {
-      return date.toLocaleTimeString("vi-VN", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+    // Nếu cùng ngày
+    if (date.toDateString() === now.toDateString()) {
+      let timeStr = formatDistanceToNow(date, { addSuffix: true, locale: vi });
+      timeStr = timeStr.replace(/^khoảng /, '').replace(/^dưới /, '');
+      return timeStr;
     }
-    if (diff < 7 * 24 * 60 * 60 * 1000) {
-      const days = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"]
-      return days[date.getDay()]
+
+    // Nếu hôm qua
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) {
+      return 'Hôm qua';
     }
-    return date.toLocaleDateString("vi-VN", {
-      day: "2-digit",
-      month: "2-digit",
-    })
-  }, []);
+
+    // Nếu trong 7 ngày: "x ngày trước"
+    const diffDays = Math.floor((now - date) / (24 * 60 * 60 * 1000));
+    if (diffDays < 7) {
+      let timeStr = formatDistanceToNow(date, { addSuffix: true, locale: vi });
+      timeStr = timeStr.replace(/^khoảng /, '').replace(/^dưới /, '');
+      return timeStr;
+    }
+
+    // Nếu lâu hơn: hiển thị ngày/tháng/năm
+    return format(date, 'dd/MM/yyyy');
+  };
 
   // Memoize fetchUserInfo function
   const fetchUserInfo = useCallback(async (phone) => {
@@ -356,17 +366,6 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
       setSelectedChat(chat.otherParticipantPhone);
       navigate(`/app/chat/${chat.otherParticipantPhone}`);
     }
-  };
-
-  // Helper to get unread count based on localStorage and lastMessageId only
-  const getUnreadCount = (chat) => {
-    const key = chat.type === 'group' ? chat.id : chat.otherParticipantPhone;
-    const lastRead = localStorage.getItem(`lastRead_${key}`);
-    if (!chat.lastMessageId) return 0;
-    // Nếu chưa từng đọc, luôn hiện badge
-    if (!lastRead) return 1;
-    if (lastRead === chat.lastMessageId) return 0;
-    return 1;
   };
 
   // Add function to fetch unread counts
