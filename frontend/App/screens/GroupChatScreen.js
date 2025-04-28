@@ -48,6 +48,7 @@ import { getApiUrl, getBaseUrl, api } from "../config/api";
 import axios from "axios";
 import { WebView } from 'react-native-webview';
 import { sendMessage, forwardMessage } from "../modules/chat/controller";
+import RenderHtml from 'react-native-render-html';
 // import jwt_decode from "jwt-decode"; // Tạm thời comment lại
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -1324,6 +1325,23 @@ const GroupChatScreen = () => {
           if (isMyMessage && item.status === "deleted") return null;
 
           const renderMessageContent = () => {
+            if (item.type === "system") {
+              return (
+                <View style={styles.systemMessageContainer}>
+                  <View style={styles.systemMessageBubble}>
+                    <Ionicons name="information-circle-outline" size={18} color="#2196F3" />
+                    <RenderHtml
+                      contentWidth={SCREEN_WIDTH}
+                      source={{ html: item.content }}
+                      baseStyle={styles.systemMessageText}
+                    />
+                  </View>
+                  <Text style={[styles.messageTime, { color: '#888', marginTop: 2 }]}> 
+                    {formatTime(item.createdAt)}
+                  </Text>
+                </View>
+              );
+            }
             if (item.status === "recalled") {
               return (
                 <Text style={[
@@ -1401,6 +1419,11 @@ const GroupChatScreen = () => {
             );
           };
 
+          // Nếu là system message thì chỉ render bubble căn giữa, không avatar, không senderName
+          if (item.type === "system") {
+            return renderMessageContent();
+          }
+
           return (
             <TouchableOpacity
               onLongPress={() => showMessageOptions(item)}
@@ -1409,7 +1432,7 @@ const GroupChatScreen = () => {
                 isMyMessage ? styles.myMessage : styles.otherMessage,
               ]}
             >
-              {!isMyMessage && (
+              {item.type !== "system" && !isMyMessage && (
                 <Image
                   source={{ uri: item.senderAvatar || "https://via.placeholder.com/50" }}
                   style={styles.avatar}
@@ -2379,6 +2402,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.3)',
     borderRadius: 4,
+  },
+  systemMessageContainer: {
+    alignItems: 'center',
+    width: '100%',
+    marginVertical: 6,
+  },
+  systemMessageBubble: {
+    backgroundColor: '#f0f2f5',
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    maxWidth: '90%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  systemMessageText: {
+    color: '#666',
+    fontStyle: 'italic',
+    fontSize: 15,
+    marginLeft: 6,
   },
 });
 
