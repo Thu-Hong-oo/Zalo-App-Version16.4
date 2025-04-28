@@ -8,6 +8,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { setGroups, updateGroup, setSelectedGroup } from '../redux/slices/groupSlice';
 import { formatDistanceToNow, format } from 'date-fns';
 import vi from 'date-fns/locale/vi';
+import MemberInfoModal from './MemberInfoModal';
 
 function debounce(func, wait) {
   let timeout;
@@ -29,9 +30,15 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
   const [userCache, setUserCache] = useState({});
   const [lastUpdate, setLastUpdate] = useState(Date.now());
   const [unreadCounts, setUnreadCounts] = useState({});
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchUserResult, setSearchUserResult] = useState(null);
+  const [searchingUser, setSearchingUser] = useState(false);
+  const [showSelfModal, setShowSelfModal] = useState(false);
   const navigate = useNavigate();
   const hasFetchedRef = useRef(false);
   const dispatch = useDispatch();
+
+  const currentUser = user || JSON.parse(localStorage.getItem('user'));
 
   // Memoize formatTime function
   const formatTime = (timestamp) => {
@@ -422,6 +429,63 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
     }));
   }, [groupUpdates, dispatch]);
 
+  // Hàm chuyển đổi số điện thoại 84xxxxxx -> 0xxxxxx
+  function displayPhone(phone) {
+    if (/^84\d{9}$/.test(phone)) {
+      return '0' + phone.slice(2);
+    }
+    return phone;
+  }
+
+  const handleSearchChange = async (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+    setSearchUserResult(null);
+    let apiPhone = value;
+    if (/^0\d{9}$/.test(value)) {
+      apiPhone = '84' + value.slice(1);
+    }
+    if (/^\d{8,15}$/.test(value)) {
+      // Nếu là số điện thoại, kiểm tra có trong chat chưa
+      const found = chats.find(
+        chat => chat.type === 'direct' && (chat.otherParticipantPhone === value || chat.otherParticipantPhone === apiPhone)
+      );
+      if (!found) {
+        setSearchingUser(true);
+        try {
+          const res = await api.get(`/users/${apiPhone}`);
+          if (res.data && res.data.userId) {
+            setSearchUserResult(res.data);
+          } else {
+            setSearchUserResult(null);
+          }
+        } catch (err) {
+          setSearchUserResult(null);
+        } finally {
+          setSearchingUser(false);
+        }
+      }
+    }
+  };
+
+  // Lọc danh sách chat theo searchTerm
+  const filteredChats = searchTerm
+    ? chats.filter(chat => {
+        const lower = searchTerm.toLowerCase();
+        if (chat.type === 'group') {
+          return chat.title.toLowerCase().includes(lower);
+        } else {
+          // So sánh cả hai dạng số điện thoại
+          const phone0 = chat.otherParticipantPhone && displayPhone(chat.otherParticipantPhone);
+          return (
+            chat.title.toLowerCase().includes(lower) ||
+            (phone0 && phone0.includes(searchTerm)) ||
+            (chat.otherParticipantPhone && chat.otherParticipantPhone.includes(searchTerm))
+          );
+        }
+      })
+    : chats;
+
   // Sau khi đã gọi hết các hook, mới đến các return điều kiện
   if (!user || !socket) return <div className="loading">Đang tải...</div>;
   if (loading) return <div className="loading">Đang tải...</div>;
@@ -437,12 +501,13 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
               type="text"
               placeholder="Tìm kiếm bạn bè, nhóm chat"
               className="search-input"
+              value={searchTerm}
+              onChange={handleSearchChange}
             />
           </div>
           <button className="action-button" title="Thêm bạn" onClick={() => setShowAddFriendModal(true)}>
             <User size={20} />
           </button>
-
           <button
             className="action-button"
             title="Tạo nhóm chat"
@@ -451,6 +516,41 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
             <Users size={20} />
           </button>
         </div>
+        {/* Kết quả tìm kiếm user theo số điện thoại */}
+        {searchTerm && searchUserResult && (
+          <div
+            className="search-user-result"
+            style={{padding: '8px', background: '#f5f6fa', borderRadius: 8, marginTop: 8, display: 'flex', alignItems: 'center', gap: 12, cursor: searchUserResult.userId === currentUser.userId ? 'pointer' : 'default'}}
+            onClick={() => {
+              if (searchUserResult.userId === currentUser.userId) setShowSelfModal(true);
+            }}
+          >
+            <img
+              src={searchUserResult.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(searchUserResult.name)}&background=random`}
+              alt={searchUserResult.name}
+              style={{width: 40, height: 40, borderRadius: '50%'}}
+            />
+            <div style={{flex: 1}}>
+              <div style={{fontWeight: 500}}>{searchUserResult.name}</div>
+              <div style={{fontSize: 13, color: '#888'}}>{displayPhone(searchUserResult.phone)}</div>
+            </div>
+            {searchUserResult.userId !== currentUser.userId && (
+              <button
+                style={{background: '#2e89ff', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 16px', cursor: 'pointer'}}
+                onClick={e => {
+                  e.stopPropagation();
+                  setSelectedChat(searchUserResult.phone);
+                  navigate(`/app/chat/${searchUserResult.phone}`);
+                }}
+              >
+                Nhắn tin
+              </button>
+            )}
+          </div>
+        )}
+        {searchTerm && searchingUser && (
+          <div style={{padding: '8px', color: '#888'}}>Đang tìm kiếm...</div>
+        )}
       </div>
 
       <div className="chat-tabs">
@@ -476,10 +576,10 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
             <p>{error}</p>
             <button onClick={fetchConversations}>Thử lại</button>
           </div>
-        ) : chats.length === 0 ? (
+        ) : filteredChats.length === 0 && !searchUserResult ? (
           <div className="empty-state">Không có cuộc trò chuyện nào</div>
         ) : (
-          chats.map((chat) => (
+          filteredChats.map((chat) => (
             <div
               key={chat.id}
               className={`chat-item ${selectedChat === (chat.type === 'group' ? chat.id : chat.otherParticipantPhone) ? 'active' : ''}`}
@@ -528,9 +628,9 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
                   <h3 className="chat-title">
                     {chat.type === 'group' && <Users size={16} className="me-1" />}
                     {chat.title}
-                    {chat.type === 'group' && chat.memberCount && (
+                    {/* {chat.type === 'group' && chat.memberCount && (
                       <span className="member-count"> · {chat.memberCount}</span>
-                    )}
+                    )} */}
                   </h3>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                     <span className="chat-time">{chat.time}</span>
@@ -547,6 +647,15 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
           ))
         )}
       </div>
+      {showSelfModal && (
+        <MemberInfoModal
+          member={searchUserResult}
+          commonGroups={0}
+          onClose={() => setShowSelfModal(false)}
+          onMessage={() => {}}
+          currentUserId={currentUser.userId}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-const User = require('./model');
+const User = require('./userService');
 const { s3 } = require('../../config/aws');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -483,8 +483,6 @@ const userController = {
     getRecentContacts
 };
 
-// Debug log
-console.log('Exporting userController:', userController);
-console.log('Exporting updateAvatar method:', userController.updateAvatar);
+
 
 module.exports = userController; 

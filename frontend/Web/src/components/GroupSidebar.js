@@ -7,6 +7,7 @@ import api from '../config/api';
 import { SocketContext } from '../App';
 import { useDispatch, useSelector } from 'react-redux';
 import { setSelectedGroup, updateGroupName, updateGroupAvatar, updateGroupMembers, updateGroup, removeGroup } from '../redux/slices/groupSlice';
+import MemberInfoModal from './MemberInfoModal';
 
 const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates }) => {
   const navigate = useNavigate();
@@ -42,6 +43,8 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
   const [showLeaveSuccess, setShowLeaveSuccess] = useState(false);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState(null);
+  const [selectedMemberInfo, setSelectedMemberInfo] = useState(null);
+  const [commonGroups, setCommonGroups] = useState(0);
 
   const socket = useContext(SocketContext);
   const dispatch = useDispatch();
@@ -633,7 +636,7 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
 
           <div className="group-members-section">
             <div className="group-section-header">
-              <h2>Danh sách thành viên ({members.length})</h2>
+              <h2>Danh sách thành viên ({reduxSelectedGroup?.members?.length || 0})</h2>
               <button className="group-more-button">
                 <MoreVertical size={20} />
               </button>
@@ -644,7 +647,24 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
                 const isCurrentUser = member.userId === currentUser?.userId;
 
                 return (
-                  <div key={member.userId} className="group-member-item">
+                  <div
+                    key={member.userId}
+                    className="group-member-item"
+                    onClick={async () => {
+                      setSelectedMemberInfo(member);
+                      // Gọi API lấy số nhóm chung
+                      try {
+                        const userGroups = await api.get(`/users/${member.userId}/groups`);
+                        const myGroups = await api.get(`/users/${currentUser.userId}/groups`);
+                        const common = userGroups.data.groups.filter(g1 =>
+                          myGroups.data.groups.some(g2 => g2.groupId === g1.groupId)
+                        );
+                        setCommonGroups(common.length);
+                      } catch (e) {
+                        setCommonGroups(0);
+                      }
+                    }}
+                  >
                     <div className="group-member-avatar">
                       <img 
                         src={member.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=random`}
@@ -797,116 +817,114 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
         <div className="modal">
           <div className="modal-content">
             <h3>Thêm thành viên</h3>
-            
-            {/* Search section */}
-            <div className="search-section">
-              <div className="search-input">
-                <input
-                  type="text"
-                  value={searchPhone}
-                  onChange={(e) => setSearchPhone(e.target.value)}
-                  placeholder="Nhập số điện thoại"
-                />
-                <button onClick={handleSearchUser} disabled={isSearching || !searchPhone.trim()}>
-                  {isSearching ? 'Đang tìm...' : 'Tìm kiếm'}
-                </button>
-              </div>
-              
-              {searchResult && (
-                <div className="search-result">
-                  <div className="user-item">
-                    <img 
-                      src={searchResult.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(searchResult.name)}&background=random`}
-                      alt={searchResult.name}
-                      onError={(e) => {
-                        e.target.onerror = null;
-                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(searchResult.name)}&background=random`;
-                      }}
-                    />
-                    <div className="user-info">
-                      <span className="user-name">{searchResult.name}</span>
-                      <span className="user-phone">{searchResult.phone}</span>
+            <div className="add-members-scrollable-content" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+              {/* Search section */}
+              <div className="search-section">
+                <div className="search-input">
+                  <input
+                    type="text"
+                    value={searchPhone}
+                    onChange={(e) => setSearchPhone(e.target.value)}
+                    placeholder="Nhập số điện thoại"
+                  />
+                  <button onClick={handleSearchUser} disabled={isSearching || !searchPhone.trim()}>
+                    {isSearching ? 'Đang tìm...' : 'Tìm kiếm'}
+                  </button>
+                </div>
+                {searchResult && (
+                  <div className="search-result">
+                    <div className="user-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', gap: '12px', padding: '8px 0' }}>
+                      <img 
+                        src={searchResult.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(searchResult.name)}&background=random`}
+                        alt={searchResult.name}
+                        style={{ width: 40, height: 40, borderRadius: '50%' }}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(searchResult.name)}&background=random`;
+                        }}
+                      />
+                      <div className="user-info" style={{ flex: 1, marginLeft: 12, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                        <span className="user-name">{searchResult.name}</span>
+                        {/* <span className="user-phone">{searchResult.phone}</span> */}
+                      </div>
+                      {members.some(member => member.userId === searchResult.userId) ? (
+                        <button disabled className="already-member">Đã là thành viên</button>
+                      ) : (
+                        <button 
+                          onClick={() => handleSelectUser(searchResult)}
+                          disabled={selectedUsers.some(u => u.userId === searchResult.userId)}
+                        >
+                          {selectedUsers.some(u => u.userId === searchResult.userId) ? 'Đã chọn' : 'Thêm'}
+                        </button>
+                      )}
                     </div>
-                    {members.some(member => member.userId === searchResult.userId) ? (
-                      <button disabled className="already-member">Đã là thành viên</button>
-                    ) : (
-                      <button 
-                        onClick={() => handleSelectUser(searchResult)}
-                        disabled={selectedUsers.some(u => u.userId === searchResult.userId)}
-                      >
-                        {selectedUsers.some(u => u.userId === searchResult.userId) ? 'Đã chọn' : 'Thêm'}
-                      </button>
-                    )}
+                  </div>
+                )}
+              </div>
+              {/* Selected users */}
+              {selectedUsers.length > 0 && (
+                <div className="selected-users">
+                  <h4>Đã chọn ({selectedUsers.length})</h4>
+                  <div className="selected-users-list">
+                    {selectedUsers.map(user => (
+                      <div key={user.userId} className="selected-user-item">
+                        <img 
+                          src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`}
+                          alt={user.name}
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`;
+                          }}
+                        />
+                        <span>{user.name}</span>
+                        <button onClick={() => handleRemoveUser(user.userId)}>×</button>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Selected users */}
-            {selectedUsers.length > 0 && (
-              <div className="selected-users">
-                <h4>Đã chọn ({selectedUsers.length})</h4>
-                <div className="selected-users-list">
-                  {selectedUsers.map(user => (
-                    <div key={user.userId} className="selected-user-item">
-                      <img 
-                        src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`}
-                        alt={user.name}
-                        onError={(e) => {
-                          e.target.onerror = null;
-                          e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`;
-                        }}
-                      />
-                      <span>{user.name}</span>
-                      <button onClick={() => handleRemoveUser(user.userId)}>×</button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Recent contacts */}
-            <div className="recent-contacts">
-              <h4>Trò chuyện gần đây</h4>
-              {error && <div className="error-message">{error}</div>}
-              {fetchingContacts ? (
-                <div className="loading">Đang tải danh sách liên hệ...</div>
-              ) : (
-                <div className="recent-contacts-list">
-                  {recentContacts.length > 0 ? (
-                    recentContacts
-                      .filter(contact => !members.some(member => member.userId === contact.userId)) // Lọc bỏ các thành viên đã có trong nhóm
-                      .map(contact => (
-                        <div key={contact.userId} className="user-item">
-                          <img 
-                            src={contact.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(contact.name)}&background=random`}
-                            alt={contact.name}
-                            onError={(e) => {
-                              e.target.onerror = null;
-                              e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(contact.name)}&background=random`;
-                            }}
-                          />
-                          <div className="user-info">
-                            <span className="user-name">{contact.name}</span>
-                            <span className="user-phone">{contact.phone}</span>
+              {/* Recent contacts */}
+              <div className="recent-contacts">
+                <h4>Trò chuyện gần đây</h4>
+                {error && <div className="error-message">{error}</div>}
+                {fetchingContacts ? (
+                  <div className="loading">Đang tải danh sách liên hệ...</div>
+                ) : (
+                  <div className="recent-contacts-list">
+                    {recentContacts.length > 0 ? (
+                      recentContacts
+                        .filter(contact => !members.some(member => member.userId === contact.userId))
+                        .map(contact => (
+                          <div key={contact.userId} className="user-item">
+                            <img 
+                              src={contact.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(contact.name)}&background=random`}
+                              alt={contact.name}
+                              onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(contact.name)}&background=random`;
+                              }}
+                            />
+                            <div className="user-info">
+                              <span className="user-name">{contact.name}</span>
+                              <span className="user-phone">{contact.phone}</span>
+                            </div>
+                            <button 
+                              onClick={() => handleSelectUser(contact)}
+                              disabled={selectedUsers.some(u => u.userId === contact.userId)}
+                            >
+                              {selectedUsers.some(u => u.userId === contact.userId) ? 'Đã chọn' : 'Thêm'}
+                            </button>
                           </div>
-                          <button 
-                            onClick={() => handleSelectUser(contact)}
-                            disabled={selectedUsers.some(u => u.userId === contact.userId)}
-                          >
-                            {selectedUsers.some(u => u.userId === contact.userId) ? 'Đã chọn' : 'Thêm'}
-                          </button>
-                        </div>
-                      ))
-                  ) : (
-                    <div className="no-contacts">Không có cuộc trò chuyện nào gần đây</div>
-                  )}
-                </div>
-              )}
+                        ))
+                    ) : (
+                      <div className="no-contacts">Không có cuộc trò chuyện nào gần đây</div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-
-            {/* Modal actions */}
-            <div className="modal-actions">
+            {/* Modal actions đặt ngoài vùng scrollable */}
+            <div className="modal-actions add-members-modal-actions">
               <button onClick={() => setShowAddMembersModal(false)}>Hủy</button>
               <button 
                 onClick={handleAddMembers}
@@ -1005,6 +1023,18 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
             </div>
           </div>
         </div>
+      )}
+
+      {selectedMemberInfo && (
+        <MemberInfoModal
+          member={selectedMemberInfo}
+          commonGroups={commonGroups}
+          onClose={() => setSelectedMemberInfo(null)}
+          onMessage={(member) => {
+            navigate(`/app/chat/${member.phone || member.userId}`);
+            setSelectedMemberInfo(null);
+          }}
+        />
       )}
     </div>
   );

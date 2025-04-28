@@ -1059,7 +1059,7 @@ const GroupChat = ({ selectedChat }) => {
           </button>
           <div className="header-title">
             <h1>{groupDetails?.name}</h1>
-            <p>{groupDetails?.members?.length || 0} thành viên</p>
+            <p>{reduxSelectedGroup?.members?.length || 0} thành viên</p>
           </div>
           <div className="header-actions">
             <button

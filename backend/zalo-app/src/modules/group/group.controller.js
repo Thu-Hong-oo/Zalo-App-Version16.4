@@ -1,8 +1,6 @@
-const { groupService, GroupMemberService, MEMBER_ROLES } = require('./index');
+const groupService = require('./groupService');
+const { GroupMemberService, MEMBER_ROLES } = require('./groupMemberService');
 const { createGroupSchema, updateGroupSchema, addMemberSchema, updateMemberSchema } = require('./group.validator');
-const { GROUP_EVENTS } = require('./group.model');
-const { emitEvent } = require('../events');
-const userController = require('../user/controller');
 const { s3 } = require('../../config/aws');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
@@ -46,7 +44,7 @@ class GroupController {
         name: req.body.name // Explicitly pass the name
       });
 
-      emitEvent(GROUP_EVENTS.CREATED, group);
+      // emitEvent(GROUP_EVENTS.CREATED, group);
       res.status(201).json(group);
     } catch (error) {
       console.error('Create group error:', error);
@@ -80,7 +78,6 @@ class GroupController {
       }
 
       const group = await groupService.updateGroup(req.params.groupId, req.body);
-      emitEvent(GROUP_EVENTS.UPDATED, group);
       res.json(group);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -93,7 +90,11 @@ class GroupController {
   async deleteGroup(req, res) {
     try {
       const group = await groupService.deleteGroup(req.params.groupId);
-      emitEvent(GROUP_EVENTS.DELETED, group);
+      // PHÁT SOCKET.IO
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`group:${req.params.groupId}`).emit('group:dissolved', req.params.groupId);
+      }
       res.json({ message: 'Group deleted successfully' });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -110,13 +111,26 @@ class GroupController {
         return res.status(400).json({ error: error.details[0].message });
       }
 
+      // Lấy userId của người thực hiện (người thêm thành viên)
+      const addedBy = req.user.userId;
+
       const member = await GroupMemberService.addMember(
         req.params.groupId,
         req.body.userId,
-        req.body.role
+        req.body.role,
+        addedBy // truyền thêm trường addedBy
       );
 
-      emitEvent(GROUP_EVENTS.MEMBER_ADDED, member);
+      // PHÁT SOCKET.IO
+      const io = req.app.get('io');
+      if (io) {
+        const members = await GroupMemberService.getGroupMembers(req.params.groupId);
+        io.to(`group:${req.params.groupId}`).emit('group:member_joined', {
+          groupId: req.params.groupId,
+          members
+        });
+      }
+
       res.status(201).json(member);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -151,7 +165,16 @@ class GroupController {
         req.body
       );
 
-      emitEvent(GROUP_EVENTS.MEMBER_UPDATED, member);
+     // emitEvent(GROUP_EVENTS.MEMBER_UPDATED, member);
+      // PHÁT SOCKET.IO
+      const io = req.app.get('io');
+      if (io) {
+        const members = await GroupMemberService.getGroupMembers(req.params.groupId);
+        io.to(`group:${req.params.groupId}`).emit('group:member_updated', {
+          groupId: req.params.groupId,
+          members
+        });
+      }
       res.json(member);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -164,10 +187,15 @@ class GroupController {
   async removeMember(req, res) {
     try {
       await GroupMemberService.removeMember(req.params.groupId, req.params.memberId);
-      emitEvent(GROUP_EVENTS.MEMBER_REMOVED, {
-        groupId: req.params.groupId,
-        userId: req.params.memberId
-      });
+  
+      const io = req.app.get('io');
+      if (io) {
+        const members = await GroupMemberService.getGroupMembers(req.params.groupId);
+        io.to(`group:${req.params.groupId}`).emit('group:member_removed', {
+          groupId: req.params.groupId,
+          members
+        });
+      }
       res.json({ message: 'Member removed successfully' });
     } catch (error) {
       res.status(500).json({ error: error.message });

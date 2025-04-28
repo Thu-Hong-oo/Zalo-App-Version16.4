@@ -1,0 +1,20 @@
+.modal-overlay {
+  position: fixed; left: 0; top: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.2); z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+}
+.member-info-modal {
+  background: #fff; border-radius: 12px; padding: 32px 24px; min-width: 320px; position: relative;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.15);
+  text-align: center;
+}
+.close-btn {
+  position: absolute; right: 16px; top: 16px; background: none; border: none; font-size: 24px; cursor: pointer;
+}
+.avatar-section { margin-bottom: 16px; }
+.member-avatar { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; }
+.member-name { margin: 0 0 8px 0; }
+.common-groups { margin-bottom: 16px; color: #555; }
+.message-btn {
+  background: #2e89ff; color: #fff; border: none; border-radius: 6px; padding: 10px 24px; font-size: 16px; cursor: pointer;
+} 

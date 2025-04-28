@@ -31,11 +31,12 @@ class GroupMemberService {
    * @param {string} groupId - Group ID
    * @param {string} userId - User ID
    * @param {string} role - Member role (ADMIN or MEMBER)
+   * @param {string} [addedBy] - User ID của người thêm thành viên (tùy chọn)
    * @returns {Promise<Object>} Group member information
    */
-  async addMember(groupId, userId, role = 'MEMBER') {
+  async addMember(groupId, userId, role = 'MEMBER', addedBy) {
     try {
-        console.log('Adding member:', { groupId, userId, role });
+        console.log('Adding member:', { groupId, userId, role, addedBy });
         const timestamp = new Date().toISOString();
 
         // First check if member already exists
@@ -56,7 +57,7 @@ class GroupMemberService {
                     groupId,
                     userId
                 },
-                UpdateExpression: 'set isActive = :isActive, #role = :role, updatedAt = :updatedAt, joinedAt = :joinedAt',
+                UpdateExpression: 'set isActive = :isActive, #role = :role, updatedAt = :updatedAt, joinedAt = :joinedAt' + (addedBy ? ', addedBy = :addedBy' : ''),
                 ExpressionAttributeNames: {
                     '#role': 'role'
                 },
@@ -68,6 +69,7 @@ class GroupMemberService {
                 },
                 ReturnValues: 'ALL_NEW'
             };
+            if (addedBy) updateParams.ExpressionAttributeValues[':addedBy'] = addedBy;
 
             const { Attributes } = await dynamodb.send(new UpdateCommand(updateParams));
             console.log('Member reactivated:', Attributes);
@@ -91,6 +93,7 @@ class GroupMemberService {
                 lastReadAt: timestamp
             }
         };
+        if (addedBy) params.Item.addedBy = addedBy;
 
         await dynamodb.send(new PutCommand(params));
         console.log('New member added');

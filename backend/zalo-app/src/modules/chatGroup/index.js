@@ -7,7 +7,7 @@ const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const { uploadToS3 } = require("../media/services");
-const { GroupMemberService } = require("../group");
+const { GroupMemberService } = require("../group/groupMemberService");
 
 // Map để lưu trữ các kết nối socket theo số điện thoại
 const connectedUsers = new Map();
