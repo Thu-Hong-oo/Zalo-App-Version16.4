@@ -466,25 +466,28 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
               onClick={() => handleChatClick(chat)}
             >
               <div className="chat-avatar">
-                {chat.avatar ? (
-                  <img
-                    src={chat.avatar}
-                    alt={chat.title}
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(chat.title)}&background=random`;
-                    }}
-                  />
-                ) : (
-                  <div className="avatar-placeholder">
-                    {chat.type === 'group' ? (
-                      <Users size={24} className="group-icon" />
+                {chat.type === 'group' && (
+                  <div style={{ position: 'relative' }}>
+                    {chat.avatar ? (
+                      <img
+                        src={chat.avatar}
+                        alt={chat.title}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(chat.title)}&background=random`;
+                        }}
+                      />
                     ) : (
-                      chat.title.slice(0, 2).toUpperCase()
+                      <div className="avatar-placeholder">
+                        {chat.type === 'group' ? (
+                          <Users size={24} className="group-icon" />
+                        ) : (
+                          chat.title.slice(0, 2).toUpperCase()
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
-
               </div>
               <div className="chat-info">
                 <div className="chat-header">
@@ -497,10 +500,8 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
                   </h3>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                     <span className="chat-time">{chat.time}</span>
-                    {chat.type === 'group' && unreadCounts[chat.id] > 0 && (
-                      <span className="unread-badge">
-                        {unreadCounts[chat.id] > 99 ? "99+" : unreadCounts[chat.id]}
-                      </span>
+                    {chat.type === 'group' && unreadCounts[chat.id] > 0 && selectedChat !== (chat.type === 'group' ? chat.id : chat.otherParticipantPhone) && (
+                      <span className="unread-badge unread-badge-below-time">{unreadCounts[chat.id] > 99 ? "99+" : unreadCounts[chat.id]}</span>
                     )}
                   </div>
                 </div>
