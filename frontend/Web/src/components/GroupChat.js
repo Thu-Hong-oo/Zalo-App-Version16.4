@@ -52,6 +52,7 @@ import "./css/GroupChat.css";
 import api, { getBaseUrl, getApiUrl } from "../config/api";
 import { useDispatch, useSelector } from 'react-redux';
 import { setSelectedGroup, updateGroup, updateGroupName, updateGroupAvatar } from '../redux/slices/groupSlice';
+import ForwardMessageModal from "./ForwardMessageModal";
 
 const GroupChat = ({ selectedChat }) => {
   const { groupId } = useParams();
@@ -96,6 +97,10 @@ const GroupChat = ({ selectedChat }) => {
   const [groupUpdates, setGroupUpdates] = useState(null);
   const dispatch = useDispatch();
   const reduxSelectedGroup = useSelector(state => state.group.selectedGroup);
+  const [showForwardModal, setShowForwardModal] = useState(false);
+  const [forwarding, setForwarding] = useState(false);
+  const [forwardError, setForwardError] = useState(null);
+  const [forwardMessageContent, setForwardMessageContent] = useState("");
 
   useEffect(() => {
     fetchGroupDetails();
@@ -1250,7 +1255,8 @@ const GroupChat = ({ selectedChat }) => {
             <button
               className="modal-button"
               onClick={() => {
-                handleForwardMessage(selectedMessage.groupMessageId);
+                setForwardMessageContent(selectedMessage.content);
+                setShowForwardModal(true);
                 setShowMessageOptions(false);
               }}
             >
@@ -1290,6 +1296,65 @@ const GroupChat = ({ selectedChat }) => {
       />
 
       {renderFullscreenModal()}
+
+      {/* Forward Message Modal */}
+      {showForwardModal && (
+        <ForwardMessageModal
+          isOpen={showForwardModal}
+          onClose={() => setShowForwardModal(false)}
+          onForward={async (receivers) => {
+            setForwarding(true);
+            setForwardError(null);
+            try {
+              // receivers: array of {id, type ('group' or 'conversation'), phone?}
+              const currentTime = new Date().toISOString(); // Giống app
+              for (const receiver of receivers) {
+                if (receiver.type === 'group') {
+                  await forwardGroupMessage(groupId, selectedMessage.groupMessageId, receiver.id, 'group');
+                } else {
+                  // Nếu là cá nhân, forward qua socket giống app
+                  const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                  let messageData = {
+                    tempId,
+                    receiverPhone: receiver,// Ưu tiên phone
+                    content: selectedMessage.content,
+                    type: 'text',
+                    timestamp: currentTime,
+                  };
+
+                  // Xử lý nếu tin nhắn gốc là file
+                  if (selectedMessage.type === 'file') {
+                    messageData = {
+                      ...messageData,
+                      type: 'file',
+                      fileUrl: selectedMessage.fileUrl || selectedMessage.content,
+                      fileType: selectedMessage.fileType || 
+                                (selectedMessage.content.match(/\.(jpg|jpeg|png|gif)$/i) ? 'image/jpeg' :
+                                 selectedMessage.content.match(/\.(mp4|mov|avi)$/i) ? 'video/mp4' : 
+                                 'application/octet-stream'),
+                      fileName: selectedMessage.fileName || selectedMessage.content.split('/').pop(),
+                      fileSize: selectedMessage.fileSize
+                    };
+                  }
+                  
+                  // Emit socket giống app
+                  console.log("Receiver object:", receiver);
+                  console.log("WEB EMITTING send-message:", JSON.stringify(messageData, null, 2)); // <--- LOG CÁI NÀY
+
+                  socket.emit("send-message", messageData);
+                }
+              }
+              setShowForwardModal(false);
+            } catch (err) {
+              console.error("Error forwarding message:", err);
+              setForwardError('Chuyển tiếp thất bại!');
+            } finally {
+              setForwarding(false);
+            }
+          }}
+          messageContent={forwardMessageContent}
+        />
+      )}
     </div>
   );
 };

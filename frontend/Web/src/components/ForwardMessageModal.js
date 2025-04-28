@@ -93,9 +93,46 @@ const ForwardMessageModal = ({ isOpen, onClose, onForward, messageContent }) => 
         </div>
 
         <div className="modal-content">
-          <div className="message-preview">
-            <p className="preview-label">Nội dung tin nhắn:</p>
-            <p className="preview-content">{messageContent}</p>
+          <div style={{ margin: 15, marginBottom: 0 }}>
+            <div style={{ fontWeight: 'bold', marginBottom: 6 }}>Nội dung tin nhắn:</div>
+            {(() => {
+              // Nếu là ảnh
+              if (typeof messageContent === 'string' && messageContent.match(/\.(jpg|jpeg|png|gif)$/i)) {
+                return (
+                  <img src={messageContent} alt="preview" style={{ width: 120, height: 120, borderRadius: 8, marginBottom: 8, objectFit: 'cover' }} />
+                );
+              }
+              // Nếu là video
+              if (typeof messageContent === 'string' && messageContent.match(/\.(mp4|mov|avi)$/i)) {
+                return (
+                  <video src={messageContent} controls style={{ width: 120, height: 120, borderRadius: 8, marginBottom: 8, background: '#eee' }} />
+                );
+              }
+              // Nếu là file (link S3 hoặc file khác)
+              if (typeof messageContent === 'string' && messageContent.startsWith('http') && messageContent.match(/\.(pdf|docx?|xlsx?|pptx?|zip|rar)$/i)) {
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontSize: 24, marginRight: 8 }}>📄</span>
+                    <a href={messageContent} target="_blank" rel="noopener noreferrer">{messageContent.split('/').pop()}</a>
+                  </div>
+                );
+              }
+              // Nếu là link
+              if (typeof messageContent === 'string' && messageContent.startsWith('http')) {
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                    <span style={{ fontSize: 20, marginRight: 8 }}>🔗</span>
+                    <a href={messageContent} target="_blank" rel="noopener noreferrer" style={{ color: '#2196F3', textDecoration: 'underline' }}>{messageContent}</a>
+                  </div>
+                );
+              }
+              // Nếu là text
+              return (
+                <div style={{ background: '#f5f5f5', borderRadius: 6, padding: 10, color: '#333' }}>
+                  {messageContent}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="search-box">
@@ -175,7 +212,7 @@ const ForwardMessageModal = ({ isOpen, onClose, onForward, messageContent }) => 
                     </h3>
                   </div>
 
-                  <p style={{ 
+                  {/* <p style={{ 
                     margin: 0,
                     fontSize: '13px',
                     color: '#7589A3',
@@ -184,7 +221,7 @@ const ForwardMessageModal = ({ isOpen, onClose, onForward, messageContent }) => 
                     whiteSpace: 'nowrap'
                   }}>
                     {chat.phone}
-                  </p>
+                  </p> */}
                 </div>
 
                 {selectedUsers.includes(chat.phone) && (

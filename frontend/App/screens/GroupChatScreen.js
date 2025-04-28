@@ -755,6 +755,7 @@ const GroupChatScreen = () => {
         receivers.map(async (receiver) => {
           try {
             if (receiver.type === 'conversation') {
+
               const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
               
               let messageData = {
@@ -826,6 +827,8 @@ const GroupChatScreen = () => {
                   preview: messageData.content
                 });
               } else {
+                console.log("APP EMITTING send-message:", JSON.stringify(messageData, null, 2)); // <--- LOG CÁI NÀY
+
                 socket.emit("send-message", messageData);
               }
 
