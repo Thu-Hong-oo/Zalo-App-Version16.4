@@ -1316,7 +1316,7 @@ const GroupChat = ({ selectedChat }) => {
                   const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
                   let messageData = {
                     tempId,
-                    receiverPhone: receiver,// Ưu tiên phone
+                    receiverPhone: receiver.id,// Ưu tiên phone
                     content: selectedMessage.content,
                     type: 'text',
                     timestamp: currentTime,
@@ -1353,7 +1353,8 @@ const GroupChat = ({ selectedChat }) => {
             }
           }}
           messageContent={forwardMessageContent}
-        />
+          userId={currentUserId} 
+                  />
       )}
     </div>
   );

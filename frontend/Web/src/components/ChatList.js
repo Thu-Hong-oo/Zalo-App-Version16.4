@@ -366,7 +366,7 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
         }
       }
     };
-    const intervalId = setInterval(checkForUpdates, 5000);
+    const intervalId = setInterval(checkForUpdates, 50000);
     return () => clearInterval(intervalId);
   }, [user, socket, chats, debouncedFetchConversations, formatTime]);
 
