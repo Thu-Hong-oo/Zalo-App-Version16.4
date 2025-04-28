@@ -868,3 +868,29 @@
 .warning-modal .modal-actions button:hover {
   opacity: 0.9;
 } 
+
+.remove-member-btn {
+  background: #fff0f0;
+  color: #100c0b;
+  border: none;
+  border-radius: 6px;
+  padding: 2px 10px;
+  margin-left: 12px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  font-size: 12px;
+}
+.remove-member-btn:hover {
+  background: #e74c3c;
+  color: #fff;
+  border-color: #e74c3c;
+}
+.modal .danger {
+  background: #e74c3c;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 18px;
+  margin-left: 10px;
+  cursor: pointer;
+}

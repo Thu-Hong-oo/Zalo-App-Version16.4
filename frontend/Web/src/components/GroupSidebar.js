@@ -40,6 +40,8 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
   const [showLeaveWarning, setShowLeaveWarning] = useState(false);
   const [showTransferSuccess, setShowTransferSuccess] = useState(false);
   const [showLeaveSuccess, setShowLeaveSuccess] = useState(false);
+  const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState(null);
 
   const socket = useContext(SocketContext);
   const dispatch = useDispatch();
@@ -433,6 +435,20 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
     }
   }, [showAddMembersModal]);
 
+  const handleRemoveMember = async (userId) => {
+    try {
+      setLoading(true);
+      await api.delete(`/groups/${groupId}/members/${userId}`);
+      await fetchGroupInfo();
+      dispatch(updateGroupMembers({ groupId, members: members.filter(m => m.userId !== userId) }));
+      if (onGroupUpdate) onGroupUpdate();
+    } catch (error) {
+      alert('Không thể xóa thành viên: ' + (error.response?.data?.message || error.message || 'Đã có lỗi xảy ra'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className={`group-sidebar ${!isOpen ? 'hidden' : ''}`}>
       {!showMembersList ? (
@@ -604,6 +620,12 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
                         )}
                       </div>
                     </div>
+                    {/* Nút xóa thành viên nếu là admin và không phải chính mình */}
+                    {isAdmin && !isCurrentUser && (
+                      <button className="remove-member-btn" onClick={() => { setMemberToRemove(member); setShowRemoveModal(true); }}>
+                        Xóa
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -908,6 +930,30 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
             </div>
             <h3>Bạn đã rời khỏi nhóm thành công</h3>
             <p>Bạn sẽ được chuyển về trang chủ...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Modal xác nhận xóa thành viên */}
+      {showRemoveModal && (
+        <div className="modal">
+          <div className="modal-content">
+            <h3>Xác nhận xóa thành viên</h3>
+            <p>Bạn có chắc chắn muốn xóa <b>{memberToRemove?.name}</b> khỏi nhóm?</p>
+            <div className="modal-actions">
+              <button onClick={() => setShowRemoveModal(false)}>Hủy</button>
+              <button
+                className="danger"
+                onClick={async () => {
+                  await handleRemoveMember(memberToRemove.userId);
+                  setShowRemoveModal(false);
+                  setMemberToRemove(null);
+                }}
+                disabled={loading}
+              >
+                {loading ? 'Đang xóa...' : 'Xóa'}
+              </button>
+            </div>
           </div>
         </div>
       )}

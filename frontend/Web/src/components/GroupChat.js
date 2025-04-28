@@ -989,22 +989,22 @@ const GroupChat = ({ selectedChat }) => {
 
     // Cập nhật Redux
     dispatch(updateGroup(groupUpdates));
-    if (groupUpdates.type === 'NAME_UPDATED') {
-      dispatch(updateGroupName({ groupId: groupUpdates.groupId, name: groupUpdates.data.name }));
-      setMessages(prev => [...prev, {
-        type: 'system',
-        content: `Tên nhóm đã đổi thành ${groupUpdates.data.name}`,
-        createdAt: new Date().toISOString()
-      }]);
-    }
-    if (groupUpdates.type === 'AVATAR_UPDATED') {
-      dispatch(updateGroupAvatar({ groupId: groupUpdates.groupId, avatar: groupUpdates.data.avatarUrl }));
-      setMessages(prev => [...prev, {
-        type: 'system',
-        content: `Avatar nhóm đã được cập nhật.`,
-        createdAt: new Date().toISOString()
-      }]);
-    }
+    // if (groupUpdates.type === 'NAME_UPDATED') {
+    //   dispatch(updateGroupName({ groupId: groupUpdates.groupId, name: groupUpdates.data.name }));
+    //   setMessages(prev => [...prev, {
+    //     type: 'system',
+    //     content: `Tên nhóm đã đổi thành ${groupUpdates.data.name}`,
+    //     createdAt: new Date().toISOString()
+    //   }]);
+    // }
+    // if (groupUpdates.type === 'AVATAR_UPDATED') {
+    //   dispatch(updateGroupAvatar({ groupId: groupUpdates.groupId, avatar: groupUpdates.data.avatarUrl }));
+    //   setMessages(prev => [...prev, {
+    //     type: 'system',
+    //     content: `Avatar nhóm đã được cập nhật.`,
+    //     createdAt: new Date().toISOString()
+    //   }]);
+    // }
     // Có thể bổ sung các loại event khác
   }, [groupUpdates, groupId, dispatch]);
 
@@ -1014,23 +1014,8 @@ const GroupChat = ({ selectedChat }) => {
     // Lắng nghe event cập nhật nhóm
     const handleGroupUpdated = (payload) => {
       if (payload.groupId === groupId) {
-        fetchGroupDetails(); // Gọi lại API lấy thông tin mới nhất
-        // Có thể thêm thông báo hệ thống nếu muốn
-        if (payload.type === 'NAME_UPDATED') {
-          setMessages(prev => [...prev, {
-            type: 'system',
-            content: `Tên nhóm đã đổi thành ${payload.data.name}`,
-            createdAt: new Date().toISOString()
-          }]);
-        }
-        if (payload.type === 'AVATAR_UPDATED') {
-          setMessages(prev => [...prev, {
-            type: 'system',
-            content: `Avatar nhóm đã được cập nhật.`,
-            createdAt: new Date().toISOString()
-          }]);
-        }
-        // Có thể bổ sung các loại event khác
+        fetchGroupDetails(); // Cập nhật info nhóm
+    
       }
     };
     socket.on('group:updated', handleGroupUpdated);
