@@ -50,6 +50,8 @@ import {
 } from "lucide-react";
 import "./css/GroupChat.css";
 import api, { getBaseUrl, getApiUrl } from "../config/api";
+import { useDispatch, useSelector } from 'react-redux';
+import { setSelectedGroup, updateGroup, updateGroupName, updateGroupAvatar } from '../redux/slices/groupSlice';
 
 const GroupChat = ({ selectedChat }) => {
   const { groupId } = useParams();
@@ -92,6 +94,8 @@ const GroupChat = ({ selectedChat }) => {
   const [fullscreenMedia, setFullscreenMedia] = useState(null);
   const socket = useContext(SocketContext);
   const [groupUpdates, setGroupUpdates] = useState(null);
+  const dispatch = useDispatch();
+  const reduxSelectedGroup = useSelector(state => state.group.selectedGroup);
 
   useEffect(() => {
     fetchGroupDetails();
@@ -261,6 +265,7 @@ const GroupChat = ({ selectedChat }) => {
 
       if (response.status === "success") {
         setGroupDetails(response.data);
+        dispatch(setSelectedGroup(response.data));
         setLoading(false);
       } else {
         throw new Error("Không nhận được dữ liệu từ server");
@@ -982,8 +987,10 @@ const GroupChat = ({ selectedChat }) => {
     // Gọi lại API để lấy thông tin nhóm mới nhất khi có cập nhật
     fetchGroupDetails();
 
-    // Có thể thêm thông báo hệ thống nếu muốn
+    // Cập nhật Redux
+    dispatch(updateGroup(groupUpdates));
     if (groupUpdates.type === 'NAME_UPDATED') {
+      dispatch(updateGroupName({ groupId: groupUpdates.groupId, name: groupUpdates.data.name }));
       setMessages(prev => [...prev, {
         type: 'system',
         content: `Tên nhóm đã đổi thành ${groupUpdates.data.name}`,
@@ -991,6 +998,7 @@ const GroupChat = ({ selectedChat }) => {
       }]);
     }
     if (groupUpdates.type === 'AVATAR_UPDATED') {
+      dispatch(updateGroupAvatar({ groupId: groupUpdates.groupId, avatar: groupUpdates.data.avatarUrl }));
       setMessages(prev => [...prev, {
         type: 'system',
         content: `Avatar nhóm đã được cập nhật.`,
@@ -998,7 +1006,7 @@ const GroupChat = ({ selectedChat }) => {
       }]);
     }
     // Có thể bổ sung các loại event khác
-  }, [groupUpdates, groupId]);
+  }, [groupUpdates, groupId, dispatch]);
 
   useEffect(() => {
     if (!socket || !groupId) return;

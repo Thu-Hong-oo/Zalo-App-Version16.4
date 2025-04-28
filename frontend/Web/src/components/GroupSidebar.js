@@ -5,6 +5,8 @@ import './css/GroupSidebar.css';
 import { Users, Camera, Pencil, ChevronLeft, MoreVertical, UserPlus, Crown } from 'lucide-react';
 import api from '../config/api';
 import { SocketContext } from '../App';
+import { useDispatch, useSelector } from 'react-redux';
+import { setSelectedGroup, updateGroupName, updateGroupAvatar, updateGroupMembers } from '../redux/slices/groupSlice';
 
 const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates }) => {
   const navigate = useNavigate();
@@ -40,6 +42,8 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
   const [showLeaveSuccess, setShowLeaveSuccess] = useState(false);
 
   const socket = useContext(SocketContext);
+  const dispatch = useDispatch();
+  const reduxSelectedGroup = useSelector(state => state.group.selectedGroup);
 
   useEffect(() => {
     if (isOpen && groupId) {
@@ -84,6 +88,7 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
         setGroupInfo(response.data);
         setMembers(response.data.members || []);
         setNotifications(response.data.notifications !== false);
+        dispatch(setSelectedGroup(response.data));
         
         // Kiểm tra role của người dùng hiện tại trong danh sách thành viên
         const currentMember = response.data.members?.find(member => member.userId === currentUser?.userId);
@@ -155,6 +160,7 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       await fetchGroupInfo();
+      dispatch(updateGroupAvatar({ groupId, avatar: URL.createObjectURL(file) }));
       if (onGroupUpdate) onGroupUpdate();
     } catch (error) {
       console.error('Error updating avatar:', error);
@@ -170,6 +176,7 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
       setLoading(true);
       await api.put(`/groups/${groupId}/name`, { name: newGroupName.trim() });
       await fetchGroupInfo();
+      dispatch(updateGroupName({ groupId, name: newGroupName.trim() }));
       if (onGroupUpdate) onGroupUpdate();
       setShowEditName(false);
     } catch (error) {
@@ -397,6 +404,7 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
 
       await Promise.all(promises);
       await fetchGroupInfo();
+      dispatch(updateGroupMembers({ groupId, members: [...members, ...selectedUsers] }));
       setShowAddMembersModal(false);
       setSelectedUsers([]);
       setSearchPhone('');

@@ -19,6 +19,8 @@ import {
 } from "lucide-react"
 import "bootstrap/dist/css/bootstrap.min.css"
 import "./App.css"
+import { Provider } from 'react-redux';
+import { store } from './redux/store';
 
 import { io } from "socket.io-client";
 import { getSocketUrl } from "./config/api";
@@ -342,29 +344,31 @@ function App() {
   }, []);
 
   return (
-    <Routes>
-      <Route
-        path="/login"
-        element={
-          !isAuthenticated ? (
-            <Login setIsAuthenticated={setIsAuthenticated} />
-          ) : (
-            <Navigate to="/app" replace />
-          )
-        }
-      />
-      <Route
-        path="/app/*"
-        element={
-          isAuthenticated ? (
-            <MainApp setIsAuthenticated={setIsAuthenticated} />
-          ) : (
-            <Navigate to="/login" replace />
-          )
-        }
-      />
-      <Route path="/" element={<Navigate to="/app" replace />} />
-    </Routes>
+    <Provider store={store}>
+      <Routes>
+        <Route
+          path="/login"
+          element={
+            !isAuthenticated ? (
+              <Login setIsAuthenticated={setIsAuthenticated} />
+            ) : (
+              <Navigate to="/app" replace />
+            )
+          }
+        />
+        <Route
+          path="/app/*"
+          element={
+            isAuthenticated ? (
+              <MainApp setIsAuthenticated={setIsAuthenticated} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route path="/" element={<Navigate to="/app" replace />} />
+      </Routes>
+    </Provider>
   );
 }
 

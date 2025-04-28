@@ -5,6 +5,8 @@ import api from '../config/api';
 import { Search, User, Users } from 'lucide-react';
 import { SocketContext } from '../App';
 import { markAsReadGroup, getGroupMessages } from '../services/group';
+import { useDispatch, useSelector } from 'react-redux';
+import { setGroups, updateGroup, setSelectedGroup } from '../redux/slices/groupSlice';
 
 function debounce(func, wait) {
   let timeout;
@@ -28,6 +30,8 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
   const [unreadCounts, setUnreadCounts] = useState({});
   const navigate = useNavigate();
   const hasFetchedRef = useRef(false);
+  const dispatch = useDispatch();
+  const reduxGroups = useSelector(state => state.group.groups);
 
   // Memoize formatTime function
   const formatTime = useCallback((timestamp) => {
@@ -148,6 +152,7 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
           return timeB - timeA;
         });
         setChats(allChats);
+        dispatch(setGroups(groupChats));
         setError(null);
       } else {
         setError("Invalid response format from server");
@@ -157,7 +162,7 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
     } finally {
       setLoading(false);
     }
-  }, [user, socket, fetchUserInfo, formatTime]);
+  }, [user, socket, fetchUserInfo, formatTime, dispatch]);
 
   // Debounce fetchConversations
   const debouncedFetchConversations = useCallback(debounce(fetchConversations, 300), [fetchConversations]);
@@ -344,6 +349,7 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
   const handleChatClick = async (chat) => {
     if (chat.type === 'group') {
       setSelectedChat(chat.id);
+      dispatch(setSelectedGroup(chat));
       await markAsReadGroup(chat.id); // cập nhật lastReadAt trên backend
       navigate(`/app/groups/${chat.id}`);
     } else {
@@ -404,6 +410,7 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
 
   useEffect(() => {
     if (!groupUpdates) return;
+    dispatch(updateGroup(groupUpdates));
     setChats(prevChats => prevChats.map(chat => {
       if (chat.type === 'group' && chat.id === groupUpdates.groupId) {
         let updated = { ...chat };
@@ -414,7 +421,7 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
       }
       return chat;
     }));
-  }, [groupUpdates]);
+  }, [groupUpdates, dispatch]);
 
   // Sau khi đã gọi hết các hook, mới đến các return điều kiện
   if (!user || !socket) return <div className="loading">Đang tải...</div>;
