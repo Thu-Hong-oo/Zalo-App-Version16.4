@@ -479,11 +479,25 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
                       />
                     ) : (
                       <div className="avatar-placeholder">
-                        {chat.type === 'group' ? (
-                          <Users size={24} className="group-icon" />
-                        ) : (
-                          chat.title.slice(0, 2).toUpperCase()
-                        )}
+                        <Users size={24} className="group-icon" />
+                      </div>
+                    )}
+                  </div>
+                )}
+                {chat.type === 'direct' && (
+                  <div style={{ position: 'relative' }}>
+                    {chat.avatar ? (
+                      <img
+                        src={chat.avatar}
+                        alt={chat.title}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(chat.title)}&background=random`;
+                        }}
+                      />
+                    ) : (
+                      <div className="avatar-placeholder">
+                        {chat.title.slice(0, 2).toUpperCase()}
                       </div>
                     )}
                   </div>
