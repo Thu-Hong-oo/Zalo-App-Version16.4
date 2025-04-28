@@ -307,12 +307,26 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
       });
     };
 
+    // Lắng nghe event group:updated để realtime đổi tên/ảnh nhóm
+    const handleGroupUpdated = (data) => {
+      setChats(prevChats => prevChats.map(chat => {
+        if (chat.type === 'group' && chat.id === data.groupId) {
+          let updated = { ...chat };
+          if (data.type === 'NAME_UPDATED') updated.title = data.data.name;
+          if (data.type === 'AVATAR_UPDATED') updated.avatar = data.data.avatarUrl;
+          return updated;
+        }
+        return chat;
+      }));
+    };
+
     socket.on("new_message", handleNewMessage);
     socket.on("message_read", handleMessageRead);
     socket.on("new_conversation", handleNewConversation);
     socket.on("group_message", handleNewMessage);
     socket.on("group_update", handleGroupUpdate);
     socket.on("conversation-updated", handleConversationUpdated);
+    socket.on('group:updated', handleGroupUpdated);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -328,6 +342,7 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
       socket.off("group_message", handleNewMessage);
       socket.off("group_update", handleGroupUpdate);
       socket.off("conversation-updated", handleConversationUpdated);
+      socket.off('group:updated', handleGroupUpdated);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [user, socket, fetchConversations, debouncedFetchConversations, formatTime]);
