@@ -675,17 +675,18 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
 
                 return (
                   <div
-                    key={member.userId}
+                  
                     className="group-member-item"
+                   
+                  >
+                    <div className="group-member-avatar"  key={member.userId}
                     onClick={() => {
                       if (member.userId === currentUser.userId) {
                         setShowSelfProfileModal(true);
                       } else {
                         handleShowMemberInfo(member);
                       }
-                    }}
-                  >
-                    <div className="group-member-avatar">
+                    }}>
                       <img 
                         src={member.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=random`}
                         alt={member.name}
@@ -696,7 +697,14 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
                       />
                     </div>
                     <div className="group-member-info">
-                      <div className="group-member-name">
+                      <div className="group-member-name" key={member.userId}
+                    onClick={() => {
+                      if (member.userId === currentUser.userId) {
+                        setShowSelfProfileModal(true);
+                      } else {
+                        handleShowMemberInfo(member);
+                      }
+                    }}>
                         {member.name}
                         {member.role === 'ADMIN' && (
                           <span className="group-admin-badge">
