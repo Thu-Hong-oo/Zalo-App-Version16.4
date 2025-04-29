@@ -411,7 +411,7 @@ const ChatDirectly = () => {
                     </div>
                   </div>
 
-                  {!isRecalled && (
+                  {/* {!isRecalled && (
                     <div className="message-actions">
                       <button
                         className="action-button forward"
@@ -424,13 +424,14 @@ const ChatDirectly = () => {
                         <button
                           className="action-button more"
                           onClick={(e) => handleContextMenu(e, msg)}
+                          onContextMenu={(e) => handleContextMenu(e, msg)}
                           title="Thêm"
                         >
                           <MoreHorizontal size={16} />
                         </button>
                       )}
                     </div>
-                  )}
+                  )} */}
                 </div>
               );
             })}
