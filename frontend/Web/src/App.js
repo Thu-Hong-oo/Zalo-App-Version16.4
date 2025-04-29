@@ -24,7 +24,6 @@ import { store } from './redux/store';
 import { useDispatch, useSelector } from 'react-redux';
 import { updateGroup, updateGroupMembers, removeGroup } from './redux/slices/groupSlice';
 import { setUser, updateUserAvatar, updateUserProfile, updateUserStatus } from './redux/slices/userSlice';
-
 import { io } from "socket.io-client";
 import { getSocketUrl } from "./config/api";
 import Login from "./components/Login"
@@ -220,27 +219,28 @@ function MainApp({ setIsAuthenticated }) {
         <div className="sidebar">
           <div className="sidebar-top">
             <div className="user-profile">
-              <div>
-                <img
-                  src={reduxUser?.avatar || '/default-avatar.png'}
-                  alt={reduxUser?.name || "User"}
-                  className="avatar"
-                  title={reduxUser?.name || "User"}
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(reduxUser?.name || "User")}&background=random`;
-                  }}
-                  style={{
-                    width: "48px",
-                    height: "48px",
-                    borderRadius: "50%",
-                    objectFit: "cover"
-                  }}
-                />
-                {reduxUser?.status === "online" && (
+            
+                <button
+                  className="profile-avatar-btn"
+                  onClick={() => setShowSelfProfileModal(true)}
+                 
+                >
+                  <img
+                    src={reduxUser?.avatar || '/default-avatar.png'}
+                    alt={reduxUser?.name || "User"}
+                    className="avatar-sidebar"
+                    title={reduxUser?.name || "User"}
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(reduxUser?.name || "User")}&background=random`;
+                    }}
+                  />
+                 {reduxUser?.status === "online" && (
                   <span className="status-badge"></span>
                 )}
-              </div>
+                </button>
+               
+            
             </div>
             <div className="nav-items">
               <button
@@ -369,12 +369,12 @@ function MainApp({ setIsAuthenticated }) {
             onClose={() => setShowAddFriendModal(false)}
           />
         )}
-          {showSelfProfileModal && (
-        <SelfProfileModal
-          onClose={() => setShowSelfProfileModal(false)}
-          userId={user.userId}
-        />
-      )}
+        {showSelfProfileModal && (
+          <SelfProfileModal
+            onClose={() => setShowSelfProfileModal(false)}
+            userId={user.userId}
+          />
+        )}
 
         {/* Modals */}
         <CreateGroupModal
