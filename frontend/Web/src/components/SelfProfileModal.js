@@ -38,9 +38,11 @@ const SelfProfileModal = ({ onClose, userId }) => {
   };
 
   const handleAvatarChange = (e) => {
-    if (e.target.files[0]) {
+    if (e.target.files && e.target.files[0]) {
       setAvatarFile(e.target.files[0]);
       setForm({ ...form, avatar: URL.createObjectURL(e.target.files[0]) });
+      // Thêm log để debug
+      console.log("Chọn file:", e.target.files[0]);
     }
   };
   const handleCoverChange = (e) => {
@@ -54,24 +56,41 @@ const SelfProfileModal = ({ onClose, userId }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      // Update avatar if changed
       if (avatarFile) {
         const fd = new FormData();
         fd.append('avatar', avatarFile);
-        await api.post('/users/avatar', fd);
+        // Thêm log để debug
+        for (let pair of fd.entries()) {
+          console.log(pair[0]+ ', ' + pair[1]);
+        }
+        const res = await api.post('/users/avatar', fd,{
+          headers: {
+            'Content-Type': 'multipart/form-data'
+          }
+        });
+        // Sau khi upload thành công, cập nhật localStorage và Redux
+        if (res.data && res.data.avatarUrl) {
+          // Cập nhật localStorage
+          const userLS = JSON.parse(localStorage.getItem('user'));
+          if (userLS && userLS.userId === userId) {
+            userLS.avatar = res.data.avatarUrl;
+            localStorage.setItem('user', JSON.stringify(userLS));
+            // Dispatch Redux
+            if (window.store && window.store.dispatch) {
+              window.store.dispatch({ type: 'user/updateUserAvatar', payload: res.data.avatarUrl });
+            }
+          }
+        }
       }
-      // Update cover if changed 
-      // ...
-      // Update profile
-      await api.put('/users/profile', {
-        name: form.name,
-        gender: form.gender,
-        dateOfBirth: form.dateOfBirth,
-      });
+      // ... update profile ...
       setEditMode(false);
       window.location.reload();
     } catch (err) {
-      alert('Cập nhật thất bại!');
+      let msg = 'Cập nhật thất bại!';
+      if (err.response && err.response.data && err.response.data.message) {
+        msg += '\\n' + err.response.data.message;
+      }
+      alert(msg);
     } finally {
       setLoading(false);
     }
@@ -91,9 +110,9 @@ const SelfProfileModal = ({ onClose, userId }) => {
           <div style={{position: 'relative'}}>
             <img className="avatar-member-infor" src={form.avatar || '/default-avatar.png'} alt={form.name} />
             {editMode && (
-              <label htmlFor="avatar-input" className="edit-avatar-btn" style={{position: 'absolute', bottom: 0, right: 0, background: '#fff', borderRadius: '50%', padding: 8, cursor: 'pointer', border: '1px solid #eee'}}>
+              <label htmlFor="self-avatar-input" className="edit-avatar-btn" style={{position: 'absolute', bottom: 0, right: 0, background: '#fff', borderRadius: '50%', padding: 8, cursor: 'pointer', border: '1px solid #eee'}}>
                 <Camera size={18} />
-                <input id="avatar-input" type="file" accept="image/*" style={{display: 'none'}} onChange={handleAvatarChange} />
+                <input id="self-avatar-input" type="file" accept="image/*" style={{display: 'none'}} onChange={handleAvatarChange} />
               </label>
             )}
           </div>

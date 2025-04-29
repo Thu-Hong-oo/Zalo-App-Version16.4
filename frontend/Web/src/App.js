@@ -21,8 +21,9 @@ import "bootstrap/dist/css/bootstrap.min.css"
 import "./App.css"
 import { Provider } from 'react-redux';
 import { store } from './redux/store';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { updateGroup, updateGroupMembers, removeGroup } from './redux/slices/groupSlice';
+import { setUser, updateUserAvatar, updateUserProfile, updateUserStatus } from './redux/slices/userSlice';
 
 import { io } from "socket.io-client";
 import { getSocketUrl } from "./config/api";
@@ -35,7 +36,7 @@ import FriendRequests from "./components/FriendRequests";
 import AddFriendModal from "./components/AddFriendModal";
 import CreateGroupModal from "./components/CreateGroupModal";
 import ChatList from "./components/ChatList";
-import GroupSidebar from "./components/GroupSidebar";
+import SelfProfileModal from "./components/SelfProfileModal";
 
 // Tạo context cho socket
 export const SocketContext = createContext(null);
@@ -55,17 +56,19 @@ const debounce = (func, wait) => {
 
 function MainApp({ setIsAuthenticated }) {
   const [currentSlide, setCurrentSlide] = useState(0)
-  const [user, setUser] = useState(null)
+  const [user, setUserState] = useState(null)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [sidebarTab, setSidebarTab] = useState("chat"); // mặc định là chat
   const [showAddFriendModal, setShowAddFriendModal] = useState(false);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
-  const [groups, setGroups] = useState([]);
   const [socket, setSocket] = useState(null);
   const [selectedChat, setSelectedChat] = useState(null);
+  const [showSelfProfileModal, setShowSelfProfileModal] = useState(false);
 
   const navigate = useNavigate()
   const dispatch = useDispatch();
+  const reduxUser = useSelector(state => state.user);
+
 
   // Khởi tạo socket khi đăng nhập
   useEffect(() => {
@@ -86,12 +89,54 @@ function MainApp({ setIsAuthenticated }) {
     if (userStr) {
       try {
         const userData = JSON.parse(userStr);
-        setUser(userData);
+        console.log("userData", userData);
+        setUserState(userData);
+        dispatch(setUser(userData));
       } catch (err) {
         console.error("Error parsing user data:", err);
       }
     }
-  }, []);
+  }, [dispatch]);
+
+  // Tích hợp socket realtime user update
+  useEffect(() => {
+    if (!socket || !reduxUser?.userId) return;
+    // Join vào room riêng
+    socket.emit('join', `user:${reduxUser.userId}`);
+    // Avatar update
+    socket.on('user:avatar_updated', (data) => {
+      dispatch(updateUserAvatar(data.avatarUrl));
+      // Update localStorage
+      const userLS = JSON.parse(localStorage.getItem('user'));
+      if (userLS) {
+        userLS.avatar = data.avatarUrl;
+        localStorage.setItem('user', JSON.stringify(userLS));
+      }
+    });
+    // Profile update
+    socket.on('user:profile_updated', (data) => {
+      dispatch(updateUserProfile(data));
+      const userLS = JSON.parse(localStorage.getItem('user'));
+      if (userLS) {
+        Object.assign(userLS, data);
+        localStorage.setItem('user', JSON.stringify(userLS));
+      }
+    });
+    // Status update
+    socket.on('user:status_updated', (data) => {
+      dispatch(updateUserStatus(data.status));
+      const userLS = JSON.parse(localStorage.getItem('user'));
+      if (userLS) {
+        userLS.status = data.status;
+        localStorage.setItem('user', JSON.stringify(userLS));
+      }
+    });
+    return () => {
+      socket.off('user:avatar_updated');
+      socket.off('user:profile_updated');
+      socket.off('user:status_updated');
+    };
+  }, [socket, reduxUser?.userId, dispatch]);
 
   // Lắng nghe tất cả các event nhóm và dispatch redux
   useEffect(() => {
@@ -177,13 +222,13 @@ function MainApp({ setIsAuthenticated }) {
             <div className="user-profile">
               <div>
                 <img
-                  src={user?.avatar}
-                  alt={user?.name || "User"}
+                  src={reduxUser?.avatar || '/default-avatar.png'}
+                  alt={reduxUser?.name || "User"}
                   className="avatar"
-                  title={user?.name || "User"}
+                  title={reduxUser?.name || "User"}
                   onError={(e) => {
                     e.target.onerror = null;
-                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || "User")}&background=random`;
+                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(reduxUser?.name || "User")}&background=random`;
                   }}
                   style={{
                     width: "48px",
@@ -192,7 +237,7 @@ function MainApp({ setIsAuthenticated }) {
                     objectFit: "cover"
                   }}
                 />
-                {user?.status === "online" && (
+                {reduxUser?.status === "online" && (
                   <span className="status-badge"></span>
                 )}
               </div>
@@ -235,7 +280,7 @@ function MainApp({ setIsAuthenticated }) {
               <Settings size={24} />
               {showProfileMenu && (
                 <div className="profile-menu">
-                  <button className="menu-item">
+                  <button className="menu-item" onClick={() => setShowSelfProfileModal(true)}>
                     <User size={16} />
                     Thông tin tài khoản
                   </button>
@@ -324,6 +369,12 @@ function MainApp({ setIsAuthenticated }) {
             onClose={() => setShowAddFriendModal(false)}
           />
         )}
+          {showSelfProfileModal && (
+        <SelfProfileModal
+          onClose={() => setShowSelfProfileModal(false)}
+          userId={user.userId}
+        />
+      )}
 
         {/* Modals */}
         <CreateGroupModal
@@ -332,10 +383,10 @@ function MainApp({ setIsAuthenticated }) {
           onGroupCreated={null} // Xử lý group mới sẽ do ChatList quản lý
         />
 
-        <GroupSidebar
+        {/* <GroupSidebar
           isOpen={showProfileMenu}
           onClose={() => setShowProfileMenu(false)}
-        />
+        /> */}
 
       </div>
     </SocketContext.Provider>

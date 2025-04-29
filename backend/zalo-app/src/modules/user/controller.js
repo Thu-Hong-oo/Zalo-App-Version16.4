@@ -7,8 +7,8 @@ const winston = require('winston');
 const path = require('path');
 const fs = require('fs');
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { 
-    DynamoDBDocumentClient, 
+const {
+    DynamoDBDocumentClient,
     QueryCommand,
     GetCommand,
     ScanCommand
@@ -21,6 +21,11 @@ const dynamodb = DynamoDBDocumentClient.from(client);
 
 // Define updateAvatar function separately
 const updateAvatar = async (req, res) => {
+
+    console.log('--- Nhận request upload avatar ---');
+    console.log('req.headers:', req.headers);
+    console.log('req.body:', req.body);
+    console.log('req.file:', req.file);
     try {
         if (!req.file) {
             return res.status(400).json({
@@ -30,7 +35,7 @@ const updateAvatar = async (req, res) => {
         }
 
         const { phone } = req.user;
-        
+
         // Get current user
         const currentUser = await User.getByPhone(phone);
         if (!currentUser) {
@@ -57,8 +62,8 @@ const updateAvatar = async (req, res) => {
         console.log('S3 upload result:', s3Response);
 
         // Cập nhật avatar mới trong database
-        const updatedUser = await User.update(currentUser.userId, { 
-            avatar: s3Response.Location 
+        const updatedUser = await User.update(currentUser.userId, {
+            avatar: s3Response.Location
         });
 
         if (!updatedUser) {
@@ -68,6 +73,14 @@ const updateAvatar = async (req, res) => {
             });
         }
 
+        // PHÁT SOCKET.IO
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`user:${currentUser.userId}`).emit('user:avatar_updated', {
+                userId: currentUser.userId,
+                avatarUrl: s3Response.Location
+            });
+        }
         return res.json({
             status: 'success',
             message: 'Cập nhật avatar thành công',
@@ -76,7 +89,7 @@ const updateAvatar = async (req, res) => {
     } catch (error) {
         console.error('Update avatar error:', error);
         return res.status(500).json({
-            status: 'error', 
+            status: 'error',
             message: 'Lỗi khi cập nhật avatar',
             error: error.message
         });
@@ -87,7 +100,7 @@ const getProfile = async (req, res) => {
     try {
         const { phone } = req.user;
         const user = await User.getByPhone(phone);
-        
+
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
@@ -138,7 +151,18 @@ const updateProfile = async (req, res) => {
         delete userResponse.password;
         delete userResponse.phone;
 
-        res.json(userResponse);
+        // PHÁT SOCKET.IO
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`user:${currentUser.userId}`).emit('user:profile_updated', {
+                userId: currentUser.userId,
+                name: updatedUser.name,
+                gender: updatedUser.gender,
+                dateOfBirth: updatedUser.dateOfBirth,
+                phone: updatedUser.phone
+            });
+        }
+        return res.json(userResponse);
     } catch (error) {
         console.error('Error updating profile:', error);
         res.status(500).json({ message: error.message });
@@ -153,7 +177,7 @@ const searchUsers = async (req, res) => {
         }
 
         const users = await User.searchUsers(query);
-        
+
         // Remove passwords from results
         const usersWithoutPasswords = users.map(user => {
             const { password, ...userWithoutPassword } = user;
@@ -185,7 +209,7 @@ const getUserByPhone = async (req, res) => {
 const getUserByUserId = async (req, res) => {
     try {
         const userId = req.params?.userId;
-        
+
         if (!userId) {
             return res.status(400).json({ message: 'User ID is required' });
         }
@@ -209,12 +233,12 @@ const getUserByUserId = async (req, res) => {
 
         // Remove sensitive information
         const { password, ...userWithoutPassword } = user;
-        
+
         // Check if this is an internal call (from other services)
         if (!res || typeof res.json !== 'function') {
             return userWithoutPassword;
         }
-        
+
         // If it's a regular API call
         res.json(userWithoutPassword);
     } catch (error) {
@@ -232,18 +256,18 @@ const updateStatus = async (req, res) => {
         const { status } = req.body;
 
         if (!status) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 status: 'error',
-                message: 'Status is required' 
+                message: 'Status is required'
             });
         }
 
         // Get current user first
         const currentUser = await User.getByPhone(phone);
         if (!currentUser) {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 status: 'error',
-                message: 'User not found' 
+                message: 'User not found'
             });
         }
 
@@ -251,12 +275,20 @@ const updateStatus = async (req, res) => {
         const updatedUser = await User.update(currentUser.userId, { status });
 
         if (!updatedUser) {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 status: 'error',
-                message: 'User not found' 
+                message: 'User not found'
             });
         }
 
+        // PHÁT SOCKET.IO
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`user:${currentUser.userId}`).emit('user:status_updated', {
+                userId: currentUser.userId,
+                status: updatedUser.status
+            });
+        }
         return res.json({
             status: 'success',
             message: 'Status updated successfully',
@@ -333,7 +365,7 @@ const changePassword = async (req, res) => {
 const getUserGroups = async (req, res) => {
     try {
         const { userId } = req.params;
-        
+
         // Query group members table to get all groups for this user
         const params = {
             TableName: 'group_members-zalolite',
@@ -347,7 +379,7 @@ const getUserGroups = async (req, res) => {
         };
 
         const result = await dynamodb.send(new QueryCommand(params));
-        
+
         if (!result.Items || result.Items.length === 0) {
             return res.json({ groups: [] });
         }
@@ -375,7 +407,7 @@ const getUserGroups = async (req, res) => {
         });
 
         const groups = (await Promise.all(groupPromises)).filter(group => group !== null);
-        
+
         // Sort groups by lastMessageTime if available
         groups.sort((a, b) => {
             const timeA = a.lastMessageTime || a.createdAt;
@@ -455,16 +487,16 @@ const getRecentContacts = async (req, res) => {
                 return timeB - timeA;
             });
 
-        res.json({ 
+        res.json({
             success: true,
-            contacts 
+            contacts
         });
     } catch (error) {
         console.error('Error getting recent contacts:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
             message: 'Error getting recent contacts',
-            error: error.message 
+            error: error.message
         });
     }
 };
