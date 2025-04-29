@@ -973,11 +973,15 @@ const ChatDirectly = () => {
   };
 
   const handleForwardMessage = async (selectedUsers) => {
+    // Log từng receiverPhone để kiểm tra kiểu dữ liệu
+    selectedUsers.forEach((receiverPhone, idx) => {
+      console.log(`receiverPhone[${idx}]:`, receiverPhone, 'type:', typeof receiverPhone);
+    });
     try {
       const promises = selectedUsers.map((receiverPhone) =>
         api.post("/chat/messages/forward", {
           messageId: forwardModal.messageId,
-          receiverPhone,
+          receiverPhone:receiverPhone.id,
           content: forwardModal.messageContent,
         })
       );
