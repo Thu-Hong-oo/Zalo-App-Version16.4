@@ -8,6 +8,7 @@ import { SocketContext } from '../App';
 import { useDispatch, useSelector } from 'react-redux';
 import { setSelectedGroup, updateGroupName, updateGroupAvatar, updateGroupMembers, updateGroup, removeGroup } from '../redux/slices/groupSlice';
 import MemberInfoModal from './MemberInfoModal';
+import SelfProfileModal from './SelfProfileModal';
 
 const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates }) => {
   const navigate = useNavigate();
@@ -45,6 +46,7 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
   const [memberToRemove, setMemberToRemove] = useState(null);
   const [selectedMemberInfo, setSelectedMemberInfo] = useState(null);
   const [commonGroups, setCommonGroups] = useState(0);
+  const [showSelfProfileModal, setShowSelfProfileModal] = useState(false);
 
   const socket = useContext(SocketContext);
   const dispatch = useDispatch();
@@ -501,6 +503,31 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
     }
   };
 
+  const handleShowMemberInfo = async (member) => {
+    try {
+      const res = await api.get(`/users/byId/${member.userId}`);
+      const userInfo = res.data;
+      setSelectedMemberInfo({
+        ...member,
+        ...userInfo,
+      });
+      // Gọi API lấy số nhóm chung như cũ
+      try {
+        const userGroups = await api.get(`/users/${member.userId}/groups`);
+        const myGroups = await api.get(`/users/${currentUser.userId}/groups`);
+        const common = userGroups.data.groups.filter(g1 =>
+          myGroups.data.groups.some(g2 => g2.groupId === g1.groupId)
+        );
+        setCommonGroups(common.length);
+      } catch (e) {
+        setCommonGroups(0);
+      }
+    } catch (e) {
+      setSelectedMemberInfo(member);
+      setCommonGroups(0);
+    }
+  };
+
   return (
     <div className={`group-sidebar ${!isOpen ? 'hidden' : ''}`}>
       {!showMembersList ? (
@@ -530,7 +557,7 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
                   </div>
                 )}
                 <label className="edit-avatar" htmlFor="avatar-input">
-                  <Camera size={16} color="#fff" />
+                  <Camera size={16} color="black" />
                   <input
                     type="file"
                     id="avatar-input"
@@ -650,18 +677,11 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
                   <div
                     key={member.userId}
                     className="group-member-item"
-                    onClick={async () => {
-                      setSelectedMemberInfo(member);
-                      // Gọi API lấy số nhóm chung
-                      try {
-                        const userGroups = await api.get(`/users/${member.userId}/groups`);
-                        const myGroups = await api.get(`/users/${currentUser.userId}/groups`);
-                        const common = userGroups.data.groups.filter(g1 =>
-                          myGroups.data.groups.some(g2 => g2.groupId === g1.groupId)
-                        );
-                        setCommonGroups(common.length);
-                      } catch (e) {
-                        setCommonGroups(0);
+                    onClick={() => {
+                      if (member.userId === currentUser.userId) {
+                        setShowSelfProfileModal(true);
+                      } else {
+                        handleShowMemberInfo(member);
                       }
                     }}
                   >
@@ -1034,6 +1054,13 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
             navigate(`/app/chat/${member.phone || member.userId}`);
             setSelectedMemberInfo(null);
           }}
+        />
+      )}
+
+      {showSelfProfileModal && (
+        <SelfProfileModal
+          onClose={() => setShowSelfProfileModal(false)}
+          userId={currentUser.userId}
         />
       )}
     </div>

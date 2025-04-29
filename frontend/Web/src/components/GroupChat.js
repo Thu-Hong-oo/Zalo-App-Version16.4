@@ -51,7 +51,7 @@ import {
 import "./css/GroupChat.css";
 import api, { getBaseUrl, getApiUrl } from "../config/api";
 import { useDispatch, useSelector } from 'react-redux';
-import { setSelectedGroup, updateGroup, updateGroupName, updateGroupAvatar } from '../redux/slices/groupSlice';
+import { setSelectedGroup, updateGroup, updateGroupName, updateGroupAvatar,removeGroup } from '../redux/slices/groupSlice';
 import ForwardMessageModal from "./ForwardMessageModal";
 
 const GroupChat = ({ selectedChat }) => {
@@ -1029,6 +1029,23 @@ const GroupChat = ({ selectedChat }) => {
       socket.off('group:updated', handleGroupUpdated);
     };
   }, [socket, groupId]);
+
+  useEffect(() => {
+    if (!socket || !groupId) return;
+
+    // Lắng nghe event giải tán nhóm
+    const handleGroupDissolved = (dissolvedGroupId) => {
+      if (dissolvedGroupId === groupId) {
+        dispatch(removeGroup(groupId)); // <--- dispatch action xóa group
+        navigate('/app');
+      }
+    };
+    socket.on('group:dissolved', handleGroupDissolved);
+
+    return () => {
+      socket.off('group:dissolved', handleGroupDissolved);
+    };
+  }, [socket, groupId, dispatch, navigate]);
 
   if (loading) {
     return <div className="loading">Đang tải...</div>;

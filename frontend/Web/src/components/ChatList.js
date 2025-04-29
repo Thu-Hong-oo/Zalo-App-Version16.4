@@ -171,6 +171,12 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
         setChats(allChats);
         dispatch(setGroups(groupChats));
         setError(null);
+        // Sau khi lấy danh sách group, join vào từng group room qua socket
+        if (socket && groupChats && groupChats.length > 0) {
+          groupChats.forEach(group => {
+            socket.emit('join-group', group.id);
+          });
+        }
       } else {
         setError("Invalid response format from server");
       }
@@ -319,6 +325,14 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
         return chat;
       }));
     };
+    const handleGroupDissolved = (dissolvedGroupId) => {
+      console.log('Nhận event group:dissolved:', dissolvedGroupId);
+      setChats(prevChats => prevChats.filter(chat => !(chat.type === 'group' && chat.id === dissolvedGroupId)));
+      if (selectedChat === dissolvedGroupId) {
+        setSelectedChat(null);
+        navigate('/app');
+      }
+    };
 
     socket.on("new_message", handleNewMessage);
     socket.on("message_read", handleMessageRead);
@@ -327,6 +341,8 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
     socket.on("group_update", handleGroupUpdate);
     socket.on("conversation-updated", handleConversationUpdated);
     socket.on('group:updated', handleGroupUpdated);
+    socket.on('group:dissolved', handleGroupDissolved);
+ 
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -343,6 +359,7 @@ function ChatList({ user, setShowAddFriendModal, setShowCreateGroupModal, socket
       socket.off("group_update", handleGroupUpdate);
       socket.off("conversation-updated", handleConversationUpdated);
       socket.off('group:updated', handleGroupUpdated);
+      socket.off('group:dissolved', handleGroupDissolved);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [user, socket, fetchConversations, debouncedFetchConversations, formatTime]);
