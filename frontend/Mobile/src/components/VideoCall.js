@@ -1,4 +1,3 @@
-// VideoCallMobile.js
 import React, { useEffect, useRef, useState, useContext } from 'react';
 import {
   View,
@@ -14,24 +13,12 @@ import {
   RTCIceCandidate,
   RTCSessionDescription,
   mediaDevices,
-  MediaStream,
-  MediaStreamTrack,
-  RTCView,
-  registerGlobals
 } from 'react-native-webrtc';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import { AuthContext } from '../App';
-import io from 'socket.io-client';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import api, { getBaseUrl } from '../config/api';
+import { SocketContext } from '../context/SocketContext';
 
-const VideoCallScreen = () => {
-  const navigation = useNavigation();
-  const route = useRoute();
-  const { receiverPhone, receiverName } = route.params;
-  const { user } = useContext(AuthContext);
-  
+const VideoCall = ({ receiverPhone, receiverName, onEndCall }) => {
+  const socket = useContext(SocketContext);
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
@@ -39,105 +26,13 @@ const VideoCallScreen = () => {
   const [error, setError] = useState(null);
 
   const peerConnection = useRef(null);
-  const socket = useRef(null);
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
 
   useEffect(() => {
-    // Register WebRTC globals
-    registerGlobals();
-
-    const initializeSocket = async () => {
-      try {
-        // Lấy token từ AsyncStorage
-        const token = await AsyncStorage.getItem('accessToken');
-        console.log('Token exists:', !!token);
-        
-        if (!token) {
-          throw new Error('No authentication token found');
-        }
-
-        // Initialize socket connection
-        socket.current = io(getBaseUrl(), {
-          transports: ['websocket', 'polling'],
-          reconnection: true,
-          reconnectionAttempts: 5,
-          reconnectionDelay: 1000,
-          timeout: 60000,
-          auth: {
-            token: token // Server sẽ tự động xử lý Bearer prefix
-          }
-        });
-        
-        // Log all socket events for debugging
-        socket.current.onAny((event, ...args) => {
-          console.log('Socket Event:', event, args);
-        });
-        
-        socket.current.on('connect', () => {
-          console.log('Socket connected with ID:', socket.current.id);
-          console.log('User info:', user);
-          
-          // Join call room
-          const roomId = `${user?.id}_${receiverPhone}`;
-          socket.current.emit('join-call-room', roomId);
-          
-          // Initialize call after socket connection
-          initializeCall();
-        });
-
-        socket.current.on('connect_error', (error) => {
-          console.error('Socket connection error:', error);
-          setError('Connection failed: ' + error.message);
-        });
-
-        socket.current.on('error', (data) => {
-          console.error('Socket error:', data);
-          setError(data.message || 'An error occurred');
-        });
-
-        socket.current.on('video-call-answer', async (data) => {
-          try {
-            if (peerConnection.current && data.answer) {
-              const answer = new RTCSessionDescription(data.answer);
-              await peerConnection.current.setRemoteDescription(answer);
-              console.log('Remote description set successfully');
-            }
-          } catch (err) {
-            console.error('Error setting remote description:', err);
-            setError('Failed to establish peer connection');
-          }
-        });
-
-        socket.current.on('ice-candidate', async (data) => {
-          try {
-            if (peerConnection.current && data.candidate) {
-              await peerConnection.current.addIceCandidate(
-                new RTCIceCandidate(data.candidate)
-              );
-              console.log('Added ICE candidate successfully');
-            }
-          } catch (err) {
-            console.error('Error adding received ICE candidate:', err);
-          }
-        });
-
-        socket.current.on('video-call-ended', () => {
-          cleanup();
-          navigation.goBack();
-        });
-
-      } catch (err) {
-        console.error('Socket initialization error:', err);
-        setError('Failed to initialize video call: ' + err.message);
-      }
-    };
-
-    initializeSocket();
-
+    initializeCall();
     return () => {
       cleanup();
-      if (socket.current) {
-        socket.current.disconnect();
-      }
     };
   }, []);
 
@@ -157,34 +52,35 @@ const VideoCallScreen = () => {
         }
       }
 
-      // Initialize WebRTC
+      // Get local media stream
+      const stream = await mediaDevices.getUserMedia({
+        audio: true,
+        video: {
+          mandatory: {
+            minWidth: 640,
+            minHeight: 480,
+            minFrameRate: 30,
+          },
+          facingMode: 'user',
+          optional: [{ sourceId: 'default' }],
+        },
+      });
+
+      setLocalStream(stream);
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+
+      // Create peer connection
       const configuration = {
         iceServers: [
           {
             urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'],
           },
         ],
-        iceCandidatePoolSize: 10,
       };
 
       peerConnection.current = new RTCPeerConnection(configuration);
-
-      // Get local media stream
-      const stream = await mediaDevices.getUserMedia({
-        audio: true,
-        video: {
-          width: 640,
-          height: 480,
-          frameRate: 30,
-          facingMode: 'user',
-        },
-      });
-
-      if (!stream) {
-        throw new Error('Failed to get local media stream');
-      }
-
-      setLocalStream(stream);
 
       // Add local stream to peer connection
       stream.getTracks().forEach((track) => {
@@ -193,15 +89,16 @@ const VideoCallScreen = () => {
 
       // Handle remote stream
       peerConnection.current.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          setRemoteStream(event.streams[0]);
+        setRemoteStream(event.streams[0]);
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = event.streams[0];
         }
       };
 
       // Handle ICE candidates
       peerConnection.current.onicecandidate = (event) => {
         if (event.candidate) {
-          socket.current.emit('ice-candidate', {
+          socket.emit('ice-candidate', {
             receiverPhone,
             candidate: event.candidate,
           });
@@ -211,17 +108,37 @@ const VideoCallScreen = () => {
       // Create and send offer
       const offer = await peerConnection.current.createOffer();
       await peerConnection.current.setLocalDescription(offer);
-      
-      // Only emit offer after peer connection is fully set up
-      if (socket.current) {
-        console.log('Sending video call offer with description:', offer);
-        socket.current.emit('video-call-offer', {
-          receiverPhone,
-          offer: offer // Send the actual offer instead of accessing localDescription
-        });
-      } else {
-        throw new Error('Socket connection not established');
-      }
+      socket.emit('video-call-offer', {
+        receiverPhone,
+        offer: peerConnection.current.localDescription,
+      });
+
+      // Set up socket listeners
+      socket.on('video-call-answer', async (data) => {
+        try {
+          await peerConnection.current.setRemoteDescription(
+            new RTCSessionDescription(data.answer)
+          );
+        } catch (error) {
+          console.error('Error setting remote description:', error);
+          setError('Failed to establish connection');
+        }
+      });
+
+      socket.on('ice-candidate', async (data) => {
+        try {
+          await peerConnection.current.addIceCandidate(
+            new RTCIceCandidate(data.candidate)
+          );
+        } catch (error) {
+          console.error('Error adding ICE candidate:', error);
+        }
+      });
+
+      socket.on('video-call-ended', () => {
+        cleanup();
+        onEndCall();
+      });
 
     } catch (error) {
       console.error('Error initializing call:', error);
@@ -236,9 +153,7 @@ const VideoCallScreen = () => {
     if (peerConnection.current) {
       peerConnection.current.close();
     }
-    if (socket.current) {
-      socket.current.emit('end-video-call', { receiverPhone });
-    }
+    socket.emit('end-video-call', { receiverPhone });
   };
 
   const toggleMute = () => {
@@ -261,14 +176,14 @@ const VideoCallScreen = () => {
 
   const handleEndCall = () => {
     cleanup();
-    navigation.goBack();
+    onEndCall();
   };
 
   if (error) {
     return (
       <View style={styles.errorContainer}>
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.errorButton} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.errorButton} onPress={onEndCall}>
           <Text style={styles.errorButtonText}>Close</Text>
         </TouchableOpacity>
       </View>
@@ -280,18 +195,18 @@ const VideoCallScreen = () => {
       <View style={styles.videoContainer}>
         {remoteStream && (
           <RTCView
+            ref={remoteVideoRef}
             streamURL={remoteStream.toURL()}
             style={styles.remoteVideo}
             objectFit="cover"
-            zOrder={0}
           />
         )}
         {localStream && (
           <RTCView
+            ref={localVideoRef}
             streamURL={localStream.toURL()}
             style={styles.localVideo}
             objectFit="cover"
-            zOrder={1}
           />
         )}
       </View>
@@ -403,4 +318,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default VideoCallScreen;
+export default VideoCall; 

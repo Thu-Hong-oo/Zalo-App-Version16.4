@@ -35,6 +35,8 @@ import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import ForwardMessageModal from "./ForwardMessageModal";
 import { getApiUrl, getBaseUrl, api } from "../config/api";
+import { Icon } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -401,17 +403,10 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         };
 
         setMessages((prev) => {
-          const updatedMessages = [...prev];
-          const today = formatDate(Date.now());
-
-          // Chỉ thêm tin nhắn mới vào ngày hôm nay
-          if (!visibleDates.includes(today)) {
-            setVisibleDates((prevDates) => [...prevDates, today]);
-          }
-
-          return [...updatedMessages, newMessage].sort(
+          const updatedMessages = [...prev, newMessage].sort(
             (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
           );
+          return updatedMessages;
         });
 
         setMessage("");
@@ -1014,10 +1009,29 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1877f2" />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{title}</Text>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{title}</Text>
+        </View>
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={() => navigation.navigate('VideoCall', {
+              receiverPhone: otherParticipantPhone,
+              receiverName: title
+            })}
+          >
+            <Ionicons name="videocam" size={24} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerButton}>
+            <Ionicons name="search" size={24} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerButton}>
+            <Ionicons name="menu" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
       </View>
       <KeyboardAvoidingView
         style={styles.keyboardAvoidingView}
@@ -1286,12 +1300,25 @@ const styles = StyleSheet.create({
     padding: 10,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+  },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   headerTitle: {
     color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "bold",
     marginLeft: 10,
+  },
+  headerButton: {
+    padding: 8,
+    marginLeft: 4,
   },
   chatContainer: {
     flex: 1,

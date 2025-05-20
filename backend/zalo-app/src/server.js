@@ -7,6 +7,8 @@ const multer = require("multer");
 const path = require("path");
 const { createServer } = require("http");
 const { Server } = require("socket.io");
+const jwt = require('jsonwebtoken');
+const videoCallService = require('./modules/videoCall/videoCall.service');
 
 const PORT = process.env.PORT;
 
@@ -97,6 +99,29 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/chat-group", chatGroupRoutes);
 
 // Socket.IO Video Call Events
+
+// Socket authentication middleware
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+      return next(new Error('Authentication error - No token provided'));
+    }
+
+    // Remove 'Bearer ' prefix if exists
+    const tokenString = token.startsWith('Bearer ') ? token.slice(7) : token;
+
+    // Verify token
+    const decoded = jwt.verify(tokenString, process.env.JWT_SECRET);
+    socket.user = decoded;
+    console.log('Socket authenticated for user:', decoded);
+    next();
+  } catch (err) {
+    console.error('Socket authentication error:', err);
+    next(new Error('Authentication error - Invalid token'));
+  }
+});
+
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
@@ -110,7 +135,7 @@ io.on('connection', (socket) => {
   socket.on('video-call-offer', async (data) => {
     try {
       const { receiverPhone, offer } = data;
-      const callerId = socket.id;
+      const callerId = socket.user.userId; // Use authenticated user ID
 
       // Tạo cuộc gọi mới trong database
       const call = await videoCallService.createCall(callerId, receiverPhone, 'video');
