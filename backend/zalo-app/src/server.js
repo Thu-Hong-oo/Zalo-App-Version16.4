@@ -15,7 +15,8 @@ const authRoutes = require("./modules/auth/routes");
 const userRoutes = require("./modules/user/routes");
 const groupRoutes = require("./modules/group/group.route");
 const friendRoutes = require("./modules/friend/routes");
-const conversationRoutes = require("./modules/conversation/routes"); // ✅ thêm dòng này
+const conversationRoutes = require("./modules/conversation/routes");
+const videoCallRoutes = require("./modules/videoCall/videoCall.route");
 const {
   routes: chatGroupRoutes,
   socket: initializeChatGroupSocket,
@@ -90,8 +91,91 @@ app.use("/api/users", userRoutes);
 // app.use("/api", gatewayRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/friends", friendRoutes);
+app.use("/api/conversations", conversationRoutes);
+app.use("/api/video-call", videoCallRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/chat-group", chatGroupRoutes);
+
+// Socket.IO Video Call Events
+io.on('connection', (socket) => {
+  console.log('User connected:', socket.id);
+
+  // Join room for video call
+  socket.on('join-call-room', (callId) => {
+    socket.join(callId);
+    console.log(`User ${socket.id} joined call room: ${callId}`);
+  });
+
+  // Handle WebRTC signaling
+  socket.on('video-call-offer', async (data) => {
+    try {
+      const { receiverPhone, offer } = data;
+      const callerId = socket.id;
+
+      // Tạo cuộc gọi mới trong database
+      const call = await videoCallService.createCall(callerId, receiverPhone, 'video');
+
+      // Gửi offer đến người nhận
+      socket.to(receiverPhone).emit('video-call-offer', {
+        offer,
+        callerId,
+        callId: call._id
+      });
+    } catch (error) {
+      console.error('Error handling video call offer:', error);
+      socket.emit('error', { message: 'Failed to initiate video call' });
+    }
+  });
+
+  socket.on('video-call-answer', async (data) => {
+    try {
+      const { callerId, answer, callId } = data;
+      
+      // Cập nhật trạng thái cuộc gọi
+      await videoCallService.updateCallStatus(callId, 'active');
+
+      // Gửi answer đến người gọi
+      socket.to(callerId).emit('video-call-answer', {
+        answer,
+        callId
+      });
+    } catch (error) {
+      console.error('Error handling video call answer:', error);
+      socket.emit('error', { message: 'Failed to handle video call answer' });
+    }
+  });
+
+  socket.on('ice-candidate', (data) => {
+    const { receiverPhone, candidate } = data;
+    socket.to(receiverPhone).emit('ice-candidate', {
+      candidate,
+      userId: socket.id
+    });
+  });
+
+  socket.on('end-video-call', async (data) => {
+    try {
+      const { receiverPhone, callId } = data;
+      
+      // Cập nhật trạng thái cuộc gọi
+      if (callId) {
+        await videoCallService.endCall(callId);
+      }
+
+      // Thông báo cho người nhận
+      socket.to(receiverPhone).emit('video-call-ended', {
+        userId: socket.id
+      });
+    } catch (error) {
+      console.error('Error ending video call:', error);
+      socket.emit('error', { message: 'Failed to end video call' });
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+  });
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -114,7 +198,6 @@ app.use((req, res) => {
 // Initialize socket connections
 initializeChatSocket(io);
 initializeChatGroupSocket(io);
-
 
 // Start server
 httpServer.listen(PORT, "0.0.0.0", () => {

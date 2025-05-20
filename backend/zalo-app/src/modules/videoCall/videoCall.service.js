@@ -1,99 +1,100 @@
-const videoCallModel = require('./videoCall.model');
+const Call = require('./videoCall.model');
 const redisClient = require('../../config/redis');
 const { v4: uuidv4 } = require('uuid');
 
-class VideoCallService {
+const videoCallService = {
   // Tạo cuộc gọi mới
-  async createCall(callerId, receiverId, type = 'video') {
-    const callId = uuidv4();
-    const call = {
-      callId,
-      callerId,
-      receiverId,
-      type,
-      status: 'pending',
-      startTime: new Date().toISOString(),
-      participants: [callerId, receiverId],
-      metadata: {}
-    };
+  createCall: async (callerId, receiverId, type = 'video') => {
+    try {
+      const call = new Call({
+        callerId,
+        receiverId,
+        type,
+        status: 'pending',
+        startTime: new Date(),
+        participants: [callerId, receiverId]
+      });
 
-    // Lưu vào Redis với TTL 5 phút
-    await redisClient.set(`call:${callId}`, JSON.stringify(call), 'EX', 300);
-    
-    // Lưu vào DynamoDB
-    await videoCallModel.create(call);
-    
-    return call;
-  }
+      await call.save();
+      return call;
+    } catch (error) {
+      throw new Error('Failed to create call: ' + error.message);
+    }
+  },
 
   // Cập nhật trạng thái cuộc gọi
-  async updateCallStatus(callId, status) {
-    const call = await this.getCall(callId);
-    if (!call) {
-      throw new Error('Call not found');
+  updateCallStatus: async (callId, status) => {
+    try {
+      const call = await Call.findById(callId);
+      if (!call) {
+        throw new Error('Call not found');
+      }
+
+      call.status = status;
+      if (status === 'active') {
+        call.startTime = new Date();
+      } else if (status === 'ended') {
+        call.endTime = new Date();
+      }
+
+      await call.save();
+      return call;
+    } catch (error) {
+      throw new Error('Failed to update call status: ' + error.message);
     }
-
-    const updateData = {
-      status,
-      updatedAt: new Date().toISOString()
-    };
-
-    // Nếu cuộc gọi kết thúc, tính thời gian
-    if (['ended', 'missed', 'rejected'].includes(status)) {
-      const startTime = new Date(call.startTime);
-      const endTime = new Date();
-      const callDuration = Math.floor((endTime - startTime) / 1000); // Convert to seconds
-      
-      updateData.endTime = endTime.toISOString();
-      updateData.callDuration = callDuration; // Đổi tên từ duration thành callDuration
-    }
-
-    // Cập nhật Redis
-    const updatedCall = { ...call, ...updateData };
-    if (['ended', 'missed', 'rejected'].includes(status)) {
-      await redisClient.del(`call:${callId}`);
-    } else {
-      await redisClient.set(`call:${callId}`, JSON.stringify(updatedCall), 'EX', 300);
-    }
-
-    // Cập nhật DynamoDB
-    await videoCallModel.update(callId, updateData);
-
-    return updatedCall;
-  }
-
-  // Lấy thông tin cuộc gọi
-  async getCall(callId) {
-    // Thử lấy từ Redis trước
-    const cachedCall = await redisClient.get(`call:${callId}`);
-    if (cachedCall) {
-      return JSON.parse(cachedCall);
-    }
-
-    // Nếu không có trong Redis, lấy từ DynamoDB
-    const call = await videoCallModel.getById(callId);
-    if (call) {
-      // Cache lại vào Redis
-      await redisClient.set(`call:${callId}`, JSON.stringify(call), 'EX', 300);
-    }
-
-    return call;
-  }
+  },
 
   // Kết thúc cuộc gọi
-  async endCall(callId) {
-    return await this.updateCallStatus(callId, 'ended');
-  }
+  endCall: async (callId) => {
+    try {
+      const call = await Call.findById(callId);
+      if (!call) {
+        throw new Error('Call not found');
+      }
+
+      call.status = 'ended';
+      call.endTime = new Date();
+      await call.save();
+      return call;
+    } catch (error) {
+      throw new Error('Failed to end call: ' + error.message);
+    }
+  },
 
   // Lấy danh sách cuộc gọi của user
-  async getUserCalls(userId, options = {}) {
-    return await videoCallModel.getByUserId(userId, options);
-  }
+  getUserCalls: async (userId) => {
+    try {
+      const calls = await Call.find({
+        participants: userId
+      }).sort({ startTime: -1 });
+      return calls;
+    } catch (error) {
+      throw new Error('Failed to get user calls: ' + error.message);
+    }
+  },
 
-  // Lấy danh sách cuộc gọi đang active của user
-  async getActiveCalls(userId) {
-    return await videoCallModel.getActiveCalls(userId);
-  }
-}
+  // Lấy danh sách cuộc gọi đang active
+  getActiveCalls: async (userId) => {
+    try {
+      const calls = await Call.find({
+        participants: userId,
+        status: 'active'
+      });
+      return calls;
+    } catch (error) {
+      throw new Error('Failed to get active calls: ' + error.message);
+    }
+  },
 
-module.exports = new VideoCallService(); 
+  // Lấy thông tin chi tiết cuộc gọi
+  getCall: async (callId) => {
+    try {
+      const call = await Call.findById(callId);
+      return call;
+    } catch (error) {
+      throw new Error('Failed to get call details: ' + error.message);
+    }
+  }
+};
+
+module.exports = videoCallService; 

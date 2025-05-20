@@ -43,6 +43,7 @@ import MessageContextMenu from "./MessageContextMenu";
 import ForwardMessageModal from "./ForwardMessageModal";
 import ConfirmModal from "../../../Web/src/components/ConfirmModal";
 import { SocketContext } from "../App";
+import VideoCall from './VideoCall';
 
 const ChatDirectly = () => {
   const { phone } = useParams();
@@ -100,6 +101,7 @@ const ChatDirectly = () => {
     title: "",
     message: "",
   });
+  const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
 
   const extractFilenameFromUrl = (url) => {
     if (!url) return null;
@@ -1001,6 +1003,10 @@ const ChatDirectly = () => {
     }
   };
 
+  const handleVideoCall = () => {
+    setIsVideoCallOpen(true);
+  };
+
   if (loading) return <div className="loading">Đang tải...</div>;
   if (error) return <div className="error">{error}</div>;
 
@@ -1028,7 +1034,14 @@ const ChatDirectly = () => {
         </div>
         <div className="header-actions">
           {[Search, Phone, Video, UserPlus, Settings].map((Icon, i) => (
-            <button key={i}>
+            <button 
+              key={i}
+              onClick={() => {
+                if (Icon === Video) {
+                  handleVideoCall();
+                }
+              }}
+            >
               <Icon size={20} />
             </button>
           ))}
@@ -1325,6 +1338,13 @@ const ChatDirectly = () => {
           </div>
         </div>
       )}
+
+      <VideoCall
+        isOpen={isVideoCallOpen}
+        onClose={() => setIsVideoCallOpen(false)}
+        receiverPhone={phone}
+        receiverName={userInfo?.name || phone}
+      />
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from "react"
+import { useState, useEffect, createContext, useContext, useCallback } from "react"
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom"
 import {
   Search,
@@ -36,7 +36,7 @@ import AddFriendModal from "./components/AddFriendModal";
 import CreateGroupModal from "./components/CreateGroupModal";
 import ChatList from "./components/ChatList";
 import SelfProfileModal from "./components/SelfProfileModal";
-
+import VideoCall from "./components/VideoCall";
 // Tạo context cho socket
 export const SocketContext = createContext(null);
 export const useSocket = () => useContext(SocketContext);
@@ -160,14 +160,71 @@ function MainApp({ setIsAuthenticated }) {
     socket.on('group:member_joined', handleMemberJoined);
     socket.on('group:member_removed', handleMemberRemoved);
     socket.on('group:dissolved', handleGroupDissolved);
+    socket.on('call:offer', handleCallOffer);
+    socket.on('call:answer', handleCallAnswer);
+    socket.on('call:ice_candidate', handleCallIceCandidate);
+    socket.on('call:end', handleCallEnd);
 
     return () => {
       socket.off('group:updated', handleGroupUpdated);
       socket.off('group:member_joined', handleMemberJoined);
       socket.off('group:member_removed', handleMemberRemoved);
       socket.off('group:dissolved', handleGroupDissolved);
+      socket.off('call:offer', handleCallOffer);
+      socket.off('call:answer', handleCallAnswer);
+      socket.off('call:ice_candidate', handleCallIceCandidate);
+      socket.off('call:end', handleCallEnd);
     };
   }, [socket, dispatch]);
+
+  // Video Call Handlers
+  const handleCallOffer = useCallback(({ offer, callerId }) => {
+    if (socket) {
+      socket.emit('video-call-answer', {
+        callerId,
+        answer: offer
+      });
+    }
+  }, [socket]);
+
+  const handleCallAnswer = useCallback(({ answer }) => {
+    if (socket) {
+      socket.emit('video-call-answer', {
+        answer
+      });
+    }
+  }, [socket]);
+
+  const handleCallIceCandidate = useCallback(({ candidate }) => {
+    if (socket) {
+      socket.emit('ice-candidate', {
+        candidate
+      });
+    }
+  }, [socket]);
+
+  const handleCallEnd = useCallback(() => {
+    if (socket) {
+      socket.emit('end-video-call');
+    }
+  }, [socket]);
+
+  useEffect(() => {
+    if (socket) {
+      // Video Call Events
+      socket.on('video-call-offer', handleCallOffer);
+      socket.on('video-call-answer', handleCallAnswer);
+      socket.on('ice-candidate', handleCallIceCandidate);
+      socket.on('video-call-ended', handleCallEnd);
+
+      return () => {
+        socket.off('video-call-offer', handleCallOffer);
+        socket.off('video-call-answer', handleCallAnswer);
+        socket.off('ice-candidate', handleCallIceCandidate);
+        socket.off('video-call-ended', handleCallEnd);
+      };
+    }
+  }, [socket, handleCallOffer, handleCallAnswer, handleCallIceCandidate, handleCallEnd]);
 
   const handleLogout = () => {
     localStorage.removeItem("accessToken")
@@ -353,6 +410,7 @@ function MainApp({ setIsAuthenticated }) {
                     <Route path="chat/id/:userId" element={<ChatDirectly />} />
                     <Route path="groups/:groupId" element={<GroupChat selectedChat={selectedChat} />} />
                     <Route path="friend-requests" element={<FriendRequests />} />
+                    <Route path="call/:callId" element={<VideoCall />} />
                   </Routes>
                 </div>
               </>
