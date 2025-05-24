@@ -8,7 +8,6 @@ const path = require("path");
 const { createServer } = require("http");
 const { Server } = require("socket.io");
 const jwt = require('jsonwebtoken');
-const videoCallService = require('./modules/videoCall/videoCall.service');
 
 const PORT = process.env.PORT;
 
@@ -19,6 +18,7 @@ const groupRoutes = require("./modules/group/group.route");
 const friendRoutes = require("./modules/friend/routes");
 const conversationRoutes = require("./modules/conversation/routes");
 const videoCallRoutes = require("./modules/videoCall/videoCall.route");
+
 const {
   routes: chatGroupRoutes,
   socket: initializeChatGroupSocket,
@@ -94,9 +94,9 @@ app.use("/api/users", userRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/friends", friendRoutes);
 app.use("/api/conversations", conversationRoutes);
-app.use("/api/video-call", videoCallRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/chat-group", chatGroupRoutes);
+app.use("/api/video-call", videoCallRoutes);
 
 // Socket.IO Video Call Events
 

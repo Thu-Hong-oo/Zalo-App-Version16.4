@@ -3,7 +3,6 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const path = require('path');
-const setupVideoCallSocket = require('./modules/videoCall/videoCall.socket');
 
 const app = express();
 
@@ -25,8 +24,7 @@ const io = new Server(server, {
   }
 });
 
-// Initialize video call socket handlers
-setupVideoCallSocket(io);
+
 
 // Health check endpoint
 app.get('/health', (req, res) => {

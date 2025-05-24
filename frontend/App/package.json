@@ -49,7 +49,8 @@
     "react-native-webrtc": "^124.0.5",
     "react-native-webview": "^13.13.5",
     "react-redux": "^9.2.0",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "twilio-video": "^2.31.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
