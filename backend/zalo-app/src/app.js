@@ -3,7 +3,6 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const path = require('path');
-const setupVideoCallSocket = require('./modules/videoCall/videoCall.socket');
 
 const app = express();
 
