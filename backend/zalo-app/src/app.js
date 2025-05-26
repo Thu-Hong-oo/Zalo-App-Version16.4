@@ -24,8 +24,7 @@ const io = new Server(server, {
   }
 });
 
-// Initialize video call socket handlers
-setupVideoCallSocket(io);
+
 
 // Health check endpoint
 app.get('/health', (req, res) => {

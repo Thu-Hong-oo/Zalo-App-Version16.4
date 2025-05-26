@@ -103,6 +103,10 @@ const ChatDirectly = () => {
   });
   const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
 
+  // Lấy userId từ localStorage
+  const user = JSON.parse(localStorage.getItem('user'));
+  const identity = user?.userId || phone;
+
   const extractFilenameFromUrl = (url) => {
     if (!url) return null;
 
@@ -1342,8 +1346,10 @@ const ChatDirectly = () => {
       <VideoCall
         isOpen={isVideoCallOpen}
         onClose={() => setIsVideoCallOpen(false)}
+        identity={identity}
         receiverPhone={phone}
         receiverName={userInfo?.name || phone}
+        roomName={`room_${phone}`}
       />
     </div>
   );

@@ -17,6 +17,7 @@ const userRoutes = require("./modules/user/routes");
 const groupRoutes = require("./modules/group/group.route");
 const friendRoutes = require("./modules/friend/routes");
 const conversationRoutes = require("./modules/conversation/routes");
+
 const {
   routes: chatGroupRoutes,
   socket: initializeChatGroupSocket,
@@ -61,7 +62,7 @@ const upload = multer({
 
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:8081"],
+    origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:8081","http://localhost:8082"],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: [
       "Content-Type", "Authorization", "Accept", "Content-Length", "X-Requested-With", "Access-Control-Allow-Origin"
@@ -94,6 +95,7 @@ app.use("/api/friends", friendRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/chat-group", chatGroupRoutes);
+app.use("/api/video-call", videoCallRoutes);
 
 // Socket.IO Video Call Events
 

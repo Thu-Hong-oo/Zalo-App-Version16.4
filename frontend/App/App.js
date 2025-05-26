@@ -26,6 +26,7 @@ import UpdateAvatarScreen from "./screens/UpdateAvatarScreen";
 import PersonalDetailScreen from "./screens/PersonalDetailScreen";
 import ChatDirectlyScreen from "./screens/ChatDirectlyScreen";
 
+
 import FriendRequestsScreen from "./screens/FriendRequestsScreen";
 import GroupChatScreen from "./screens/GroupChatScreen";
 import GroupCreateScreen from "./screens/GroupCreationScreen";
@@ -92,6 +93,7 @@ function ChatStack() {
       <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} />
       <Stack.Screen name="GroupSetting" component={GroupSettingScreen} />
       <Stack.Screen name="GroupAddMembers" component={GroupAddMembersScreen} />
+
     </Stack.Navigator>
   );
 }
