@@ -680,20 +680,31 @@ const GroupChat = ({ selectedChat }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const getFileIcon = (mimeType) => {
-    if (mimeType.includes("image")) return <FileImage size={24} />;
-    if (mimeType.includes("video")) return <FileVideo size={24} />;
-    if (mimeType.includes("pdf")) return <FileText size={24} />;
-    if (mimeType.includes("word") || mimeType.includes("document"))
-      return <FileText size={24} />;
-    if (mimeType.includes("powerpoint") || mimeType.includes("presentation"))
-      return <FileText size={24} />;
-    if (
-      mimeType.includes("zip") ||
-      mimeType.includes("rar") ||
-      mimeType.includes("archive")
-    )
-      return <FileArchive size={24} />;
+  const getFileIcon = (mimeType, fileName = "") => {
+    // Ưu tiên kiểm tra đuôi file nếu có
+    const ext = fileName.split('.').pop().toLowerCase();
+
+    if (mimeType.includes("word") || ext === "doc" || ext === "docx") {
+      return <img src="/icons/word.svg" alt="Word" style={{ width: 32, height: 32 }} />;
+    }
+    if (mimeType.includes("pdf") || ext === "pdf") {
+      return <img src="/icons/pdf.svg" alt="PDF" style={{ width: 32, height: 32 }} />;
+    }
+    if (mimeType.includes("excel") || ext === "xls" || ext === "xlsx") {
+      return <img src="/icons/excel.svg" alt="Excel" style={{ width: 32, height: 32 }} />;
+    }
+    if (mimeType.includes("powerpoint") || ext === "ppt" || ext === "pptx") {
+      return <img src="/icons/ppt.svg" alt="PowerPoint" style={{ width: 32, height: 32 }} />;
+    }
+    if (mimeType.includes("zip") || mimeType.includes("rar") || ext === "zip" || ext === "rar") {
+      return <img src="/icons/zip.svg" alt="Archive" style={{ width: 32, height: 32 }} />;
+    }
+    if (mimeType.includes("image")) {
+      return <FileImage size={24} />;
+    }
+    if (mimeType.includes("video")) {
+      return <FileVideo size={24} />;
+    }
     return <File size={24} />;
   };
 
@@ -703,15 +714,12 @@ const GroupChat = ({ selectedChat }) => {
     const isVideo = fileType.startsWith("video/");
     const fileUrl = message.fileUrl || message.content;
 
-    // Extract filename from S3 URL if no fileName is provided
     let displayFileName = message.fileName;
     if (!displayFileName && fileUrl) {
       try {
-        // Extract filename from URL (assumes URL format like https://media-zalolite.s3.ap-southeast-1.amazonaws.com/filename.ext)
         const urlParts = fileUrl.split("/");
         displayFileName = decodeURIComponent(urlParts[urlParts.length - 1]);
       } catch (error) {
-        console.error("Error extracting filename from URL:", error);
         displayFileName = "Unknown file";
       }
     }
@@ -722,37 +730,37 @@ const GroupChat = ({ selectedChat }) => {
           <img
             src={fileUrl}
             alt={displayFileName}
+            style={{ maxWidth: 220, borderRadius: 10, cursor: "pointer" }}
             onClick={() => setFullscreenMedia({ type: "image", url: fileUrl })}
           />
         ) : isVideo ? (
           <video
             controls
+            style={{ maxWidth: 220, borderRadius: 10, cursor: "pointer" }}
             onClick={() => setFullscreenMedia({ type: "video", url: fileUrl })}
           >
             <source src={fileUrl} type={fileType} />
             Your browser does not support the video tag.
           </video>
         ) : (
-          <div className="file-info">
-            <div className="file-icon">{getFileIcon(fileType)}</div>
-            <div className="file-details">
-              <div className="file-name" title={displayFileName}>
-                {displayFileName}
+          <>
+            <div className="file-icon">{getFileIcon(fileType, displayFileName)}</div>
+            <div className="file-meta">
+              <div className="file-meta-row">
+                <span className="file-name" title={displayFileName}>{displayFileName}</span>
+                <a
+                  href={fileUrl}
+                  download={displayFileName}
+                  className="download-button"
+                  onClick={e => e.stopPropagation()}
+                  title="Tải xuống"
+                >
+                  <Download size={22} />
+                </a>
               </div>
-              <div className="file-size">
-                {message.fileSize ? formatFileSize(message.fileSize) : ""}
-              </div>
+              <div className="file-desc">Tải về để xem lâu dài</div>
             </div>
-            <a
-              href={fileUrl}
-              download={displayFileName}
-              className="download-button"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Download size={16} />
-              <span>Tải xuống</span>
-            </a>
-          </div>
+          </>
         )}
       </div>
     );
@@ -761,29 +769,42 @@ const GroupChat = ({ selectedChat }) => {
   const renderFullscreenModal = () => {
     if (!fullscreenMedia) return null;
 
+    const isImage = fullscreenMedia.type === "image";
+    const isVideo = fullscreenMedia.type === "video";
+    const url = fullscreenMedia.url;
+    const fileName = url ? url.split("/").pop() : "media";
+
     return (
-      <div
-        className="fullscreen-modal"
-        onClick={() => setFullscreenMedia(null)}
-      >
-        <div
-          className="fullscreen-content"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {fullscreenMedia.type === "image" ? (
-            <img src={fullscreenMedia.url} alt="Fullscreen" />
-          ) : (
-            <video controls autoPlay>
-              <source src={fullscreenMedia.url} type="video/mp4" />
-              Your browser does not support the video tag.
-            </video>
-          )}
-          <button
-            className="close-fullscreen"
-            onClick={() => setFullscreenMedia(null)}
-          >
-            <X size={20} />
-          </button>
+      <div className="modal-overlay">
+        <div className={isImage ? "image-preview-modal" : "video-preview-modal"}>
+          <div className="modal-header">
+            <button
+              className="close-button"
+              onClick={() => setFullscreenMedia(null)}
+            >
+              <X size={24} />
+            </button>
+            <button
+              className="download-button"
+              onClick={() => {
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+            >
+              <Download size={24} />
+            </button>
+          </div>
+          <div className={isImage ? "image-container" : "video-container"}>
+            {isImage ? (
+              <img src={url} alt="Preview" />
+            ) : (
+              <video src={url} controls autoPlay />
+            )}
+          </div>
         </div>
       </div>
     );
