@@ -85,7 +85,7 @@ const VideoCall = ({
 
     const connectToRoom = async () => {
       try {
-        setConnecting(true);
+    setConnecting(true);
         setError(null);
         console.log('Bắt đầu connect Twilio room:', { token, roomName });
 
@@ -101,7 +101,7 @@ const VideoCall = ({
             audio: true,
             video: { width: 640 }
           });
-          setLocalTracks(tracks);
+        setLocalTracks(tracks);
           console.log('Local tracks:', tracks);
           const hasVideoTrack = tracks.some(
             t =>
@@ -122,26 +122,26 @@ const VideoCall = ({
         }
 
         // Xử lý khi có người tham gia
-        const handleParticipant = participant => {
-          setRemoteConnected(true);
-          participant.tracks.forEach(publication => {
-            if (publication.isSubscribed) {
+      const handleParticipant = participant => {
+        setRemoteConnected(true);
+        participant.tracks.forEach(publication => {
+          if (publication.isSubscribed) {
               if (remoteMediaRef.current) {
-                remoteMediaRef.current.appendChild(publication.track.attach());
+            remoteMediaRef.current.appendChild(publication.track.attach());
               }
-            }
-          });
+          }
+        });
 
-          participant.on('trackSubscribed', track => {
+        participant.on('trackSubscribed', track => {
             if (remoteMediaRef.current) {
-              remoteMediaRef.current.appendChild(track.attach());
+          remoteMediaRef.current.appendChild(track.attach());
             }
           });
 
           participant.on('trackUnsubscribed', track => {
             track.detach().forEach(element => element.remove());
-          });
-        };
+        });
+      };
 
         // Xử lý người tham gia hiện tại
         currentRoom.participants.forEach(handleParticipant);
@@ -155,12 +155,12 @@ const VideoCall = ({
 
         // Xử lý khi ngắt kết nối
         currentRoom.on('disconnected', () => {
-          setRemoteConnected(false);
-          setConnecting(false);
-          handleEndCall();
-        });
-
+        setRemoteConnected(false);
         setConnecting(false);
+          handleEndCall();
+      });
+
+      setConnecting(false);
       } catch (err) {
         console.error('Error connecting to room:', err);
         setError('Không thể kết nối đến cuộc gọi. Vui lòng thử lại.');
@@ -279,7 +279,7 @@ const VideoCall = ({
         </div>
 
         <div className="video-grid">
-          {/* Remote video */}
+        {/* Remote video */}
           <div className="remote-video-container">
             <div ref={remoteMediaRef}></div>
             {!remoteConnected && (
@@ -289,8 +289,8 @@ const VideoCall = ({
                 ) : (
                   <FaUserCircle size={80} />
                 )}
-                <div>{connecting ? 'Đang kết nối...' : 'Chờ đối phương...'}</div>
-              </div>
+              <div>{connecting ? 'Đang kết nối...' : 'Chờ đối phương...'}</div>
+            </div>
             )}
             {/* Local video always overlays at bottom right */}
             <div className="local-video-container">
@@ -302,7 +302,7 @@ const VideoCall = ({
                     <FaUserCircle size={40} />
                   )}
                   <div>{error ? 'Không truy cập được camera' : 'Đang khởi tạo camera...'}</div>
-                </div>
+        </div>
               ) : (
                 <div ref={localMediaRef}></div>
               )}
@@ -313,39 +313,39 @@ const VideoCall = ({
                   ) : (
                     <FaUserCircle size={40} />
                   )}
-                  <div>Đã tắt camera</div>
+              <div>Đã tắt camera</div>
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Controls */}
+      {/* Controls */}
         <div className="video-controls">
           <button
             className={`control-button ${isMuted ? 'muted' : ''}`}
             onClick={toggleMute}
             title={isMuted ? 'Bật mic' : 'Tắt mic'}
           >
-            {isMuted ? <FaMicrophoneSlash /> : <FaMicrophone />}
-          </button>
+          {isMuted ? <FaMicrophoneSlash /> : <FaMicrophone />}
+        </button>
 
           <button
             className={`control-button ${isCameraOff ? 'camera-off' : ''}`}
             onClick={toggleCamera}
             title={isCameraOff ? 'Bật camera' : 'Tắt camera'}
           >
-            {isCameraOff ? <FaVideoSlash /> : <FaVideo />}
-          </button>
+          {isCameraOff ? <FaVideoSlash /> : <FaVideo />}
+        </button>
 
           <button
             className="control-button end-call"
             onClick={handleEndCall}
             title="Kết thúc cuộc gọi"
           >
-            <FaPhoneSlash />
-          </button>
-        </div>
+          <FaPhoneSlash />
+        </button>
+      </div>
 
         {/* Status */}
         <div className="video-status">
@@ -353,11 +353,11 @@ const VideoCall = ({
             <div style={{ color: '#e74c3c' }}>{error}</div>
           ) : (
             <div>
-              {connecting
-                ? 'Đang kết nối...'
-                : remoteConnected
-                ? 'Đã kết nối'
-                : 'Chờ đối phương tham gia...'}
+        {connecting
+          ? 'Đang kết nối...'
+          : remoteConnected
+            ? 'Đã kết nối'
+            : 'Chờ đối phương tham gia...'}
             </div>
           )}
         </div>

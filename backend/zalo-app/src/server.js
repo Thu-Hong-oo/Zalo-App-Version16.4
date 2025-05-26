@@ -63,7 +63,7 @@ const upload = multer({
 
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:8081"],
+    origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:8081","http://localhost:8082"],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: [
       "Content-Type", "Authorization", "Accept", "Content-Length", "X-Requested-With", "Access-Control-Allow-Origin"
