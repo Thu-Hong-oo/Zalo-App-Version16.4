@@ -943,6 +943,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.file-message .file-name {
+  font-size: 14px !important;
+}
 
 .download-button {
   background: none;

@@ -302,41 +302,9 @@ export const getAllGroups = async () => {
   }
 };
 
-// Constants for file validation
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "application/pdf",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/zip",
-  "application/x-rar-compressed",
-  "text/plain",
-  "video/mp4",
-];
-
-const validateFile = (file) => {
-  if (file.size > MAX_FILE_SIZE) {
-    throw new Error(`File ${file.name} is too large. Maximum size is 10MB.`);
-  }
-  if (!ALLOWED_TYPES.includes(file.type)) {
-    throw new Error(`File type ${file.type} is not allowed.`);
-  }
-};
-
 export const uploadFiles = async (groupId, formData, onProgress) => {
   const MAX_RETRIES = 3;
   let retryCount = 0;
-
-  // Validate all files before upload
-  const files = formData.getAll("files");
-  files.forEach(validateFile);
 
   while (retryCount < MAX_RETRIES) {
     try {

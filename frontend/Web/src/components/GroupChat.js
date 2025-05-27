@@ -1320,7 +1320,7 @@ const GroupChat = ({ selectedChat }) => {
         type="file"
         ref={fileInputRef}
         style={{ display: "none" }}
-        accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar"
+        accept="image/*,video/*"
         multiple
         onChange={handleFileSelect}
       />
