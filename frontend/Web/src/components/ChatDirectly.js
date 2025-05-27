@@ -151,20 +151,40 @@ const ChatDirectly = () => {
     // Ưu tiên kiểm tra đuôi file nếu có
     const ext = fileName.split('.').pop().toLowerCase();
 
-    if (mimeType.includes("word") || ext === "doc" || ext === "docx") {
-      return <img src="/icons/word.svg" alt="Word" style={{ width: 32, height: 32 }} />;
+    // Kiểm tra đuôi file trước
+    if (ext === "doc" || ext === "docx") {
+      return <img src="/icons/word.svg" alt="Word" style={{ width:40 , height: 40 }} />;
     }
-    if (mimeType.includes("pdf") || ext === "pdf") {
-      return <img src="/icons/pdf.svg" alt="PDF" style={{ width: 32, height: 32 }} />;
+    if (ext === "pdf") {
+      return <img src="/icons/pdf.svg" alt="PDF" style={{ width: 40, height: 40 }} />;
     }
-    if (mimeType.includes("excel") || ext === "xls" || ext === "xlsx") {
-      return <img src="/icons/excel.svg" alt="Excel" style={{ width: 32, height: 32 }} />;
+    if (ext === "xls" || ext === "xlsx") {
+      return <img src="/icons/excel.png" alt="Excel" style={{ width: 40, height: 40 }} />;
     }
-    if (mimeType.includes("powerpoint") || ext === "ppt" || ext === "pptx") {
-      return <img src="/icons/ppt.svg" alt="PowerPoint" style={{ width: 32, height: 32 }} />;
+    if (ext === "ppt" || ext === "pptx") {
+      return <img src="/icons/ppt.png" alt="PowerPoint" style={{ width: 40, height: 40 }} />;
     }
-    if (mimeType.includes("zip") || mimeType.includes("rar") || ext === "zip" || ext === "rar") {
-      return <img src="/icons/zip.svg" alt="Archive" style={{ width: 32, height: 32 }} />;
+    if (ext === "zip" || ext === "rar") {
+      return <img src="/icons/zip.png" alt="Archive" style={{ width: 40, height: 40 }} />;
+    }
+
+    // Nếu không có đuôi file, mới kiểm tra mimeType
+    if (mimeType) {
+      if (mimeType.includes("word")) {
+        return <img src="/icons/word.svg" alt="Word" style={{ width: 40, height: 40 }} />;
+      }
+      if (mimeType.includes("pdf")) {
+        return <img src="/icons/pdf.svg" alt="PDF" style={{ width: 40, height: 40 }} />;
+      }
+      if (mimeType.includes("excel")) {
+        return <img src="/icons/excel.png" alt="Excel" style={{ width: 40, height: 40 }} />;
+      }
+      if (mimeType.includes("powerpoint")) {
+        return <img src="/icons/ppt.png" alt="PowerPoint" style={{ width: 40, height: 40 }} />;
+      }
+      if (mimeType.includes("zip") || mimeType.includes("rar")) {
+        return <img src="/icons/zip.png" alt="Archive" style={{ width: 40, height: 40 }} />;
+      }
     }
   };
 
@@ -423,7 +443,7 @@ const ChatDirectly = () => {
                             }
                           >
                             <div className="document-icon">
-                              {getFileIcon(msg.fileType, msg.fileName)}
+                              {getFileIcon(msg.fileType, msg.fileName || extractFilenameFromUrl(msg.content))}
                             </div>
                             <div className="document-info">
                               <div className="document-name" style={{ fontWeight: 700, color: '#1565c0' }}>

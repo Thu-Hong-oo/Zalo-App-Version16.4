@@ -685,19 +685,19 @@ const GroupChat = ({ selectedChat }) => {
     const ext = fileName.split('.').pop().toLowerCase();
 
     if (mimeType.includes("word") || ext === "doc" || ext === "docx") {
-      return <img src="/icons/word.svg" alt="Word" style={{ width: 32, height: 32 }} />;
+      return <img src="/icons/word.svg" alt="Word" style={{ width: 50, height: 50 }} />;
     }
     if (mimeType.includes("pdf") || ext === "pdf") {
-      return <img src="/icons/pdf.svg" alt="PDF" style={{ width: 32, height: 32 }} />;
+      return <img src="/icons/pdf.svg" alt="PDF" style={{ width: 50, height: 50 }} />;
     }
     if (mimeType.includes("excel") || ext === "xls" || ext === "xlsx") {
-      return <img src="/icons/excel.svg" alt="Excel" style={{ width: 32, height: 32 }} />;
+      return <img src="/icons/excel.png" alt="Excel" style={{ width: 50, height: 50 }} />;
     }
     if (mimeType.includes("powerpoint") || ext === "ppt" || ext === "pptx") {
-      return <img src="/icons/ppt.svg" alt="PowerPoint" style={{ width: 32, height: 32 }} />;
+      return <img src="/icons/ppt.png" alt="PowerPoint" style={{ width: 50, height: 50 }} />;
     }
     if (mimeType.includes("zip") || mimeType.includes("rar") || ext === "zip" || ext === "rar") {
-      return <img src="/icons/zip.svg" alt="Archive" style={{ width: 32, height: 32 }} />;
+      return <img src="/icons/zip.png" alt="Archive" style={{ width: 50, height: 50 }} />;
     }
     if (mimeType.includes("image")) {
       return <FileImage size={24} />;
