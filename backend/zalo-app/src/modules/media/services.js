@@ -17,7 +17,11 @@ const FILE_TYPE_MATCH = [
     "application/vnd.rar",
     "application/zip",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/x-compressed",
+    "application/x-rar-compressed",
+    "application/vnd.ms-excel"
 ];
 
 const validateFile = (file) => {
