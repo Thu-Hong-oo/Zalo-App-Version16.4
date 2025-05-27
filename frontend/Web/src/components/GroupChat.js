@@ -47,6 +47,7 @@ import {
   Sidebar,
   Check,
   CheckCheck,
+  Maximize2,
 } from "lucide-react";
 import "./css/GroupChat.css";
 import api, { getBaseUrl, getApiUrl } from "../config/api";
@@ -785,17 +786,10 @@ const GroupChat = ({ selectedChat }) => {
               <X size={24} />
             </button>
             <button
-              className="download-button"
-              onClick={() => {
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = fileName;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-              }}
+              className="expand-button"
+              onClick={() => window.open(url, '_blank')}
             >
-              <Download size={24} />
+              <Maximize2 size={24} />
             </button>
           </div>
           <div className={isImage ? "image-container" : "video-container"}>
