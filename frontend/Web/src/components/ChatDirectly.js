@@ -36,6 +36,7 @@ import {
   FileVideo,
   FileArchive,
   AlertCircle,
+  Maximize2,
 } from "lucide-react";
 import api, { getBaseUrl, getApiUrl } from "../config/api";
 import "./css/ChatDirectly.css";
@@ -1223,10 +1224,10 @@ const ChatDirectly = () => {
                 <X size={24} />
               </button>
               <button
-                className="download-button"
-                onClick={() => handleDownloadFile(previewImage, "image.jpg")}
+                className="expand-button"
+                onClick={() => window.open(previewImage, '_blank')}
               >
-                <Download size={24} />
+                <Maximize2 size={24} />
               </button>
             </div>
             <div className="image-container">
@@ -1248,10 +1249,10 @@ const ChatDirectly = () => {
                 <X size={24} />
               </button>
               <button
-                className="download-button"
-                onClick={() => handleDownloadFile(previewVideo, "video.mp4")}
+                className="expand-button"
+                onClick={() => window.open(previewVideo, '_blank')}
               >
-                <Download size={24} />
+                <Maximize2 size={24} />
               </button>
             </div>
             <div className="video-container">
