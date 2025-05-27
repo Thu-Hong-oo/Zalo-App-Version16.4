@@ -102,6 +102,7 @@ const GroupChat = ({ selectedChat }) => {
   const [forwarding, setForwarding] = useState(false);
   const [forwardError, setForwardError] = useState(null);
   const [forwardMessageContent, setForwardMessageContent] = useState("");
+  const [uploadErrorModal, setUploadErrorModal] = useState({ show: false, message: "" });
 
   useEffect(() => {
     fetchGroupDetails();
@@ -439,7 +440,13 @@ const GroupChat = ({ selectedChat }) => {
       return null;
     } catch (error) {
       console.error("Error uploading files:", error);
-      setUploadErrors((prev) => [...prev, error.message]);
+      // Check for the specific size exceeded error
+      if (error.response && error.response.data && error.response.data.code === 'TOTAL_SIZE_EXCEEDED') {
+        setUploadErrorModal({ show: true, message: error.response.data.message });
+      } else {
+        // Handle other upload errors by showing a generic message or adding to uploadErrors list
+        setUploadErrors((prev) => [...prev, error.message]);
+      }
       return null;
     } finally {
       setIsUploading(false);
@@ -1329,6 +1336,31 @@ const GroupChat = ({ selectedChat }) => {
 
       {renderFullscreenModal()}
 
+      {/* Upload Error Modal */}
+      {uploadErrorModal.show && (
+        <div className="modal-overlay" onClick={() => setUploadErrorModal({ show: false, message: "" })}>
+          <div className="modal-content">
+            <div className="modal-header">
+              <h2>Lỗi Upload</h2>
+            </div>
+            <div className="modal-body">
+              <div className="error-message-box">
+              <AlertCircle size={24} color="#ff4d4f" style={{ marginRight: 10 }} />
+                <p>{uploadErrorModal.message}</p>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="modal-button close-button-modal" onClick={() => setUploadErrorModal({ show: false, message: "" })}>
+                Đóng
+              </button>
+              <button className="modal-button retry-button-modal" onClick={() => { /* TODO: Add retry logic */ setUploadErrorModal({ show: false, message: "" }); }}>
+                Thử lại
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Forward Message Modal */}
       {showForwardModal && (
         <ForwardMessageModal
@@ -1386,7 +1418,7 @@ const GroupChat = ({ selectedChat }) => {
           }}
           messageContent={forwardMessageContent}
           userId={currentUserId} 
-                  />
+        />
       )}
     </div>
   );
