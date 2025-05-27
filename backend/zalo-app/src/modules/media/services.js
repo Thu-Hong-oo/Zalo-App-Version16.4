@@ -3,7 +3,6 @@ const path = require('path');
 
 const MAX_FILE_SIZE = 10*1024 * 1024; 
 const MAX_TOTAL_SIZE = 10*1024 * 1024;
-
 const FILE_TYPE_MATCH = [
     "image/png",
     "image/jpeg",
