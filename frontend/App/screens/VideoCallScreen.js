@@ -1,406 +1,63 @@
 // VideoCallMobile.js
-import React, { useEffect, useRef, useState, useContext } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Platform,
-  PermissionsAndroid,
-  Alert,
-} from 'react-native';
-import {
-  RTCPeerConnection,
-  RTCIceCandidate,
-  RTCSessionDescription,
-  mediaDevices,
-  MediaStream,
-  MediaStreamTrack,
-  RTCView,
-  registerGlobals
-} from 'react-native-webrtc';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import React, { useRef, useState } from 'react';
+import { View, Button, StyleSheet, Text } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { AuthContext } from '../App';
-import io from 'socket.io-client';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import api, { getBaseUrl } from '../config/api';
+import TwilioVideo from 'react-native-twilio-video-webrtc';
 
 const VideoCallScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const { receiverPhone, receiverName } = route.params;
-  const { user } = useContext(AuthContext);
-  
-  const [localStream, setLocalStream] = useState(null);
-  const [remoteStream, setRemoteStream] = useState(null);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isCameraOff, setIsCameraOff] = useState(false);
+  const twilioRef = useRef();
+  const { token, roomName } = route.params;
+
+  const [isVideoConnected, setIsVideoConnected] = useState(false);
+  const [status, setStatus] = useState('disconnected');
   const [error, setError] = useState(null);
 
-  const peerConnection = useRef(null);
-  const socket = useRef(null);
-
-  useEffect(() => {
-    // Register WebRTC globals
-    registerGlobals();
-
-    const initializeSocket = async () => {
+  const onConnect = () => {
       try {
-        // Lấy token từ AsyncStorage
-        const token = await AsyncStorage.getItem('accessToken');
-        console.log('Token exists:', !!token);
-        
-        if (!token) {
-          throw new Error('No authentication token found');
-        }
-
-        // Initialize socket connection
-        socket.current = io(getBaseUrl(), {
-          transports: ['websocket', 'polling'],
-          reconnection: true,
-          reconnectionAttempts: 5,
-          reconnectionDelay: 1000,
-          timeout: 60000,
-          auth: {
-            token: token // Server sẽ tự động xử lý Bearer prefix
-          }
-        });
-        
-        // Log all socket events for debugging
-        socket.current.onAny((event, ...args) => {
-          console.log('Socket Event:', event, args);
-        });
-        
-        socket.current.on('connect', () => {
-          console.log('Socket connected with ID:', socket.current.id);
-          console.log('User info:', user);
-          
-          // Join call room
-          const roomId = `${user?.id}_${receiverPhone}`;
-          socket.current.emit('join-call-room', roomId);
-          
-          // Initialize call after socket connection
-          initializeCall();
-        });
-
-        socket.current.on('connect_error', (error) => {
-          console.error('Socket connection error:', error);
-          setError('Connection failed: ' + error.message);
-        });
-
-        socket.current.on('error', (data) => {
-          console.error('Socket error:', data);
-          setError(data.message || 'An error occurred');
-        });
-
-        socket.current.on('video-call-answer', async (data) => {
-          try {
-            if (peerConnection.current && data.answer) {
-              const answer = new RTCSessionDescription(data.answer);
-              await peerConnection.current.setRemoteDescription(answer);
-              console.log('Remote description set successfully');
-            }
-          } catch (err) {
-            console.error('Error setting remote description:', err);
-            setError('Failed to establish peer connection');
-          }
-        });
-
-        socket.current.on('ice-candidate', async (data) => {
-          try {
-            if (peerConnection.current && data.candidate) {
-              await peerConnection.current.addIceCandidate(
-                new RTCIceCandidate(data.candidate)
-              );
-              console.log('Added ICE candidate successfully');
-            }
-          } catch (err) {
-            console.error('Error adding received ICE candidate:', err);
-          }
-        });
-
-        socket.current.on('video-call-ended', () => {
-          cleanup();
-          navigation.goBack();
-        });
-
-      } catch (err) {
-        console.error('Socket initialization error:', err);
-        setError('Failed to initialize video call: ' + err.message);
+      twilioRef.current.connect({ accessToken: token, roomName });
+      setStatus('connecting');
+    } catch (err) {
+      setError(err.message);
       }
     };
 
-    initializeSocket();
-
-    return () => {
-      cleanup();
-      if (socket.current) {
-        socket.current.disconnect();
-      }
-    };
-  }, []);
-
-  const initializeCall = async () => {
-    try {
-      // Request permissions
-      if (Platform.OS === 'android') {
-        const granted = await PermissionsAndroid.requestMultiple([
-          PermissionsAndroid.PERMISSIONS.CAMERA,
-          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-        ]);
-        if (
-          granted[PermissionsAndroid.PERMISSIONS.CAMERA] !== 'granted' ||
-          granted[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] !== 'granted'
-        ) {
-          throw new Error('Camera and microphone permissions are required');
-        }
-      }
-
-      // Initialize WebRTC
-      const configuration = {
-        iceServers: [
-          {
-            urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'],
-          },
-        ],
-        iceCandidatePoolSize: 10,
-      };
-
-      peerConnection.current = new RTCPeerConnection(configuration);
-
-      // Get local media stream
-      const stream = await mediaDevices.getUserMedia({
-        audio: true,
-        video: {
-          width: 640,
-          height: 480,
-          frameRate: 30,
-          facingMode: 'user',
-        },
-      });
-
-      if (!stream) {
-        throw new Error('Failed to get local media stream');
-      }
-
-      setLocalStream(stream);
-
-      // Add local stream to peer connection
-      stream.getTracks().forEach((track) => {
-        peerConnection.current.addTrack(track, stream);
-      });
-
-      // Handle remote stream
-      peerConnection.current.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          setRemoteStream(event.streams[0]);
-        }
-      };
-
-      // Handle ICE candidates
-      peerConnection.current.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.current.emit('ice-candidate', {
-            receiverPhone,
-            candidate: event.candidate,
-          });
-        }
-      };
-
-      // Create and send offer
-      const offer = await peerConnection.current.createOffer();
-      await peerConnection.current.setLocalDescription(offer);
-      
-      // Only emit offer after peer connection is fully set up
-      if (socket.current) {
-        console.log('Sending video call offer with description:', offer);
-        socket.current.emit('video-call-offer', {
-          receiverPhone,
-          offer: offer // Send the actual offer instead of accessing localDescription
-        });
-      } else {
-        throw new Error('Socket connection not established');
-      }
-
-    } catch (error) {
-      console.error('Error initializing call:', error);
-      setError(error.message);
-    }
-  };
-
-  const cleanup = () => {
-    if (localStream) {
-      localStream.getTracks().forEach((track) => track.stop());
-    }
-    if (peerConnection.current) {
-      peerConnection.current.close();
-    }
-    if (socket.current) {
-      socket.current.emit('end-video-call', { receiverPhone });
-    }
-  };
-
-  const toggleMute = () => {
-    if (localStream) {
-      localStream.getAudioTracks().forEach((track) => {
-        track.enabled = !track.enabled;
-      });
-      setIsMuted(!isMuted);
-    }
-  };
-
-  const toggleCamera = () => {
-    if (localStream) {
-      localStream.getVideoTracks().forEach((track) => {
-        track.enabled = !track.enabled;
-      });
-      setIsCameraOff(!isCameraOff);
-    }
-  };
-
-  const handleEndCall = () => {
-    cleanup();
+  const onEndCall = () => {
+    twilioRef.current.disconnect();
+    setStatus('disconnected');
     navigation.goBack();
   };
 
-  if (error) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.errorButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.errorButtonText}>Close</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      <View style={styles.videoContainer}>
-        {remoteStream && (
-          <RTCView
-            streamURL={remoteStream.toURL()}
-            style={styles.remoteVideo}
-            objectFit="cover"
-            zOrder={0}
-          />
+    <View style={{ flex: 1 }}>
+      {!isVideoConnected && (
+        <Button title="Join Video Call" onPress={onConnect} />
         )}
-        {localStream && (
-          <RTCView
-            streamURL={localStream.toURL()}
-            style={styles.localVideo}
-            objectFit="cover"
-            zOrder={1}
-          />
-        )}
-      </View>
-
-      <View style={styles.controls}>
-        <TouchableOpacity
-          style={[styles.controlButton, isMuted && styles.controlButtonActive]}
-          onPress={toggleMute}
-        >
-          <Icon
-            name={isMuted ? 'mic-off' : 'mic'}
-            size={24}
-            color="white"
-          />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.controlButton, styles.endCallButton]}
-          onPress={handleEndCall}
-        >
-          <Icon name="call-end" size={24} color="white" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.controlButton, isCameraOff && styles.controlButtonActive]}
-          onPress={toggleCamera}
-        >
-          <Icon
-            name={isCameraOff ? 'videocam-off' : 'videocam'}
-            size={24}
-            color="white"
-          />
-        </TouchableOpacity>
-      </View>
+      <TwilioVideo
+        ref={twilioRef}
+        onRoomDidConnect={() => {
+          setIsVideoConnected(true);
+          setStatus('connected');
+        }}
+        onRoomDidDisconnect={() => {
+          setIsVideoConnected(false);
+          setStatus('disconnected');
+        }}
+        onRoomDidFailToConnect={err => {
+          setError('Failed to connect: ' + err.error);
+          setStatus('disconnected');
+        }}
+        onParticipantAddedVideoTrack={() => {}}
+        onParticipantRemovedVideoTrack={() => {}}
+        // ... bạn có thể thêm các event khác nếu muốn
+      />
+      {isVideoConnected && (
+        <Button title="End Call" onPress={onEndCall} color="red" />
+      )}
+      {error && <Text style={{ color: 'red', textAlign: 'center' }}>{error}</Text>}
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  videoContainer: {
-    flex: 1,
-    position: 'relative',
-  },
-  remoteVideo: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-  },
-  localVideo: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    width: 100,
-    height: 150,
-    backgroundColor: '#333',
-    borderRadius: 8,
-  },
-  controls: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  controlButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#666',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 10,
-  },
-  controlButtonActive: {
-    backgroundColor: '#ff4444',
-  },
-  endCallButton: {
-    backgroundColor: '#ff4444',
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000',
-    padding: 20,
-  },
-  errorText: {
-    color: '#fff',
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  errorButton: {
-    backgroundColor: '#ff4444',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 5,
-  },
-  errorButtonText: {
-    color: '#fff',
-    fontSize: 16,
-  },
-});
 
 export default VideoCallScreen;
