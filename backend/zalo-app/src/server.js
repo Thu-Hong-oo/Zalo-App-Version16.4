@@ -17,6 +17,7 @@ const userRoutes = require("./modules/user/routes");
 const groupRoutes = require("./modules/group/group.route");
 const friendRoutes = require("./modules/friend/routes");
 const conversationRoutes = require("./modules/conversation/routes");
+const videoCallRoutes= require("./modules/videoCall/videoCall.route")
 
 const {
   routes: chatGroupRoutes,
