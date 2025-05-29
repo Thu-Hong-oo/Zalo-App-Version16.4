@@ -826,7 +826,18 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
                 <Text
                   style={[styles.fileName, isMyMessage && styles.myMessageText]}
                 >
-                  {item.content.split("/").pop()}
+                  {
+                    (() => {
+                      try {
+                        const url = new URL(item.content);
+                        const pathname = url.pathname;
+                        return pathname.split('/').pop();
+                      } catch (e) {
+                        console.error("Error parsing file URL:", e);
+                        return item.content.split("/").pop(); // Fallback in case of URL parsing error
+                      }
+                    })()
+                  }
                 </Text>
               </View>
             )}
