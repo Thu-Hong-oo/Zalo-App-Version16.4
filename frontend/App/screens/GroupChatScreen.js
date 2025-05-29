@@ -49,6 +49,7 @@ import axios from "axios";
 import { WebView } from 'react-native-webview';
 import { sendMessage, forwardMessage } from "../modules/chat/controller";
 import RenderHtml from 'react-native-render-html';
+import { LinearGradient } from 'expo-linear-gradient';
 // import jwt_decode from "jwt-decode"; // Tạm thời comment lại
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -1170,11 +1171,28 @@ const GroupChatScreen = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const getFileIcon = (fileType) => {
-    if (fileType?.startsWith("image/")) return "image-outline";
-    if (fileType?.startsWith("video/")) return "videocam-outline";
-    if (fileType?.startsWith("audio/")) return "musical-notes-outline";
-    return "document-outline";
+  const getFileIcon = (mimeType, fileName = "", size = 40) => {
+    const ext = fileName.split('.').pop().toLowerCase();
+    let iconSource = null;
+
+    if (ext === "doc" || ext === "docx") {
+      iconSource = require("../assets/icons/word.png");
+    } else if (ext === "pdf") {
+      iconSource = require("../assets/icons/pdf.png");
+    } else if (ext === "xls" || ext === "xlsx") {
+      iconSource = require("../assets/icons/excel.png");
+    } else if (ext === "ppt" || ext === "pptx") {
+      iconSource = require("../assets/icons/ppt.png");
+    } else if (ext === "zip" || ext === "rar") {
+      iconSource = require("../assets/icons/zip.png");
+    }
+
+    return (
+      <Image
+        source={iconSource}
+        style={{ width: size, height: size, resizeMode: "contain" }}
+      />
+    );
   };
 
   const downloadFile = async (url) => {
@@ -1359,32 +1377,63 @@ const GroupChatScreen = () => {
 
             // Nếu là tin nhắn file
             if (item.type === "file") {
-              // Kiểm tra nếu là hình ảnh
+              // Image
               if (item.fileType?.startsWith("image/") || item.content.match(/\.(jpg|jpeg|png|gif)$/i)) {
                 return (
-                  <TouchableOpacity onPress={() => handleFilePress(item)}>
-                    <Image
-                      source={{ uri: item.content }}
-                      style={styles.fileImage}
-                      resizeMode="cover"
-                    />
+                  <TouchableOpacity onPress={() => { setPreviewImage(item.content); setShowImagePreview(true); }}>
+                    <View
+                      style={{
+                        backgroundColor: '#fff',
+                        borderRadius: 16,
+                        padding: 4,
+                        maxWidth: '100%',
+                        alignSelf: isMyMessage ? 'flex-end' : 'flex-start', // hoặc 'stretch'
+                      }}
+                    >
+                      <Image
+                        source={{ uri: item.content }}
+                        style={{
+                          width: SCREEN_WIDTH * 0.7, // hoặc '100%'
+                          aspectRatio: 1,
+                          borderRadius: 12,
+                          alignSelf: 'center',
+                          backgroundColor: '#f0f2f5',
+                          maxHeight: 400,
+                        }}
+                        resizeMode="contain"
+                      />
+                    </View>
                   </TouchableOpacity>
                 );
               }
-              // Kiểm tra nếu là video
+              // Video
               else if (item.fileType?.startsWith("video/") || item.content.match(/\.(mp4|mov|avi)$/i)) {
                 return (
-                  <TouchableOpacity onPress={() => handleFilePress(item)}>
-                    <View style={styles.videoContainer}>
+                  <TouchableOpacity onPress={() => { setPreviewVideo(item.content); setShowVideoPreview(true); }}>
+                    <View
+                      style={{
+                        backgroundColor: '#fff',
+                        borderRadius: 16,
+                        padding: 4,
+                        maxWidth: SCREEN_WIDTH * 0.75, // Giới hạn khung chat 75% màn hình
+                        alignSelf: isMyMessage ? 'flex-end' : 'flex-start',
+                      }}
+                    >
                       <Video
                         source={{ uri: item.content }}
-                        style={styles.video}
-                        resizeMode="cover"
-                        useNativeControls
+                        style={{
+                          width: '100%', // Video chiếm hết khung
+                          aspectRatio: 1, // hoặc bỏ nếu muốn tự động theo tỉ lệ video
+                          borderRadius: 12,
+                          backgroundColor: '#f0f2f5',
+                          maxHeight: 400,
+                        }}
+                        resizeMode="contain"
+                        useNativeControls={false}
+                        shouldPlay={true}
+                        isMuted={true}
+                        isLooping={true}
                       />
-                      <View style={styles.playButton}>
-                        <Ionicons name="play" size={24} color="white" />
-                      </View>
                     </View>
                   </TouchableOpacity>
                 );
@@ -1393,17 +1442,18 @@ const GroupChatScreen = () => {
               else {
                 return (
                   <TouchableOpacity onPress={() => handleFilePress(item)}>
-                    <View style={styles.documentContainer}>
-                      <Ionicons
-                        name={getFileIcon(item.fileType)}
-                        size={24}
-                        color={isMyMessage ? "white" : "#666"}
-                      />
-                      <Text style={[
-                        styles.fileName,
-                        isMyMessage ? styles.myMessageText : styles.otherMessageText
-                      ]}>
-                        {item.fileName || item.content.split("/").pop() || "Tài liệu"}
+                    <View style={styles.fileContainer}>
+                      {getFileIcon(item.fileType, item.content.split('/').pop(), 40)}
+                      <Text style={styles.fileName}>
+                        {(() => {
+                          try {
+                            const url = new URL(item.content);
+                            const pathname = url.pathname;
+                            return pathname.split('/').pop();
+                          } catch (e) {
+                            return item.content.split("/").pop();
+                          }
+                        })()}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -1640,19 +1690,28 @@ const GroupChatScreen = () => {
       {/* Image Preview Modal */}
       <Modal visible={showImagePreview} transparent={true} animationType="fade">
         <View style={styles.modalContainer}>
+          <LinearGradient
+            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
+            style={styles.gradientOverlay}
+            pointerEvents="none"
+          />
           <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setShowImagePreview(false)}
-            >
-              <Ionicons name="close" size={30} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.downloadButton}
-              onPress={() => downloadFile(previewImage)}
-            >
-              <Ionicons name="download" size={30} color="white" />
-            </TouchableOpacity>
+            <View style={styles.iconCircle}>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowImagePreview(false)}
+              >
+                <Ionicons name="close" size={30} color="white" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.iconCircle}>
+              <TouchableOpacity
+                style={styles.downloadButton}
+                onPress={() => downloadFile(previewImage)}
+              >
+                <Ionicons name="download" size={30} color="white" />
+              </TouchableOpacity>
+            </View>
           </View>
           <Image
             source={{ uri: previewImage }}
@@ -1665,19 +1724,28 @@ const GroupChatScreen = () => {
       {/* Video Preview Modal */}
       <Modal visible={showVideoPreview} transparent={true} animationType="fade">
         <View style={styles.modalContainer}>
+          <LinearGradient
+            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
+            style={styles.gradientOverlay}
+            pointerEvents="none"
+          />
           <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setShowVideoPreview(false)}
-            >
-              <Ionicons name="close" size={30} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.downloadButton}
-              onPress={() => downloadFile(previewVideo)}
-            >
-              <Ionicons name="download" size={30} color="white" />
-            </TouchableOpacity>
+            <View style={styles.iconCircle}>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowVideoPreview(false)}
+              >
+                <Ionicons name="close" size={30} color="white" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.iconCircle}>
+              <TouchableOpacity
+                style={styles.downloadButton}
+                onPress={() => downloadFile(previewVideo)}
+              >
+                <Ionicons name="download" size={30} color="white" />
+              </TouchableOpacity>
+            </View>
           </View>
           <Video
             source={{ uri: previewVideo }}
@@ -2029,7 +2097,19 @@ const styles = StyleSheet.create({
   fileContainer: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 5,
+    justifyContent: "center", // căn giữa ngang
+    padding: 10,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    marginBottom: 8,
+    minWidth: 120,
+  },
+  fileName: {
+    marginLeft: 10,
+    fontSize: 14,
+    color: "#222",
+    fontWeight: "bold",
+    textAlign: "center",
   },
   fileImage: {
     width: 200,
@@ -2063,11 +2143,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.1)',
     borderRadius: 8,
     maxWidth: 250,
-  },
-  fileName: {
-    marginLeft: 8,
-    fontSize: 14,
-    flex: 1,
   },
   modalOverlay: {
     flex: 1,
@@ -2225,15 +2300,6 @@ const styles = StyleSheet.create({
   fileInfo: {
     flex: 1,
     marginLeft: 10,
-  },
-  fileName: {
-    fontSize: 14,
-    color: "#333",
-    marginBottom: 4,
-  },
-  fileSize: {
-    fontSize: 12,
-    color: "#666",
   },
   removeFileButton: {
     padding: 5,
@@ -2426,6 +2492,34 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     fontSize: 15,
     marginLeft: 6,
+  },
+  iconCircle: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 24,
+    padding: 6,
+    marginHorizontal: 4,
+  },
+  gradientOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+    zIndex: 2,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  fullscreenImage: {
+    width: '100%',
+    height: '100%',
+    alignSelf: 'center',
+    backgroundColor: 'black',
+  },
+  fullscreenVideo: {
+    width: '100%',
+    height: '100%',
+    alignSelf: 'center',
+    backgroundColor: '#e4e6eb',
   },
 });
 
