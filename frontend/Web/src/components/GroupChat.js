@@ -47,6 +47,7 @@ import {
   Sidebar,
   Check,
   CheckCheck,
+  Maximize2,
 } from "lucide-react";
 import "./css/GroupChat.css";
 import api, { getBaseUrl, getApiUrl } from "../config/api";
@@ -101,6 +102,7 @@ const GroupChat = ({ selectedChat }) => {
   const [forwarding, setForwarding] = useState(false);
   const [forwardError, setForwardError] = useState(null);
   const [forwardMessageContent, setForwardMessageContent] = useState("");
+  const [uploadErrorModal, setUploadErrorModal] = useState({ show: false, message: "" });
 
   useEffect(() => {
     fetchGroupDetails();
@@ -438,7 +440,13 @@ const GroupChat = ({ selectedChat }) => {
       return null;
     } catch (error) {
       console.error("Error uploading files:", error);
-      setUploadErrors((prev) => [...prev, error.message]);
+      // Check for the specific size exceeded error
+      if (error.response && error.response.data && error.response.data.code === 'TOTAL_SIZE_EXCEEDED') {
+        setUploadErrorModal({ show: true, message: error.response.data.message });
+      } else {
+        // Handle other upload errors by showing a generic message or adding to uploadErrors list
+        setUploadErrors((prev) => [...prev, error.message]);
+      }
       return null;
     } finally {
       setIsUploading(false);
@@ -680,20 +688,31 @@ const GroupChat = ({ selectedChat }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const getFileIcon = (mimeType) => {
-    if (mimeType.includes("image")) return <FileImage size={24} />;
-    if (mimeType.includes("video")) return <FileVideo size={24} />;
-    if (mimeType.includes("pdf")) return <FileText size={24} />;
-    if (mimeType.includes("word") || mimeType.includes("document"))
-      return <FileText size={24} />;
-    if (mimeType.includes("powerpoint") || mimeType.includes("presentation"))
-      return <FileText size={24} />;
-    if (
-      mimeType.includes("zip") ||
-      mimeType.includes("rar") ||
-      mimeType.includes("archive")
-    )
-      return <FileArchive size={24} />;
+  const getFileIcon = (mimeType, fileName = "") => {
+    // Ưu tiên kiểm tra đuôi file nếu có
+    const ext = fileName.split('.').pop().toLowerCase();
+
+    if (mimeType.includes("word") || ext === "doc" || ext === "docx") {
+      return <img src="/icons/word.svg" alt="Word" style={{ width: 50, height: 50 }} />;
+    }
+    if (mimeType.includes("pdf") || ext === "pdf") {
+      return <img src="/icons/pdf.svg" alt="PDF" style={{ width: 50, height: 50 }} />;
+    }
+    if (mimeType.includes("excel") || ext === "xls" || ext === "xlsx") {
+      return <img src="/icons/excel.png" alt="Excel" style={{ width: 50, height: 50 }} />;
+    }
+    if (mimeType.includes("powerpoint") || ext === "ppt" || ext === "pptx") {
+      return <img src="/icons/ppt.png" alt="PowerPoint" style={{ width: 50, height: 50 }} />;
+    }
+    if (mimeType.includes("zip") || mimeType.includes("rar") || ext === "zip" || ext === "rar") {
+      return <img src="/icons/zip.png" alt="Archive" style={{ width: 50, height: 50 }} />;
+    }
+    if (mimeType.includes("image")) {
+      return <FileImage size={24} />;
+    }
+    if (mimeType.includes("video")) {
+      return <FileVideo size={24} />;
+    }
     return <File size={24} />;
   };
 
@@ -703,15 +722,12 @@ const GroupChat = ({ selectedChat }) => {
     const isVideo = fileType.startsWith("video/");
     const fileUrl = message.fileUrl || message.content;
 
-    // Extract filename from S3 URL if no fileName is provided
     let displayFileName = message.fileName;
     if (!displayFileName && fileUrl) {
       try {
-        // Extract filename from URL (assumes URL format like https://media-zalolite.s3.ap-southeast-1.amazonaws.com/filename.ext)
         const urlParts = fileUrl.split("/");
         displayFileName = decodeURIComponent(urlParts[urlParts.length - 1]);
       } catch (error) {
-        console.error("Error extracting filename from URL:", error);
         displayFileName = "Unknown file";
       }
     }
@@ -722,37 +738,37 @@ const GroupChat = ({ selectedChat }) => {
           <img
             src={fileUrl}
             alt={displayFileName}
+            style={{ maxWidth: 220, borderRadius: 10, cursor: "pointer" }}
             onClick={() => setFullscreenMedia({ type: "image", url: fileUrl })}
           />
         ) : isVideo ? (
           <video
             controls
+            style={{ maxWidth: 220, borderRadius: 10, cursor: "pointer" }}
             onClick={() => setFullscreenMedia({ type: "video", url: fileUrl })}
           >
             <source src={fileUrl} type={fileType} />
             Your browser does not support the video tag.
           </video>
         ) : (
-          <div className="file-info">
-            <div className="file-icon">{getFileIcon(fileType)}</div>
-            <div className="file-details">
-              <div className="file-name" title={displayFileName}>
-                {displayFileName}
+          <>
+            <div className="file-icon">{getFileIcon(fileType, displayFileName)}</div>
+            <div className="file-meta">
+              <div className="file-meta-row">
+                <span className="file-name" title={displayFileName}>{displayFileName}</span>
+                <a
+                  href={fileUrl}
+                  download={displayFileName}
+                  className="download-button"
+                  onClick={e => e.stopPropagation()}
+                  title="Tải xuống"
+                >
+                  <Download size={22} />
+                </a>
               </div>
-              <div className="file-size">
-                {message.fileSize ? formatFileSize(message.fileSize) : ""}
-              </div>
+              <div className="file-desc">Tải về để xem lâu dài</div>
             </div>
-            <a
-              href={fileUrl}
-              download={displayFileName}
-              className="download-button"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Download size={16} />
-              <span>Tải xuống</span>
-            </a>
-          </div>
+          </>
         )}
       </div>
     );
@@ -761,29 +777,35 @@ const GroupChat = ({ selectedChat }) => {
   const renderFullscreenModal = () => {
     if (!fullscreenMedia) return null;
 
+    const isImage = fullscreenMedia.type === "image";
+    const isVideo = fullscreenMedia.type === "video";
+    const url = fullscreenMedia.url;
+    const fileName = url ? url.split("/").pop() : "media";
+
     return (
-      <div
-        className="fullscreen-modal"
-        onClick={() => setFullscreenMedia(null)}
-      >
-        <div
-          className="fullscreen-content"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {fullscreenMedia.type === "image" ? (
-            <img src={fullscreenMedia.url} alt="Fullscreen" />
-          ) : (
-            <video controls autoPlay>
-              <source src={fullscreenMedia.url} type="video/mp4" />
-              Your browser does not support the video tag.
-            </video>
-          )}
-          <button
-            className="close-fullscreen"
-            onClick={() => setFullscreenMedia(null)}
-          >
-            <X size={20} />
-          </button>
+      <div className="modal-overlay">
+        <div className={isImage ? "image-preview-modal" : "video-preview-modal"}>
+          <div className="modal-header">
+            <button
+              className="close-button"
+              onClick={() => setFullscreenMedia(null)}
+            >
+              <X size={24} />
+            </button>
+            <button
+              className="expand-button"
+              onClick={() => window.open(url, '_blank')}
+            >
+              <Maximize2 size={24} />
+            </button>
+          </div>
+          <div className={isImage ? "image-container" : "video-container"}>
+            {isImage ? (
+              <img src={url} alt="Preview" />
+            ) : (
+              <video src={url} controls autoPlay />
+            )}
+          </div>
         </div>
       </div>
     );
@@ -1299,7 +1321,7 @@ const GroupChat = ({ selectedChat }) => {
         type="file"
         ref={fileInputRef}
         style={{ display: "none" }}
-        accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar"
+        accept="image/*,video/*"
         multiple
         onChange={handleFileSelect}
       />
@@ -1313,6 +1335,31 @@ const GroupChat = ({ selectedChat }) => {
       />
 
       {renderFullscreenModal()}
+
+      {/* Upload Error Modal */}
+      {uploadErrorModal.show && (
+        <div className="modal-overlay" onClick={() => setUploadErrorModal({ show: false, message: "" })}>
+          <div className="modal-content">
+            <div className="modal-header">
+              <h2>Lỗi Upload</h2>
+            </div>
+            <div className="modal-body">
+              <div className="error-message-box">
+              <AlertCircle size={24} color="#ff4d4f" style={{ marginRight: 10 }} />
+                <p>{uploadErrorModal.message}</p>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="modal-button close-button-modal" onClick={() => setUploadErrorModal({ show: false, message: "" })}>
+                Đóng
+              </button>
+              <button className="modal-button retry-button-modal" onClick={() => { /* TODO: Add retry logic */ setUploadErrorModal({ show: false, message: "" }); }}>
+                Thử lại
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Forward Message Modal */}
       {showForwardModal && (
@@ -1371,7 +1418,7 @@ const GroupChat = ({ selectedChat }) => {
           }}
           messageContent={forwardMessageContent}
           userId={currentUserId} 
-                  />
+        />
       )}
     </div>
   );
