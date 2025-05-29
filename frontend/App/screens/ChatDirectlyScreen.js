@@ -45,6 +45,54 @@ const createParticipantId = (phone1, phone2) => {
   return [phone1, phone2].sort().join("_");
 };
 
+// Hàm trả về icon file phù hợp cho React Native
+const getFileIcon = (mimeType, fileName = "", size = 40) => {
+  // Ưu tiên kiểm tra đuôi file nếu có
+  const ext = fileName.split('.').pop().toLowerCase();
+
+  let iconSource = null;
+
+  // Kiểm tra đuôi file trước
+  if (ext === "doc" || ext === "docx") {
+    iconSource = require("../assets/icons/word.svg");
+  } else if (ext === "pdf") {
+    iconSource = require("../assets/icons/pdf.svg");
+  } else if (ext === "xls" || ext === "xlsx") {
+    iconSource = require("../assets/icons/excel.png");
+  } else if (ext === "ppt" || ext === "pptx") {
+    iconSource = require("../assets/icons/ppt.png");
+  } else if (ext === "zip" || ext === "rar") {
+    iconSource = require("../assets/icons/zip.png");
+  }
+
+  // Nếu không có đuôi file, mới kiểm tra mimeType
+  if (!iconSource && mimeType) {
+    if (mimeType.includes("word")) {
+      iconSource = require("../assets/icons/word.svg");
+    } else if (mimeType.includes("pdf")) {
+      iconSource = require("../assets/icons/pdf.svg");
+    } else if (mimeType.includes("excel") || mimeType.includes("spreadsheet")) {
+      iconSource = require("../assets/icons/excel.png");
+    } else if (mimeType.includes("powerpoint")) {
+      iconSource = require("../assets/icons/ppt.png");
+    } else if (mimeType.includes("zip") || mimeType.includes("rar")) {
+      iconSource = require("../assets/icons/zip.png");
+    }
+  }
+
+  // Nếu không nhận diện được thì dùng icon zip mặc định
+  if (!iconSource) {
+    iconSource = require("../assets/icons/zip.png");
+  }
+
+  return (
+    <Image
+      source={iconSource}
+      style={{ width: size, height: size, resizeMode: "contain" }}
+    />
+  );
+};
+
 const ChatDirectlyScreen = ({ route, navigation }) => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
@@ -719,6 +767,15 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
           "application/vnd.ms-powerpoint",
           "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          "application/vnd.ms-excel",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "application/zip",
+          "application/rar",
+          "application/7z",
+          "application/x-7z-compressed",
+          "application/x-rar-compressed",
+          "application/x-zip-compressed",
+          "application/x-7z-compressed",
         ],
         multiple: true,
         copyToCacheDirectory: true,
@@ -906,13 +963,6 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       console.error("Error downloading file:", error);
       Alert.alert("Lỗi", "Không thể tải file");
     }
-  };
-
-  const getFileIcon = (mimeType) => {
-    if (mimeType?.includes("pdf")) return "document-text";
-    if (mimeType?.includes("word")) return "document-text";
-    if (mimeType?.includes("powerpoint")) return "document-text";
-    return "document";
   };
 
   const formatFileSize = (bytes) => {
@@ -1129,7 +1179,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
               {selectedFiles.map((file, index) => (
                 <View key={index} style={styles.fileItem}>
                   <Ionicons
-                    name={getFileIcon(file.type)}
+                    name={getFileIcon(file.type, file.name, 24)}
                     size={24}
                     color="#1877f2"
                   />
