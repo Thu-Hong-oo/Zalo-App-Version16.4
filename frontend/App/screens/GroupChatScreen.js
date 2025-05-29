@@ -2103,11 +2103,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 8,
     minWidth: 120,
-    // maxWidth: không cần hoặc để rất lớn
   },
   fileName: {
     marginLeft: 10,
-    fontSize: 18,
+    fontSize: 14,
     color: "#222",
     fontWeight: "bold",
     textAlign: "center",
