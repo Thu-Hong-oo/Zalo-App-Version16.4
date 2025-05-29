@@ -622,20 +622,17 @@ const GroupChat = ({ selectedChat }) => {
 
   const handleDeleteMessage = async (messageId) => {
     try {
-      const response = await deleteGroupMessage(groupId, messageId);
-      if (response.status === "success") {
-        // Remove message from UI immediately
-        setMessages((prev) =>
-          prev.filter((msg) => msg.groupMessageId !== messageId)
-        );
+      // Remove message from UI immediately for better UX
+      setMessages((prev) =>
+        prev.filter((msg) => msg.groupMessageId !== messageId)
+      );
 
-        // Emit socket event for deletion
-        socket.emit("delete-group-message", {
-          groupId,
-          messageId,
-          deletedBy: currentUserId,
-        });
-      }
+      // Emit socket event for deletion - server will handle the actual deletion
+      socket.emit("delete-group-message", {
+        groupId,
+        messageId,
+        deletedBy: currentUserId,
+      });
     } catch (error) {
       console.error("Error deleting message:", error);
       setError("Failed to delete message");
