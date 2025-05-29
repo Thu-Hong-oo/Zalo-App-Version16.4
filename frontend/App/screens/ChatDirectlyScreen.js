@@ -37,6 +37,7 @@ import ForwardMessageModal from "./ForwardMessageModal";
 import { getApiUrl, getBaseUrl, api } from "../config/api";
 import { Icon } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import { LinearGradient } from 'expo-linear-gradient';
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -1217,19 +1218,28 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       </Modal>
       <Modal visible={showImagePreview} transparent={true} animationType="fade">
         <View style={styles.modalContainer}>
+          <LinearGradient
+            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
+            style={styles.gradientOverlay}
+            pointerEvents="none"
+          />
           <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setShowImagePreview(false)}
-            >
-              <Ionicons name="close" size={30} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.downloadButton}
-              onPress={() => downloadFile(previewImage)}
-            >
-              <Ionicons name="download" size={30} color="white" />
-            </TouchableOpacity>
+            <View style={styles.iconCircle}>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowImagePreview(false)}
+              >
+                <Ionicons name="close" size={30} color="white" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.iconCircle}>
+              <TouchableOpacity
+                style={styles.downloadButton}
+                onPress={() => downloadFile(previewImage)}
+              >
+                <Ionicons name="download" size={30} color="white" />
+              </TouchableOpacity>
+            </View>
           </View>
           <Image
             source={{ uri: previewImage }}
@@ -1240,19 +1250,28 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       </Modal>
       <Modal visible={showVideoPreview} transparent={true} animationType="fade">
         <View style={styles.modalContainer}>
+          <LinearGradient
+            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
+            style={styles.gradientOverlay}
+            pointerEvents="none"
+          />
           <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setShowVideoPreview(false)}
-            >
-              <Ionicons name="close" size={30} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.downloadButton}
-              onPress={() => downloadFile(previewVideo)}
-            >
-              <Ionicons name="download" size={30} color="white" />
-            </TouchableOpacity>
+            <View style={styles.iconCircle}>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowVideoPreview(false)}
+              >
+                <Ionicons name="close" size={30} color="white" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.iconCircle}>
+              <TouchableOpacity
+                style={styles.downloadButton}
+                onPress={() => downloadFile(previewVideo)}
+              >
+                <Ionicons name="download" size={30} color="white" />
+              </TouchableOpacity>
+            </View>
           </View>
           <Video
             source={{ uri: previewVideo }}
@@ -1478,9 +1497,9 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalContent: {
     backgroundColor: "white",
@@ -1551,8 +1570,8 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     padding: 20,
-    paddingTop: 50,
     zIndex: 1,
   },
   closeButton: {
@@ -1562,13 +1581,16 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   fullscreenImage: {
-    width: "100%",
-    height: "100%",
+    width: '100%',
+    height: '100%',
+    alignSelf: 'center',
+    backgroundColor: 'black',
   },
   fullscreenVideo: {
-    width: "100%",
-    height: "100%",
-    backgroundColor: "black",
+    width: '100%',
+    height: '100%',
+    alignSelf: 'center',
+    backgroundColor: '#e4e6eb',
   },
   attachButton: {
     padding: 8,
@@ -1673,6 +1695,22 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     alignSelf: 'center',
     maxHeight: 400,
+  },
+  iconCircle: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 24,
+    padding: 6,
+    marginHorizontal: 4,
+  },
+  gradientOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+    zIndex: 2,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
 });
 

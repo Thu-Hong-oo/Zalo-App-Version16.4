@@ -1170,11 +1170,28 @@ const GroupChatScreen = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const getFileIcon = (fileType) => {
-    if (fileType?.startsWith("image/")) return "image-outline";
-    if (fileType?.startsWith("video/")) return "videocam-outline";
-    if (fileType?.startsWith("audio/")) return "musical-notes-outline";
-    return "document-outline";
+  const getFileIcon = (mimeType, fileName = "", size = 40) => {
+    const ext = fileName.split('.').pop().toLowerCase();
+    let iconSource = null;
+
+    if (ext === "doc" || ext === "docx") {
+      iconSource = require("../assets/icons/word.png");
+    } else if (ext === "pdf") {
+      iconSource = require("../assets/icons/pdf.png");
+    } else if (ext === "xls" || ext === "xlsx") {
+      iconSource = require("../assets/icons/excel.png");
+    } else if (ext === "ppt" || ext === "pptx") {
+      iconSource = require("../assets/icons/ppt.png");
+    } else if (ext === "zip" || ext === "rar") {
+      iconSource = require("../assets/icons/zip.png");
+    }
+
+    return (
+      <Image
+        source={iconSource}
+        style={{ width: size, height: size, resizeMode: "contain" }}
+      />
+    );
   };
 
   const downloadFile = async (url) => {
@@ -1393,17 +1410,18 @@ const GroupChatScreen = () => {
               else {
                 return (
                   <TouchableOpacity onPress={() => handleFilePress(item)}>
-                    <View style={styles.documentContainer}>
-                      <Ionicons
-                        name={getFileIcon(item.fileType)}
-                        size={24}
-                        color={isMyMessage ? "white" : "#666"}
-                      />
-                      <Text style={[
-                        styles.fileName,
-                        isMyMessage ? styles.myMessageText : styles.otherMessageText
-                      ]}>
-                        {item.fileName || item.content.split("/").pop() || "Tài liệu"}
+                    <View style={styles.fileContainer}>
+                      {getFileIcon(item.fileType, item.content.split('/').pop(), 40)}
+                      <Text style={styles.fileName}>
+                        {(() => {
+                          try {
+                            const url = new URL(item.content);
+                            const pathname = url.pathname;
+                            return pathname.split('/').pop();
+                          } catch (e) {
+                            return item.content.split("/").pop();
+                          }
+                        })()}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -2029,7 +2047,20 @@ const styles = StyleSheet.create({
   fileContainer: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 5,
+    justifyContent: "center", // căn giữa ngang
+    padding: 10,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    marginBottom: 8,
+    minWidth: 120,
+    // maxWidth: không cần hoặc để rất lớn
+  },
+  fileName: {
+    marginLeft: 10,
+    fontSize: 18,
+    color: "#222",
+    fontWeight: "bold",
+    textAlign: "center",
   },
   fileImage: {
     width: 200,
@@ -2063,11 +2094,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.1)',
     borderRadius: 8,
     maxWidth: 250,
-  },
-  fileName: {
-    marginLeft: 8,
-    fontSize: 14,
-    flex: 1,
   },
   modalOverlay: {
     flex: 1,
@@ -2225,15 +2251,6 @@ const styles = StyleSheet.create({
   fileInfo: {
     flex: 1,
     marginLeft: 10,
-  },
-  fileName: {
-    fontSize: 14,
-    color: "#333",
-    marginBottom: 4,
-  },
-  fileSize: {
-    fontSize: 12,
-    color: "#666",
   },
   removeFileButton: {
     padding: 5,
