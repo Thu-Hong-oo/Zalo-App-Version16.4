@@ -414,16 +414,10 @@ const ChatDirectly = () => {
                   className={`message ${isOther ? "received" : "sent"}`}
                   onContextMenu={(e) => handleContextMenu(e, msg)}
                 >
-                  <div
-                    className={`message-content ${
-                      isRecalled ? "recalled" : ""
-                    }`}
-                  >
-
+                  <div className={`message-content ${isRecalled ? "recalled" : ""}`}>
                     {['call', 'video', 'audio'].includes(msg.type) ? (
                       <CallMessage message={msg} />
-
-                    {isRecalled ? (
+                    ) : isRecalled ? (
                       <div className="recalled-message-box">
                         <span className="recalled-icon" style={{ marginRight: 6, verticalAlign: 'middle' }}>
                           <svg width="18" height="18" fill="#1976d2" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18.2A8.2 8.2 0 1 1 12 3.8a8.2 8.2 0 0 1 0 16.4zm-.9-5.7h1.8v1.8h-1.8v-1.8zm0-7.2h1.8v5.4h-1.8V7.3z"/></svg>
@@ -432,7 +426,6 @@ const ChatDirectly = () => {
                           Tin nhắn đã bị thu hồi
                         </span>
                       </div>
-
                     ) : msg.type === "file" ? (
                       <div className="file-message">
                         {msg.fileType?.startsWith("image/") ? (
@@ -452,9 +445,7 @@ const ChatDirectly = () => {
                         ) : (
                           <div
                             className="document-preview"
-                            onClick={() =>
-                              handleDownloadFile(msg.content, msg.fileName)
-                            }
+                            onClick={() => handleDownloadFile(msg.content, msg.fileName)}
                           >
                             <div className="document-icon">
                               {getFileIcon(msg.fileType, msg.fileName || extractFilenameFromUrl(msg.content))}
