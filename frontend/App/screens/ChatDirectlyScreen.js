@@ -788,12 +788,11 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         setPreviewVideo(item.content);
         setShowVideoPreview(true);
       } else {
+        // Nếu là file tài liệu thì mở link trên trình duyệt để tải về
         try {
-          const supported = await Linking.canOpenURL(item.content);
-          if (supported) await Linking.openURL(item.content);
-          else Alert.alert("Không thể mở file", "URL: " + item.content);
-        } catch (error) {
-          Alert.alert("Lỗi", "Không thể mở file");
+          await Linking.openURL(item.content);
+        } catch (e) {
+          Alert.alert("Lỗi", "Không thể mở trình duyệt để tải file.");
         }
       }
     };
@@ -859,24 +858,27 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
               </TouchableOpacity>
             </TouchableOpacity>
           ) : (
-            <View style={styles.fileContainer}>
-              {getFileIcon(item.fileType, item.content.split('/').pop(), 40)}
-              <Text
-                style={styles.fileName}
-                numberOfLines={1}
-                ellipsizeMode="middle"
-              >
-                {(() => {
-                  try {
-                    const url = new URL(item.content);
-                    const pathname = url.pathname;
-                    return pathname.split('/').pop();
-                  } catch (e) {
-                    return item.content.split("/").pop();
-                  }
-                })()}
-              </Text>
-            </View>
+            <TouchableOpacity onPress={handleFilePress}>
+              <View style={styles.fileContainer}>
+                {getFileIcon(item.fileType, item.content.split('/').pop(), 40)}
+                <Text
+                  style={styles.fileName}
+                  numberOfLines={1}
+                  ellipsizeMode="middle"
+                >
+                  {(() => {
+                    try {
+                      const url = new URL(item.content);
+                      const pathname = url.pathname;
+                      return pathname.split('/').pop();
+                    } catch (e) {
+                      return item.content.split("/").pop();
+                    }
+                  })()}
+                </Text>
+                {/* Không hiển thị nút tải file cho các loại file tài liệu */}
+              </View>
+            </TouchableOpacity>
           )
         ) : null}
         <View style={styles.messageFooter}>
