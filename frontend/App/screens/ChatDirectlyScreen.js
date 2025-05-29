@@ -108,6 +108,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   const [isNearTop, setIsNearTop] = useState(false);
   const [scrollPosition, setScrollPosition] = useState(0);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
+  const [showFileTypeModal, setShowFileTypeModal] = useState(false);
 
   const formatDate = (timestamp) => {
     try {
@@ -1118,14 +1119,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.attachButton}
-            onPress={() => {
-              Alert.alert("Chọn loại file", "Bạn muốn gửi loại file nào?", [
-                { text: "Ảnh", onPress: pickImage },
-                { text: "Video", onPress: pickVideo },
-                { text: "Tài liệu", onPress: pickDocument },
-                { text: "Hủy", style: "cancel" },
-              ]);
-            }}
+            onPress={() => setShowFileTypeModal(true)}
           >
             <Ionicons name="image" size={24} color="#666" />
           </TouchableOpacity>
@@ -1345,6 +1339,54 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+      <Modal
+        visible={showFileTypeModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowFileTypeModal(false)}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.3)',
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}>
+          <View style={{
+            backgroundColor: 'white',
+            borderRadius: 12,
+            width: '80%',
+            padding: 20,
+            alignItems: 'center',
+            position: 'relative'
+          }}>
+            {/* Nút X */}
+            <TouchableOpacity
+              style={{
+                position: 'absolute',
+                top: 10,
+                right: 10,
+                zIndex: 10
+              }}
+              onPress={() => setShowFileTypeModal(false)}
+            >
+              <Ionicons name="close" size={28} color="#333" />
+            </TouchableOpacity>
+            <Text style={{ fontWeight: 'bold', fontSize: 18, marginBottom: 10 }}>Chọn loại file</Text>
+            <Text style={{ marginBottom: 20 }}>Bạn muốn gửi loại file nào?</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+              <TouchableOpacity onPress={() => { setShowFileTypeModal(false); pickImage(); }}>
+                <Text style={{ color: '#1877f2', fontWeight: 'bold', fontSize: 16 }}>ẢNH</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setShowFileTypeModal(false); pickVideo(); }}>
+                <Text style={{ color: '#1877f2', fontWeight: 'bold', fontSize: 16 }}>VIDEO</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setShowFileTypeModal(false); pickDocument(); }}>
+                <Text style={{ color: '#1877f2', fontWeight: 'bold', fontSize: 16 }}>TÀI LIỆU</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
