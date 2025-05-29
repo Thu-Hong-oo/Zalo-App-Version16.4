@@ -57,6 +57,11 @@
       const localAvatar = getVar('localAvatar', '');
       const remoteAvatar = getVar('remoteAvatar', '');
 
+      console.log('window.token:', window.token);
+      console.log('window.roomName:', window.roomName);
+      console.log('localName:', localName);
+      console.log('remoteName:', remoteName);
+
       function showError(msg) {
         document.getElementById('error').innerText = msg;
       }
@@ -76,25 +81,37 @@
       }
 
       let localVideoTrack = null;
+      let localAudioTrack = null;
+      let localTracks = [];
       async function showLocalCamera() {
         try {
           showLocalPlaceholder();
+          console.log('Bắt đầu tạo local video track...');
           localVideoTrack = await Twilio.Video.createLocalVideoTrack();
+          console.log('Đã tạo local video track:', localVideoTrack);
+          localAudioTrack = await Twilio.Video.createLocalAudioTrack();
+          console.log('Đã tạo local audio track:', localAudioTrack);
+          localTracks = [localVideoTrack, localAudioTrack];
           const div = document.getElementById('local-media-div');
           div.innerHTML = '';
           div.appendChild(localVideoTrack.attach());
         } catch (e) {
           showError('Không thể bật camera: ' + e.message);
+          console.log('Lỗi khi tạo local video/audio track:', e);
         }
       }
 
       function waitForVars() {
         if (window.token && window.roomName) {
           showRemotePlaceholder();
-          if (!localVideoTrack) showLocalCamera();
-          startCall(window.token, window.roomName);
+          if (!localVideoTrack || !localAudioTrack) {
+            showLocalCamera().then(() => {
+              startCall(window.token, window.roomName);
+            });
+          } else {
+            startCall(window.token, window.roomName);
+          }
         } else {
-          showLocalCamera();
           setTimeout(waitForVars, 100);
         }
       }
@@ -104,20 +121,19 @@
       let camEnabled = true;
 
       function startCall(token, roomName) {
+        console.log('Bắt đầu join room với token:', token, 'roomName:', roomName, 'tracks:', localTracks);
         Twilio.Video.connect(token, {
           name: roomName,
-          tracks: localVideoTrack ? [localVideoTrack] : undefined
+          tracks: localTracks.length ? localTracks : undefined
         }).then(room => {
           roomGlobal = room;
           showError('');
-          
           room.localParticipant.tracks.forEach(publication => {
             if (publication.track && publication.track.kind === 'video') {
               document.getElementById('local-media-div').innerHTML = '';
               document.getElementById('local-media-div').appendChild(publication.track.attach());
             }
           });
-
           room.on('participantConnected', participant => {
             participant.tracks.forEach(publication => {
               if (publication.isSubscribed && publication.track.kind === 'video') {
@@ -143,6 +159,7 @@
           });
         }).catch(err => {
           showError('Kết nối thất bại: ' + err.message);
+          console.log('Lỗi khi join room:', err);
         });
       }
 

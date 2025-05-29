@@ -104,6 +104,8 @@ const ChatDirectly = () => {
     message: "",
   });
   const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
+  const [videoCallRoomName, setVideoCallRoomName] = useState(null);
+  const [videoCallId, setVideoCallId] = useState(null);
   const [callId, setCallId] = useState(null);
   const [roomName, setRoomName] = useState(null);
   const [incomingCall, setIncomingCall] = useState(null);
@@ -1016,6 +1018,19 @@ const ChatDirectly = () => {
     }
   };
 
+  // Định nghĩa hàm mở giao diện video call
+  const openVideoCall = (roomName, callId) => {
+    setVideoCallRoomName(roomName);
+    setVideoCallId(callId);
+    setIsVideoCallOpen(true);
+  };
+  // Định nghĩa hàm đóng giao diện video call
+  const closeVideoCall = () => {
+    setIsVideoCallOpen(false);
+    setVideoCallRoomName(null);
+    setVideoCallId(null);
+  };
+
   const handleVideoCall = async () => {
     try {
       const now = Date.now();
@@ -1037,7 +1052,7 @@ const ChatDirectly = () => {
 
     socket.on('call-accepted', ({ callId, roomName }) => {
       setIncomingCall(null);
-      openVideoCall(roomName, callId); // Hàm mở giao diện video call, bạn thay bằng logic của bạn
+      openVideoCall(roomName, callId);
     });
 
     socket.on('call-declined', ({ callId }) => {
@@ -1048,12 +1063,13 @@ const ChatDirectly = () => {
     socket.on('call-ended', ({ callId }) => {
       alert('Cuộc gọi đã kết thúc');
       setIncomingCall(null);
-      closeVideoCall && closeVideoCall(); // Đóng giao diện video call nếu có
+      closeVideoCall();
     });
 
     socket.on('call-timeout', ({ callId }) => {
       alert('Cuộc gọi nhỡ');
       setIncomingCall(null);
+      closeVideoCall();
     });
 
     return () => {
@@ -1399,13 +1415,13 @@ const ChatDirectly = () => {
 
       <VideoCall
         isOpen={isVideoCallOpen}
-        onClose={() => setIsVideoCallOpen(false)}
+        onClose={closeVideoCall}
         identity={identity}
         receiverPhone={phone}
         receiverName={userInfo?.name || phone}
-        roomName={roomName}
+        roomName={videoCallRoomName}
         isCreator={true}
-        callId={callId}
+        callId={videoCallId}
       />
 
       {incomingCall && (

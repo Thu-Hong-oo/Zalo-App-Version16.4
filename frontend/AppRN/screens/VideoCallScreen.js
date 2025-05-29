@@ -49,15 +49,6 @@ const VideoCallScreen = (props) => {
 
   // Đường dẫn file local cho Android
   const localHtml = 'file:///android_asset/twilio-video.html';
-  const injectedJS = `
-    window.token = '${token}';
-    window.roomName = '${roomName}';
-    window.localName = '${localName}';
-    window.remoteName = '${remoteName}';
-    window.localAvatar = '${localAvatar}';
-    window.remoteAvatar = '${remoteAvatar}';
-    true;
-  `;
 
   // Hàm gửi trạng thái cuộc gọi về backend
   const sendCallStatus = async (status = 'cancelled', duration = 0) => {
@@ -81,7 +72,7 @@ const VideoCallScreen = (props) => {
     }
   };
 
-  if (loading) {
+  if (loading || !token || !roomName) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
@@ -139,7 +130,15 @@ const VideoCallScreen = (props) => {
         domStorageEnabled
         allowsInlineMediaPlayback
         mediaPlaybackRequiresUserAction={false}
-        injectedJavaScript={injectedJS}
+        injectedJavaScript={`
+          window.token = '${token}';
+          window.roomName = '${roomName}';
+          window.localName = '${localName}';
+          window.remoteName = '${remoteName}';
+          window.localAvatar = '${localAvatar}';
+          window.remoteAvatar = '${remoteAvatar}';
+          true;
+        `}
         onMessage={handleWebViewMessage}
       />
     </SafeAreaView>

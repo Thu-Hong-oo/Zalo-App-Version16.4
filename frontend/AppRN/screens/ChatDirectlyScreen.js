@@ -753,7 +753,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
 
     // Debug: log all call/video/audio messages
     if (["call", "video", "audio"].includes(item.type)) {
-      console.log("Rendering call/call-type message:", item);
+      //console.log("Rendering call/call-type message:", item);
     }
 
     const handleFilePress = async () => {
@@ -1482,8 +1482,21 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
             <View style={{ flexDirection: 'row', marginTop: 16 }}>
               <TouchableOpacity
                 style={{ backgroundColor: '#4caf50', padding: 16, borderRadius: 50, marginRight: 16 }}
-                onPress={() => {
+                onPress={async () => {
                   socket.emit('accept-video-call', { callId: incomingCall.callId });
+                  const localUser = await getUserInfo();
+                  navigation.navigate('VideoCall', {
+                    callId: incomingCall.callId,
+                    roomName: incomingCall.roomName,
+                    identity: localUser?.phone,
+                    localName: localUser?.name || 'Bạn',
+                    localAvatar: localUser?.avatar || '',
+                    remoteName: incomingCall.senderName || incomingCall.senderPhone,
+                    remoteAvatar: incomingCall.senderAvatar || '',
+                    receiverPhone: incomingCall.senderPhone,
+                    isCreator: false,
+                  });
+                  setIncomingCall(null);
                 }}
               >
                 <Ionicons name="call" size={32} color="#fff" />
