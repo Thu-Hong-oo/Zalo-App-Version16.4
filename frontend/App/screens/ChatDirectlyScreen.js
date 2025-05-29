@@ -1441,9 +1441,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   imgPreview: {
-    width: SCREEN_WIDTH * 0.6,
-    height: SCREEN_WIDTH * 0.4,
-    borderRadius: 10,
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 16,
+    alignSelf: 'center',
+    marginVertical: 2,
+    maxHeight: 400,
+    backgroundColor: '#f0f2f5',
   },
   videoPreview: {
     width: SCREEN_WIDTH * 0.6,
@@ -1657,17 +1661,18 @@ const styles = StyleSheet.create({
   },
   fullWidthVideoMsgContainer: {
     width: '100%',
-    aspectRatio: 16/9,
-    borderRadius: 16,
-    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
     backgroundColor: 'transparent',
-    alignSelf: 'center',
-    maxWidth: '100%',
   },
   fullWidthVideoMsg: {
     width: '100%',
-    height: '100%',
+    aspectRatio: 1,
     borderRadius: 16,
+    backgroundColor: 'transparent',
+    alignSelf: 'center',
+    maxHeight: 400,
   },
 });
 
