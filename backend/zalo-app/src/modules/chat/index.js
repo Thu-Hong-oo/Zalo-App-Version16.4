@@ -235,6 +235,12 @@ const getChatHistory = async (req, res) => {
 
 const upsertConversation = async (senderPhone, receiverPhone, lastMessage) => {
   try {
+    // Kiểm tra đầy đủ thông tin trước khi tạo conversation
+    if (!senderPhone || !receiverPhone) {
+      console.error('upsertConversation thiếu senderPhone hoặc receiverPhone', { senderPhone, receiverPhone });
+      return null;
+    }
+
     const conversationId = createParticipantId(senderPhone, receiverPhone);
     const timestamp = Date.now();
 
@@ -755,9 +761,152 @@ router.put("/messages/recall", authMiddleware, recallMessage);
 router.delete("/messages/delete", authMiddleware, deleteMessage);
 router.post("/messages/forward", authMiddleware, forwardMessage);
 
+// Hàm gửi thông báo cuộc gọi
+const sendCallMessage = async ({ conversationId, senderPhone, receiverPhone, status, duration, type, callId }) => {
+  try {
+    // Kiểm tra đầy đủ thông tin trước khi tạo message
+    if (!senderPhone || !receiverPhone) {
+      console.error('sendCallMessage thiếu senderPhone hoặc receiverPhone', { senderPhone, receiverPhone });
+      return null;
+    }
+
+    // Đảm bảo conversationId được tạo đúng từ 2 số điện thoại
+    const correctConversationId = [senderPhone, receiverPhone].sort().join('_');
+    if (conversationId !== correctConversationId) {
+      console.warn('sendCallMessage: conversationId không khớp với senderPhone và receiverPhone', {
+        provided: conversationId,
+        correct: correctConversationId
+      });
+      conversationId = correctConversationId;
+    }
+
+    const timestamp = Date.now();
+    let content = '';
+    
+    switch (status) {
+      case 'started':
+        content = 'Bắt đầu cuộc gọi video';
+        break;
+      case 'ended':
+        content = `Kết thúc cuộc gọi video${duration ? ` (${duration}s)` : ''}`;
+        break;
+      case 'missed':
+        content = 'Cuộc gọi nhỡ';
+        break;
+      case 'declined':
+        content = 'Cuộc gọi bị từ chối';
+        break;
+      default:
+        content = `Cuộc gọi video: ${status}`;
+    }
+
+    const messageId = uuidv4();
+    const messageParams = {
+      TableName: process.env.MESSAGE_TABLE,
+      Item: {
+        messageId,
+        conversationId,
+        senderPhone,
+        receiverPhone,
+        content,
+        timestamp,
+        status: 'sent',
+        type: type || 'call',
+        callStatus: status,
+        duration: duration || 0,
+        callId
+      }
+    };
+
+    // Nếu là message call, chỉ cho phép tạo 1 bản ghi với cùng conversationId, callId, callStatus
+    if (callId && status) {
+      // Check duplicate trước khi tạo
+      const existingCheck = await dynamoDB.query({
+        TableName: process.env.MESSAGE_TABLE,
+        IndexName: 'conversationIndex',
+        KeyConditionExpression: 'conversationId = :cid',
+        FilterExpression: 'callId = :callId AND callStatus = :status',
+        ExpressionAttributeValues: {
+          ':cid': conversationId,
+          ':callId': callId,
+          ':status': status
+        }
+      }).promise();
+      if (existingCheck.Items.length > 0) {
+        console.log('Duplicate call message prevented');
+        return null;
+      }
+      try {
+        await dynamoDB.put({
+          TableName: process.env.MESSAGE_TABLE,
+          Item: messageParams.Item || messageParams,
+          ConditionExpression: 'attribute_not_exists(callId) AND attribute_not_exists(callStatus)'
+        }).promise();
+      } catch (err) {
+        if (err.code === 'ConditionalCheckFailedException') {
+          console.log('Duplicate call message prevented by DynamoDB condition');
+          return null;
+        }
+        throw err;
+      }
+    } else {
+      await dynamoDB.put({
+        TableName: process.env.MESSAGE_TABLE,
+        Item: messageParams.Item || messageParams
+      }).promise();
+    }
+
+    // Cập nhật conversation
+    await upsertConversation(senderPhone, receiverPhone, {
+      content,
+      timestamp,
+      senderId: senderPhone
+    });
+
+    // Gửi thông báo qua socket nếu người nhận hoặc người gửi đang online
+    const receiverSocket = connectedUsers.get(receiverPhone);
+    if (receiverSocket) {
+      receiverSocket.emit('new-message', {
+        messageId,
+        conversationId,
+        senderPhone,
+        content,
+        timestamp,
+        status: 'delivered',
+        type: type || 'call',
+        callStatus: status,
+        duration: duration || 0,
+        callId
+      });
+    }
+    // Gửi cho cả sender nếu online (và không trùng receiver)
+    const senderSocket = connectedUsers.get(senderPhone);
+    if (senderSocket && senderPhone !== receiverPhone) {
+      senderSocket.emit('new-message', {
+        messageId,
+        conversationId,
+        senderPhone,
+        content,
+        timestamp,
+        status: 'delivered',
+        type: type || 'call',
+        callStatus: status,
+        duration: duration || 0,
+        callId
+      });
+    }
+
+    return messageId;
+  } catch (error) {
+    console.error('Error sending call message:', error);
+    throw error;
+  }
+};
+
 // Export
 module.exports = {
   routes: router,
   socket: initializeSocket,
   connectedUsers,
+  sendCallMessage  // Export hàm sendCallMessage
 };

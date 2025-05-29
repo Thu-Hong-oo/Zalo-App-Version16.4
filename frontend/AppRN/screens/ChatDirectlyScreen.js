@@ -24,7 +24,7 @@ import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import Video from 'react-native-video';
 import DocumentPicker from 'react-native-document-picker';
 import RNFS from 'react-native-fs';
-import { getApiUrl, getBaseUrl, api } from "../config/api";
+import api,{ getApiUrl, getBaseUrl}  from "../config/api";
 import { io } from "socket.io-client";
 import { useNavigation } from "@react-navigation/native";
 import {
@@ -80,6 +80,9 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   const [isNearTop, setIsNearTop] = useState(false);
   const [scrollPosition, setScrollPosition] = useState(0);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
+  const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
+  const [callId, setCallId] = useState(null);
+  const [roomName, setRoomName] = useState(null);
 
   const formatDate = (timestamp) => {
     try {
@@ -832,6 +835,24 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
               </View>
             )}
           </TouchableOpacity>
+        ) : ["call", "video", "audio"].includes(item.type) ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {getCallIcon(item.type, item.callStatus || item.status, isMyMessage ? 'white' : '#1877f2')}
+            <View style={{ marginLeft: 8 }}>
+              <Text
+                style={[
+                  styles.messageText,
+                  isMyMessage ? styles.myMessageText : styles.otherMessageText,
+                  { fontWeight: 'bold' }
+                ]}
+              >
+                {getCallText(item.type, item.callStatus || item.status, item.duration)}
+              </Text>
+              <Text style={{ color: isMyMessage ? 'white' : '#1877f2', fontSize: 12 }}>
+                {formatTime(item.timestamp)}
+              </Text>
+            </View>
+          </View>
         ) : null}
         <View style={styles.messageFooter}>
           <Text
@@ -1009,6 +1030,107 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
     }
   }, [isNearTop]);
 
+  // Thêm các hàm hỗ trợ hiển thị call message giống web
+  const getCallIcon = (type, status, color = '#1877f2') => {
+    if (type === 'video') {
+      switch (status) {
+        case 'started': return <Ionicons name="videocam-outline" size={20} color={color} />;
+        case 'ended': return <Ionicons name="videocam" size={20} color={color} />;
+        case 'missed': return <Ionicons name="videocam-off" size={20} color={color} />;
+        case 'declined': return <Ionicons name="videocam-off" size={20} color={color} />;
+        default: return <Ionicons name="videocam" size={20} color={color} />;
+      }
+    } else {
+      switch (status) {
+        case 'started': return <Ionicons name="call-outline" size={20} color={color} />;
+        case 'ended': return <Ionicons name="call" size={20} color={color} />;
+        case 'missed': return <Ionicons name="call-missed" size={20} color={color} />;
+        case 'declined': return <Ionicons name="call-end" size={20} color={color} />;
+        default: return <Ionicons name="call" size={20} color={color} />;
+      }
+    }
+  };
+
+  const getCallText = (type, status, duration) => {
+    if (type === 'video') {
+      switch (status) {
+        case 'started': return 'Bắt đầu video call';
+        case 'ended': return `Kết thúc video call${duration ? ` (${formatDuration(duration)})` : ''}`;
+        case 'missed': return 'Video call nhỡ';
+        case 'declined': return 'Video call bị từ chối';
+        default: return 'Video call';
+      }
+    } else {
+      switch (status) {
+        case 'started': return 'Bắt đầu cuộc gọi thoại';
+        case 'ended': return `Kết thúc cuộc gọi thoại${duration ? ` (${formatDuration(duration)})` : ''}`;
+        case 'missed': return 'Cuộc gọi nhỡ';
+        case 'declined': return 'Cuộc gọi bị từ chối';
+        default: return 'Cuộc gọi thoại';
+      }
+    }
+  };
+
+  const formatDuration = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  const handleVideoCall = async () => {
+    try {
+      const now = Date.now();
+      const res = await api.post('/video-call/room', { roomName: `room_${now}` });
+      setCallId(res.data.data.callId);
+      setRoomName(res.data.data.room.name);
+      navigation.navigate('VideoCall', {
+        token: res.data.data.token,
+        roomName: res.data.data.room.name,
+        callId: res.data.data.callId,
+        receiverPhone: otherParticipantPhone,
+        isCreator: true,
+        identity: otherParticipantPhone
+      });
+    } catch (err) {
+      console.error('Error starting video call:', err);
+      Alert.alert('Lỗi', 'Không thể tạo phòng video call');
+    }
+  };
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleCallAccepted = (data) => {
+      if (data.callId === callId) {
+        // Xử lý khi cuộc gọi được chấp nhận
+      }
+    };
+
+    const handleCallDeclined = (data) => {
+      if (data.callId === callId) {
+        // Xử lý khi cuộc gọi bị từ chối
+        navigation.goBack();
+      }
+    };
+
+    const handleCallEnded = (data) => {
+      if (data.callId === callId) {
+        // Xử lý khi cuộc gọi kết thúc
+        navigation.goBack();
+      }
+    };
+
+    socket.on('call-accepted', handleCallAccepted);
+    socket.on('call-declined', handleCallDeclined);
+    socket.on('call-ended', handleCallEnded);
+
+    return () => {
+      socket.off('call-accepted', handleCallAccepted);
+      socket.off('call-declined', handleCallDeclined);
+      socket.off('call-ended', handleCallEnded);
+    };
+  }, [socket, callId]);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1877f2" />
@@ -1022,12 +1144,9 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         <View style={styles.headerRight}>
           <TouchableOpacity
             style={styles.headerButton}
-            onPress={() => navigation.navigate('VideoCall', {
-              receiverPhone: otherParticipantPhone,
-              receiverName: title
-            })}
+            onPress={handleVideoCall}
           >
-            <Ionicons name="videocam" size={24} color="white" />
+            <Ionicons name="videocam" size={24} color="#fff" />
           </TouchableOpacity>
           <TouchableOpacity style={styles.headerButton}>
             <Ionicons name="search" size={24} color="white" />

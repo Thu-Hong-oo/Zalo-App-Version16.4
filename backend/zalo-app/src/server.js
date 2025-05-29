@@ -17,7 +17,8 @@ const userRoutes = require("./modules/user/routes");
 const groupRoutes = require("./modules/group/group.route");
 const friendRoutes = require("./modules/friend/routes");
 const conversationRoutes = require("./modules/conversation/routes");
-const videoCallRoutes= require("./modules/videoCall/videoCall.route")
+
+const { routes: videoCallRoutes, initializeVideoSocket } = require("./modules/videoCall/videoCall.route");
 
 const {
   routes: chatGroupRoutes,
@@ -44,6 +45,10 @@ const io = new Server(httpServer, {
   pingInterval: 25000,
 });
 app.set('io', io);
+
+// Store connected users
+const connectedUsers = new Map();
+
 // Multer config
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -60,7 +65,6 @@ const upload = multer({
 });
 
 // Middleware
-
 app.use(
   cors({
     origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:8081","http://localhost:8082"],
@@ -89,16 +93,12 @@ app.use((req, res, next) => {
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
-
-// app.use("/api", gatewayRoutes);
 app.use("/api/groups", groupRoutes);
 app.use("/api/friends", friendRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/chat-group", chatGroupRoutes);
 app.use("/api/video-call", videoCallRoutes);
-
-// Socket.IO Video Call Events
 
 // Socket authentication middleware
 io.use((socket, next) => {
@@ -114,6 +114,12 @@ io.use((socket, next) => {
     // Verify token
     const decoded = jwt.verify(tokenString, process.env.JWT_SECRET);
     socket.user = decoded;
+    
+    // Store socket in connectedUsers Map
+    if (decoded.phone) {
+      connectedUsers.set(decoded.phone, socket);
+    }
+    
     console.log('Socket authenticated for user:', decoded);
     next();
   } catch (err) {
@@ -122,82 +128,14 @@ io.use((socket, next) => {
   }
 });
 
+// Basic socket connection handling
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // Join room for video call
-  socket.on('join-call-room', (callId) => {
-    socket.join(callId);
-    console.log(`User ${socket.id} joined call room: ${callId}`);
-  });
-
-  // Handle WebRTC signaling
-  socket.on('video-call-offer', async (data) => {
-    try {
-      const { receiverPhone, offer } = data;
-      const callerId = socket.user.userId; // Use authenticated user ID
-
-      // Tạo cuộc gọi mới trong database
-      const call = await videoCallService.createCall(callerId, receiverPhone, 'video');
-
-      // Gửi offer đến người nhận
-      socket.to(receiverPhone).emit('video-call-offer', {
-        offer,
-        callerId,
-        callId: call._id
-      });
-    } catch (error) {
-      console.error('Error handling video call offer:', error);
-      socket.emit('error', { message: 'Failed to initiate video call' });
-    }
-  });
-
-  socket.on('video-call-answer', async (data) => {
-    try {
-      const { callerId, answer, callId } = data;
-      
-      // Cập nhật trạng thái cuộc gọi
-      await videoCallService.updateCallStatus(callId, 'active');
-
-      // Gửi answer đến người gọi
-      socket.to(callerId).emit('video-call-answer', {
-        answer,
-        callId
-      });
-    } catch (error) {
-      console.error('Error handling video call answer:', error);
-      socket.emit('error', { message: 'Failed to handle video call answer' });
-    }
-  });
-
-  socket.on('ice-candidate', (data) => {
-    const { receiverPhone, candidate } = data;
-    socket.to(receiverPhone).emit('ice-candidate', {
-      candidate,
-      userId: socket.id
-    });
-  });
-
-  socket.on('end-video-call', async (data) => {
-    try {
-      const { receiverPhone, callId } = data;
-      
-      // Cập nhật trạng thái cuộc gọi
-      if (callId) {
-        await videoCallService.endCall(callId);
-      }
-
-      // Thông báo cho người nhận
-      socket.to(receiverPhone).emit('video-call-ended', {
-        userId: socket.id
-      });
-    } catch (error) {
-      console.error('Error ending video call:', error);
-      socket.emit('error', { message: 'Failed to end video call' });
-    }
-  });
-
   socket.on('disconnect', () => {
+    if (socket.user && socket.user.phone) {
+      connectedUsers.delete(socket.user.phone);
+    }
     console.log('User disconnected:', socket.id);
   });
 });
@@ -223,6 +161,7 @@ app.use((req, res) => {
 // Initialize socket connections
 initializeChatSocket(io);
 initializeChatGroupSocket(io);
+initializeVideoSocket(io, connectedUsers);
 
 // Start server
 httpServer.listen(PORT, "0.0.0.0", () => {

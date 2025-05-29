@@ -923,3 +923,48 @@
     transform: rotate(360deg);
   }
 }
+
+/* Call Message Styles */
+.call-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f0f2f5;
+  border-radius: 18px;
+  margin: 8px auto;
+  max-width: 300px;
+  color: #65676b;
+}
+
+.message.sent .call-message {
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.call-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #1877f2;
+}
+
+.message.sent .call-icon {
+  color: white;
+}
+
+.call-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.call-text {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.call-time {
+  font-size: 12px;
+  opacity: 0.8;
+}
