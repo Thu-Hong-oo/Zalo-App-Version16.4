@@ -30,7 +30,7 @@ Content-Type: application/json
 ### ========== ĐĂNG NHẬP/ĐĂNG XUẤT ==========
 
 ### Đăng nhập
-POST http://ec2-18-142-56-168.ap-southeast-1.compute.amazonaws.com:3000/api/auth/login
+POST http://localhost:3000/api/auth/login
 Content-Type: application/json
 
 {
