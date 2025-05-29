@@ -63,6 +63,9 @@ function MainApp({ setIsAuthenticated }) {
   const [socket, setSocket] = useState(null);
   const [selectedChat, setSelectedChat] = useState(null);
   const [showSelfProfileModal, setShowSelfProfileModal] = useState(false);
+  const [incomingCall, setIncomingCall] = useState(null);
+  const [showVideoCall, setShowVideoCall] = useState(false);
+  const [videoCallProps, setVideoCallProps] = useState({});
 
   const navigate = useNavigate()
   const dispatch = useDispatch();
@@ -225,6 +228,33 @@ function MainApp({ setIsAuthenticated }) {
       };
     }
   }, [socket, handleCallOffer, handleCallAnswer, handleCallIceCandidate, handleCallEnd]);
+
+  // Lắng nghe cuộc gọi đến
+  useEffect(() => {
+    if (!socket) return;
+    const handleIncomingCall = (data) => {
+      setIncomingCall(data);
+    };
+    socket.on('incoming-video-call', handleIncomingCall);
+    return () => socket.off('incoming-video-call', handleIncomingCall);
+  }, [socket]);
+
+  // Khi người gọi nhận được call-accepted thì join VideoCall
+  useEffect(() => {
+    if (!socket) return;
+    const handleCallAccepted = (data) => {
+      setVideoCallProps({
+        isOpen: true,
+        callId: data.callId,
+        roomName: data.roomName,
+        isCreator: true,
+        // Có thể truyền thêm identity, localName, remoteName, ...
+      });
+      setShowVideoCall(true);
+    };
+    socket.on('call-accepted', handleCallAccepted);
+    return () => socket.off('call-accepted', handleCallAccepted);
+  }, [socket]);
 
   const handleLogout = () => {
     localStorage.removeItem("accessToken")
@@ -445,6 +475,45 @@ function MainApp({ setIsAuthenticated }) {
           isOpen={showProfileMenu}
           onClose={() => setShowProfileMenu(false)}
         /> */}
+
+        {incomingCall && (
+          <div className="incoming-call-modal">
+            <div>
+              <b>{incomingCall.senderPhone}</b> đang gọi cho bạn
+            </div>
+            <button
+              onClick={async () => {
+                socket.emit('accept-video-call', { callId: incomingCall.callId });
+                setVideoCallProps({
+                  isOpen: true,
+                  callId: incomingCall.callId,
+                  roomName: incomingCall.roomName,
+                  isCreator: false,
+                  // Có thể truyền thêm identity, localName, remoteName, ...
+                });
+                setShowVideoCall(true);
+                setIncomingCall(null);
+              }}
+            >
+              Nhận cuộc gọi
+            </button>
+            <button
+              onClick={() => {
+                socket.emit('decline-video-call', { callId: incomingCall.callId });
+                setIncomingCall(null);
+              }}
+            >
+              Từ chối
+            </button>
+          </div>
+        )}
+
+        {showVideoCall && (
+          <VideoCall
+            {...videoCallProps}
+            onClose={() => setShowVideoCall(false)}
+          />
+        )}
 
       </div>
     </SocketContext.Provider>

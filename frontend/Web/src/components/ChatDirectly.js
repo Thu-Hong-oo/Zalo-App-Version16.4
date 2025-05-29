@@ -44,6 +44,7 @@ import ForwardMessageModal from "./ForwardMessageModal";
 import ConfirmModal from "../../../Web/src/components/ConfirmModal";
 import { SocketContext } from "../App";
 import VideoCall from './VideoCall';
+import CallMessage from './CallMessage';
 
 const ChatDirectly = () => {
   const { phone } = useParams();
@@ -102,10 +103,12 @@ const ChatDirectly = () => {
     message: "",
   });
   const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
+  const [callId, setCallId] = useState(null);
+  const [roomName, setRoomName] = useState(null);
 
   // Lấy userId từ localStorage
   const user = JSON.parse(localStorage.getItem('user'));
-  const identity = user?.userId || phone;
+  const identity = user.phone;
 
   const extractFilenameFromUrl = (url) => {
     if (!url) return null;
@@ -349,7 +352,9 @@ const ChatDirectly = () => {
                       isRecalled ? "recalled" : ""
                     }`}
                   >
-                    {msg.type === "file" ? (
+                    {['call', 'video', 'audio'].includes(msg.type) ? (
+                      <CallMessage message={msg} />
+                    ) : msg.type === "file" ? (
                       <div className="file-message">
                         {msg.fileType?.startsWith("image/") ? (
                           <div
@@ -416,28 +421,6 @@ const ChatDirectly = () => {
                       )}
                     </div>
                   </div>
-
-                  {/* {!isRecalled && (
-                    <div className="message-actions">
-                      <button
-                        className="action-button forward"
-                        onClick={() => handleForwardClick(msg)}
-                        title="Chuyển tiếp"
-                      >
-                        <ArrowRight size={16} />
-                      </button>
-                      {!isOther && (
-                        <button
-                          className="action-button more"
-                          onClick={(e) => handleContextMenu(e, msg)}
-                          onContextMenu={(e) => handleContextMenu(e, msg)}
-                          title="Thêm"
-                        >
-                          <MoreHorizontal size={16} />
-                        </button>
-                      )}
-                    </div>
-                  )} */}
                 </div>
               );
             })}
@@ -531,21 +514,15 @@ const ChatDirectly = () => {
     socket.emit("join-chat", { receiverPhone: phone });
 
     socket.on("new-message", (msg) => {
-      if (!msg || !msg.messageId) return;
       setMessages((prev) => {
-        const exists = prev.some(
-          (m) =>
-            m.messageId === msg.messageId ||
-            (m.content === msg.content &&
-              m.senderPhone === msg.senderPhone &&
-              Math.abs(m.timestamp - msg.timestamp) < 1000)
-        );
-        if (exists) return prev;
+        const all = [...prev, { ...msg, status: "received" }];
+        const unique = Array.from(new Map(all.map(m => [m.messageId, m])).values());
         setOldestMessageDate(Math.min(msg.timestamp, oldestMessageDate || 0));
-        return [...prev, { ...msg, status: "received" }];
+        return unique.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
       });
       scrollToBottom();
     });
+
     socket.on("typing", ({ senderPhone }) => {
       if (senderPhone === phone) {
         setIsTyping(true);
@@ -555,11 +532,13 @@ const ChatDirectly = () => {
         typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 3000);
       }
     });
+
     socket.on("stop_typing", ({ senderPhone }) => {
       if (senderPhone === phone) {
         setIsTyping(false);
       }
     });
+
     socket.on("message-recalled", ({ messageId }) => {
       setMessages((prev) =>
         prev.map((msg) =>
@@ -569,6 +548,7 @@ const ChatDirectly = () => {
         )
       );
     });
+
     socket.on("message-deleted", ({ messageId }) => {
       setMessages((prev) =>
         prev.map((msg) =>
@@ -1007,8 +987,16 @@ const ChatDirectly = () => {
     }
   };
 
-  const handleVideoCall = () => {
-    setIsVideoCallOpen(true);
+  const handleVideoCall = async () => {
+    try {
+      const now = Date.now();
+      const res = await api.post('/video-call/room', { roomName: `room_${now}` });
+      setCallId(res.data.data.callId);
+      setRoomName(res.data.data.room.name);
+      setIsVideoCallOpen(true);
+    } catch (err) {
+      alert('Không thể tạo phòng video call');
+    }
   };
 
   if (loading) return <div className="loading">Đang tải...</div>;
@@ -1349,7 +1337,9 @@ const ChatDirectly = () => {
         identity={identity}
         receiverPhone={phone}
         receiverName={userInfo?.name || phone}
-        roomName={`room_${phone}`}
+        roomName={roomName}
+        isCreator={true}
+        callId={callId}
       />
     </div>
   );

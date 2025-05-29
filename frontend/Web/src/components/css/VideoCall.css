@@ -175,3 +175,20 @@ body.video-call-active .chat-list,
 body.video-call-active .group-sidebar {
   display: none !important;
 }
+
+.incoming-call-modal {
+  position: fixed;
+  top: 30%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.2);
+  padding: 32px;
+  z-index: 9999;
+  text-align: center;
+}
+.incoming-call-modal button {
+  margin: 8px;
+  padding: 8px 24px;
+}
