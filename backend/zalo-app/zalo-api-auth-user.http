@@ -120,8 +120,8 @@ GET http://localhost:3000/api/users/search?query=nguyenvana
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwaG9uZSI6Ijg0Mzc2OTYzNjUzIiwiaWF0IjoxNzQ0MjM0MjQ4LCJleHAiOjE3NDQzMjA2NDh9.njkenA1oyOH6rknkRm42FTx9v_PBpQ5ZTi4rrPHO8l8
 
 ### Lấy thông tin người dùng theo số điện thoại
-GET http://localhost:3000/api/users/84389804287
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJlYjZjYWIxNC0wNTRiLTRhYjMtOGU2OS0yMWIzOTRmZjc1ZmQiLCJwaG9uZSI6Ijg0MTIzNDU2Nzg5IiwiaWF0IjoxNzQ1OTE1MzQ1LCJleHAiOjE3NDYwMDE3NDV9.li3_v-dATEOhb1h2mRxtogwNmPxWqt6y86wT05bncwU
+GET http://localhost:3000/api/users/84123456789
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI0NjM4NTBhMS03NWJhLTRmMDktYmY3ZS1jMGNhNjJiMGVhMTgiLCJwaG9uZSI6Ijg0Mzc2OTYzNjUzIiwiaWF0IjoxNzQ1MjI0OTMyLCJleHAiOjE3NDUzMTEzMzJ9._G6UKz7e5NFaN8AsOjeoR-sJXQ90oU8-BNoTdAtBEeg
 
 ### ========== TIN NHẮN ==========
 

@@ -62,7 +62,7 @@ export default function AddFriendModal({ onClose, currentUser }) {
         <h3>Thêm bạn qua số điện thoại</h3>
 
         <div className="phone-input">
-          <span>+84</span>
+        
           <input
             type="tel"
             placeholder="Số điện thoại"

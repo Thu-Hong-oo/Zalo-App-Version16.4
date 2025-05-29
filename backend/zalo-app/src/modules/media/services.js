@@ -1,8 +1,9 @@
 const { s3, BUCKETS } = require('../../config/aws');
 const path = require('path');
 
-const MAX_FILE_SIZE = 10*1024 * 1024; 
+const MAX_FILE_SIZE = 10*1024 * 1024; // tối đa 500KB
 const MAX_TOTAL_SIZE = 10*1024 * 1024;
+
 const FILE_TYPE_MATCH = [
     "image/png",
     "image/jpeg",
@@ -16,11 +17,7 @@ const FILE_TYPE_MATCH = [
     "application/vnd.rar",
     "application/zip",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/x-compressed",
-    "application/x-rar-compressed",
-    "application/vnd.ms-excel"
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 ];
 
 const validateFile = (file) => {
@@ -39,7 +36,7 @@ const validateFile = (file) => {
     if (file.size > MAX_FILE_SIZE) {
         return {
             isValid: false,
-            message: `File "${file.originalname}" vượt quá giới hạn 10MB (hiện tại: ${(totalSize/(1024*1024)).toFixed(2)})`,
+            message: `File "${file.originalname}" vượt quá giới hạn 10MB (hiện tại: ${(file.size/1024).toFixed(2)}KB)`,
             code: "FILE_TOO_LARGE"
         };
     }
@@ -96,7 +93,7 @@ const uploadToS3 = async (files, conversationId) => {
     if (totalSize > MAX_TOTAL_SIZE) {
         throw {
             isValid: false,
-            message: `Tổng dung lượng vượt quá 10MB. Hiện tại là ${(totalSize/(1024*1024)).toFixed(2)} MB`,
+            message: `Tổng dung lượng vượt quá 10MB. Hiện tại là ${(totalSize/1024).toFixed(2)}KB`,
             code: "TOTAL_SIZE_EXCEEDED"
         };
     }

@@ -10,26 +10,27 @@ const {
 const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const { DynamoDBDocumentClient } = require("@aws-sdk/lib-dynamodb");
 
-const client = new DynamoDBClient({});
-const dynamodb = DynamoDBDocumentClient.from(client);
+const client    = new DynamoDBClient({});
+const dynamodb  = DynamoDBDocumentClient.from(client);
+const db        = dynamodb;
 
-const TABLE_NAME = "friendRequests";
+const TABLE_REQUEST = "friendRequests";
 const USERS_TABLE = "users-zalolite";
 const FRIENDS_TABLE = "friends-zalolite";
 
-async function getUserProfile(userId) {
-  try {
-    const params = {
-      TableName: USERS_TABLE,
-      Key: { userId },
-    };
-    const result = await dynamodb.send(new GetCommand(params));
-    return result.Item || null;
-  } catch (error) {
-    console.error(`Error fetching profile for userId ${userId}:`, error);
-    return null;
-  }
-}
+/* ───────── helpers ───────── */
+const getUserProfile = async (userId) => {
+  const res = await dynamodb.send(
+    new GetCommand({ TableName: USERS_TABLE, Key: { userId } })
+  );
+  return res.Item ?? null;
+};
+
+const getUser = async (id) =>
+  (await dynamodb.send(
+     new GetCommand({ TableName: USERS_TABLE, Key: { userId: id } })
+   )).Item;
+
 
 async function getUserIdByPhone(phone) {
   try {
@@ -46,142 +47,146 @@ async function getUserIdByPhone(phone) {
   }
 }
 
+/* ───────── API ───────── */
+/* ---------- Send request ---------- */
 exports.sendFriendRequest = async (req, res) => {
   const { from, to } = req.body;
+  if (!from || !to || from === to)
+    return res.status(400).json({ success: false, message: "Thông tin không hợp lệ" });
 
-  if (!from || !to || from === to) {
-    return res.status(400).json({ success: false, message: "Thiếu thông tin hoặc không thể gửi cho chính mình" });
-  }
-
-  // Kiểm tra người nhận có tồn tại
-  const toUser = await getUserProfile(to);
-  if (!toUser) {
+  if (!(await getUser(to)))
     return res.status(404).json({ success: false, message: "Không tìm thấy người nhận" });
+
+  const { Items: friends = [] } = await db.send(new QueryCommand({
+    TableName: FRIENDS_TABLE,
+    KeyConditionExpression: "userId=:u AND friendId=:f",
+    ExpressionAttributeValues: { ":u": from, ":f": to },
+  }));
+  if (friends[0])
+    return res.status(409).json({ success: false, code: "ALREADY_FRIEND", message: "Hai tài khoản đã là bạn bè" });
+
+  const { Items: reqs = [] } = await db.send(new ScanCommand({
+    TableName: TABLE_REQUEST,
+    FilterExpression: "(#from=:f AND #to=:t) OR (#from=:t AND #to=:f)",
+    ExpressionAttributeNames: { "#from": "from", "#to": "to" },
+    ExpressionAttributeValues: { ":f": from, ":t": to },
+  }));
+
+  if (reqs[0]) {
+    if (reqs[0].status === "pending")
+      return res.status(409).json({ success: false, code: "ALREADY_SENT", request: reqs[0], message: "Đã có lời mời đang chờ" });
+    if (reqs[0].status === "accepted")
+      return res.status(409).json({ success: false, code: "ALREADY_FRIEND", message: "Hai tài khoản đã là bạn bè" });
   }
 
-  const requestId = uuidv4();
-  const item = {
-    requestId,
-    from,
-    to, // ✅ dùng trực tiếp
-    status: "pending",
-    createdAt: new Date().toISOString(),
-  };
-
-  try {
-    await dynamodb.send(new PutCommand({ TableName: TABLE_NAME, Item: item }));
-    res.json({ success: true, message: "Đã gửi lời mời" });
-  } catch (err) {
-    console.error("Lỗi gửi:", err);
-    res.status(500).json({ success: false, message: "Lỗi máy chủ", error: err.message });
-  }
+  await db.send(new PutCommand({
+    TableName: TABLE_REQUEST,
+    Item: {
+      requestId: uuidv4(),
+      from,
+      to,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    },
+  }));
+  res.json({ success: true, message: "Đã gửi lời mời" });
 };
 
+
+/* ---------- NEW endpoint: check-status ---------- */
+exports.checkFriendRequestStatus = async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to)
+    return res.status(400).json({ success: false, message: "Thiếu from/to" });
+
+  const { Items = [] } = await db.send(new ScanCommand({
+    TableName: TABLE_REQUEST,
+    FilterExpression: "(#from=:f AND #to=:t) OR (#from=:t AND #to=:f)",
+    ExpressionAttributeNames: { "#from": "from", "#to": "to" },
+    ExpressionAttributeValues: { ":f": from, ":t": to },
+  }));
+
+  if (!Items[0]) return res.json({ success: true, status: "none" });
+  if (Items[0].status === "pending") return res.json({ success: true, status: "pending" });
+  return res.json({ success: true, status: "accepted" });
+};
+
+/* ----- getSentRequests ----- */
 exports.getSentRequests = async (req, res) => {
   const { userId } = req.params;
-  try {
-    const scan = await dynamodb.send(new ScanCommand({
-      TableName              : TABLE_NAME,
-      FilterExpression       : "#from = :u AND #status = :p",
-      ExpressionAttributeNames: { "#from": "from", "#status": "status" },
-      ExpressionAttributeValues: { ":u": userId, ":p": "pending" },
-    }));
-
-    const sent = await Promise.all(
-      (scan.Items ?? []).map(async it => {
-        const user = await getUserProfile(it.to);
-        return {
-          ...it,
-          toUser: {
-            name   : user?.name   ?? "Không rõ",
-            avatar : user?.avatar ?? "/default-avatar.png",
-          },
-        };
-      }),
-    );
-    res.json({ success: true, sent });
-  } catch (err) {
-    console.error("❌ getSentRequests:", err);
-    res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
-  }
+  const { Items = [] } = await db.send(new ScanCommand({
+    TableName: TABLE_REQUEST,
+    FilterExpression: "#from = :u AND #status = :s",
+    ExpressionAttributeNames: { "#from": "from", "#status": "status" },
+    ExpressionAttributeValues: { ":u": userId, ":s": "pending" },
+  }));
+  const sent = await Promise.all(Items.map(async it => ({
+    ...it,
+    toUser: await getUserProfile(it.to),
+  })));
+  res.json({ success: true, sent });
 };
 
-
+/* ----- getReceivedRequests ----- */
 exports.getReceivedRequests = async (req, res) => {
   const { userId } = req.params;
-  try {
-    const result = await dynamodb.send(new ScanCommand({
-      TableName: TABLE_NAME,
-      FilterExpression: "#to = :toVal AND #status = :statusVal",
-      ExpressionAttributeNames: { "#to": "to", "#status": "status" },
-      ExpressionAttributeValues: { ":toVal": userId, ":statusVal": "pending" }
-    }));
-
-    const enriched = await Promise.all(
-      result.Items.map(async (item) => {
-        const user = await getUserProfile(item.from);
-        return {
-          ...item,
-          fromUser: {
-            name: user?.name || "Không rõ",
-            avatar: user?.avatar || "/default-avatar.png",
-          }
-        };
-      })
-    );
-    res.json({ success: true, received: enriched });
-  } catch (err) {
-    console.error("Lỗi lấy nhận:", err);
-    res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
-  }
+  const { Items = [] } = await db.send(new ScanCommand({
+    TableName: TABLE_REQUEST,
+    FilterExpression: "#to = :u AND #status = :s",
+    ExpressionAttributeNames: { "#to": "to", "#status": "status" },
+    ExpressionAttributeValues: { ":u": userId, ":s": "pending" },
+  }));
+  const received = await Promise.all(Items.map(async it => ({
+    ...it,
+    fromUser: await getUserProfile(it.from),
+  })));
+  res.json({ success: true, received });
 };
 
+/* ----- acceptFriendRequest ----- */
 exports.acceptFriendRequest = async (req, res) => {
   const { requestId } = req.body;
-  try {
-    const request = await dynamodb.send(new ScanCommand({
-      TableName: TABLE_NAME,
-      FilterExpression: "requestId = :rid",
-      ExpressionAttributeValues: { ":rid": requestId },
-    }));
-    const friendRequest = request.Items?.[0];
-    if (!friendRequest) return res.status(404).json({ success: false, message: "Không tìm thấy lời mời" });
+  const { Items } = await db.send(new ScanCommand({
+    TableName: TABLE_REQUEST,
+    FilterExpression: "requestId = :r",
+    ExpressionAttributeValues: { ":r": requestId },
+  }));
+  const fr = Items?.[0];
+  if (!fr) return res.status(404).json({ success: false, message: "Không tìm thấy lời mời" });
 
-    const { from, to } = friendRequest;
-    const createdAt = new Date().toISOString();
+  const { from, to } = fr;
+  const createdAt = new Date().toISOString();
 
-    await Promise.all([
-      dynamodb.send(new UpdateCommand({
-        TableName: TABLE_NAME,
-        Key: { requestId },
-        UpdateExpression: "SET #status = :status",
-        ExpressionAttributeNames: { "#status": "status" },
-        ExpressionAttributeValues: { ":status": "accepted" },
-      })),
-      dynamodb.send(new PutCommand({ TableName: FRIENDS_TABLE, Item: { userId: from, friendId: to, createdAt } })),
-      dynamodb.send(new PutCommand({ TableName: FRIENDS_TABLE, Item: { userId: to, friendId: from, createdAt } })),
-    ]);
-
-    res.json({ success: true, message: "Đã đồng ý kết bạn" });
-  } catch (err) {
-    console.error("Lỗi accept:", err);
-    res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
+  if (from !== to) {
+    await db.send(new PutCommand({ TableName: FRIENDS_TABLE, Item: { userId: from, friendId: to, createdAt } }));
+    await db.send(new PutCommand({ TableName: FRIENDS_TABLE, Item: { userId: to, friendId: from, createdAt } }));
   }
+
+  await db.send(new UpdateCommand({
+    TableName: TABLE_REQUEST,
+    Key: { requestId },
+    UpdateExpression: "SET #status = :a",
+    ExpressionAttributeNames: { "#status": "status" },
+    ExpressionAttributeValues: { ":a": "accepted" },
+  }));
+
+  res.json({ success: true, message: "Đã đồng ý kết bạn" });
 };
+
 
 exports.rejectFriendRequest = async (req, res) => {
   const { requestId } = req.body;
   try {
-    await dynamodb.send(new UpdateCommand({
-      TableName: TABLE_NAME,
+    await db.send(new UpdateCommand({
+      TableName: TABLE_REQUEST,
       Key: { requestId },
-      UpdateExpression: "SET #status = :status",
+      UpdateExpression: "SET #status = :s",
       ExpressionAttributeNames: { "#status": "status" },
-      ExpressionAttributeValues: { ":status": "rejected" },
+      ExpressionAttributeValues: { ":s": "rejected" },
     }));
     res.json({ success: true, message: "Đã từ chối" });
   } catch (err) {
-    console.error("Lỗi reject:", err);
+    console.error("❌ Lỗi reject:", err);
     res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
   }
 };
@@ -189,10 +194,10 @@ exports.rejectFriendRequest = async (req, res) => {
 exports.cancelFriendRequest = async (req, res) => {
   const { requestId } = req.body;
   try {
-    await dynamodb.send(new DeleteCommand({ TableName: TABLE_NAME, Key: { requestId } }));
+    await db.send(new DeleteCommand({ TableName: TABLE_REQUEST, Key: { requestId } }));
     res.json({ success: true, message: "Đã thu hồi" });
   } catch (err) {
-    console.error("Lỗi cancel:", err);
+    console.error("❌ Lỗi cancel:", err);
     res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
   }
 };
@@ -200,51 +205,60 @@ exports.cancelFriendRequest = async (req, res) => {
 exports.getFriendsList = async (req, res) => {
   const { userId } = req.params;
   try {
-    const params = {
+    const { Items = [] } = await db.send(new QueryCommand({
       TableName: FRIENDS_TABLE,
       KeyConditionExpression: "userId = :u",
       ExpressionAttributeValues: { ":u": userId },
-    };
+    }));
 
-    const result = await dynamodb.send(new QueryCommand(params));
-    const friends = await Promise.all(
-      (result.Items || []).map(async (item) => {
-        const user = await getUserProfile(item.friendId);
-        return {
-          userId: item.friendId,
-          name: user?.name || "Không rõ",
-          avatar: user?.avatar || "/default-avatar.png",
-          phone: user?.phone || null,
-        };
-      })
-    );
+    const uniqueIds = [
+      ...new Set(
+        Items
+          .filter(it => it.friendId && it.friendId !== userId)
+          .map(it => it.friendId)
+      )
+    ];
+
+    const friends = await Promise.all(uniqueIds.map(async fid => {
+      const u = await getUserProfile(fid);
+      return {
+        userId : fid,
+        name   : u?.name   ?? "Không rõ",
+        avatar : u?.avatar ?? "/default-avatar.png",
+        phone  : u?.phone  ?? null,
+      };
+    }));
+
     res.json({ success: true, friends });
   } catch (err) {
-    console.error("Lỗi getFriendsList:", err);
+    console.error("❌ Lỗi getFriendsList:", err);
     res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
   }
 };
+
 
 // controller.js
 exports.deleteFriend = async (req, res) => {
   const { userId, friendId } = req.body;
   try {
-    await dynamodb.send(new DeleteCommand({
+    await db.send(new DeleteCommand({
       TableName: FRIENDS_TABLE,
       Key: { userId, friendId },
     }));
-
-    await dynamodb.send(new DeleteCommand({
+    await db.send(new DeleteCommand({
       TableName: FRIENDS_TABLE,
       Key: { userId: friendId, friendId: userId },
     }));
-
     res.json({ success: true, message: "Đã xóa bạn thành công" });
   } catch (err) {
     console.error("❌ Lỗi xóa bạn:", err);
-    res.status(500).json({ success: false, message: "Lỗi xóa bạn", error: err.message });
+    res.status(500).json({ success: false, message: "Lỗi server", error: err.message });
   }
 };
+
+exports.getFriends = exports.getFriendsList;
+
+
 // Chuẩn hóa số điện thoại (VD: 0123456789 => 84123456789)
 function normalizePhone(phone) {
   if (phone.startsWith("0")) {
@@ -253,3 +267,53 @@ function normalizePhone(phone) {
   return phone;
 }
 
+// GET /friends/:userId
+exports.getFriends = async (req, res) => {
+  const { userId } = req.params;
+
+  const { Items=[] } = await db.send(new QueryCommand({
+    TableName: FRIENDS_TABLE,
+    KeyConditionExpression: "userId = :u",
+    ExpressionAttributeValues: { ":u": userId },
+  }));
+
+  const friends = await Promise.all(
+    Items.map(async ({ friendId }) => {
+      const u = await getUserProfile(friendId);
+      return {
+        userId : friendId,
+        name   : u?.name   ?? "(chưa đặt tên)",
+        avatar : u?.avatar ?? `https://ui-avatars.com/api/?name=${encodeURIComponent('User')}`,
+        phone  : u?.phone  ?? null,
+      };
+    })
+  );
+
+  res.json({ success:true, friends });
+};
+
+// GET /friends/request/status?from=...&to=...
+exports.checkStatus = async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) return res.status(400).json({ success:false, message:"Thiếu from / to" });
+
+  /* 1️⃣  xem trong bảng bạn bè */
+  const { Items:fri=[] } = await db.send(new QueryCommand({
+    TableName             : FRIENDS_TABLE,
+    KeyConditionExpression: "userId = :u AND friendId = :f",
+    ExpressionAttributeValues:{ ":u": from, ":f": to },
+  }));
+  if (fri[0]) return res.json({ success:true, status:"accepted" });
+
+  /* 2️⃣  xem trong bảng request 2 chiều */
+  const { Items:requests=[] } = await db.send(new ScanCommand({
+    TableName: REQUEST_TABLE,
+    FilterExpression:"(#from=:f AND #to=:t) OR (#from=:t AND #to=:f)",
+    ExpressionAttributeNames : { "#from":"from", "#to":"to" },
+    ExpressionAttributeValues: { ":f":from, ":t":to },
+  }));
+
+  if (!requests[0])                return res.json({ success:true, status:"none"   });
+  if (requests[0].status ==="pending")  return res.json({ success:true, status:"pending" });
+  return res.json({ success:true, status:"accepted" }); // phòng xa
+};

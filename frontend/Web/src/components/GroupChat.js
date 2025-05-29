@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useContext } from "react";
-import { SocketContext } from "../App"; 
 import {
   getGroupDetails,
   getGroupMessages,
@@ -11,6 +9,7 @@ import {
   forwardGroupMessage,
   uploadFiles,
 } from "../services/group";
+import { getSocket } from "../config/socket";
 import EmojiPicker from "emoji-picker-react";
 import GroupSidebar from "./GroupSidebar";
 import {
@@ -47,15 +46,11 @@ import {
   Sidebar,
   Check,
   CheckCheck,
-  Maximize2,
 } from "lucide-react";
 import "./css/GroupChat.css";
 import api, { getBaseUrl, getApiUrl } from "../config/api";
-import { useDispatch, useSelector } from 'react-redux';
-import { setSelectedGroup, updateGroup, updateGroupName, updateGroupAvatar,removeGroup } from '../redux/slices/groupSlice';
-import ForwardMessageModal from "./ForwardMessageModal";
 
-const GroupChat = ({ selectedChat }) => {
+const GroupChat = () => {
   const { groupId } = useParams();
   const navigate = useNavigate();
   const [groupDetails, setGroupDetails] = useState(null);
@@ -82,8 +77,6 @@ const GroupChat = ({ selectedChat }) => {
   const [showMembersList, setShowMembersList] = useState(true);
   const [showGroupInfo, setShowGroupInfo] = useState(true);
   const [showMediaList, setShowMediaList] = useState(true);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [lastReadMessageId, setLastReadMessageId] = useState(null);
   const messagesEndRef = useRef(null);
   const emojiPickerRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -94,152 +87,120 @@ const GroupChat = ({ selectedChat }) => {
   const [uploadingFiles, setUploadingFiles] = useState([]);
   const [uploadErrors, setUploadErrors] = useState([]);
   const [fullscreenMedia, setFullscreenMedia] = useState(null);
-  const socket = useContext(SocketContext);
-  const [groupUpdates, setGroupUpdates] = useState(null);
-  const dispatch = useDispatch();
-  const reduxSelectedGroup = useSelector(state => state.group.selectedGroup);
-  const [showForwardModal, setShowForwardModal] = useState(false);
-  const [forwarding, setForwarding] = useState(false);
-  const [forwardError, setForwardError] = useState(null);
-  const [forwardMessageContent, setForwardMessageContent] = useState("");
-  const [uploadErrorModal, setUploadErrorModal] = useState({ show: false, message: "" });
+  const socket = useRef(null);
 
   useEffect(() => {
     fetchGroupDetails();
     loadChatHistory();
     getCurrentUserId();
 
+    // Initialize socket connection
+    socket.current = getSocket();
+
     // Join group when component mounts
-    if (socket && groupId) {
-      socket.emit("join-group", groupId);
-      // Mark messages as read when joining group
-      markMessagesAsRead();
+    if (groupId) {
+      socket.current.emit("join-group", groupId);
     }
 
     // Set up socket event listeners
-    if (socket) {
-      socket.on("new-group-message", async (newMessage) => {
-        try {
-          console.log("Received new message from socket:", newMessage);
+    socket.current.on("new-group-message", async (newMessage) => {
+      try {
+        console.log("Received new message from socket:", newMessage);
 
-          if (newMessage.groupId === groupId) {
-            // Nếu tin nhắn không phải của người dùng hiện tại, lấy thông tin người gửi
-            if (newMessage.senderId !== currentUserId) {
-              const senderInfo = await fetchUserInfo(newMessage.senderId);
-              newMessage = {
-                ...newMessage,
-                senderName: senderInfo.name,
-                senderAvatar: senderInfo.avatar,
-              };
+        if (newMessage.groupId === groupId) {
+          // Nếu tin nhắn không phải của người dùng hiện tại, lấy thông tin người gửi
+          if (newMessage.senderId !== currentUserId) {
+            const senderInfo = await fetchUserInfo(newMessage.senderId);
+            newMessage = {
+              ...newMessage,
+              senderName: senderInfo.name,
+              senderAvatar: senderInfo.avatar,
+            };
 
-              setMessages((prev) => {
-                // Kiểm tra xem tin nhắn đã tồn tại chưa
-                const existingMessage = prev.find(
-                  (msg) => msg.groupMessageId === newMessage.groupMessageId
-                );
+            setMessages((prev) => {
+              // Kiểm tra xem tin nhắn đã tồn tại chưa
+              const existingMessage = prev.find(
+                (msg) => msg.groupMessageId === newMessage.groupMessageId
+              );
 
-                if (existingMessage) {
-                  return prev;
-                }
-
-                return [...prev, newMessage].sort(
-                  (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
-                );
-              });
-              scrollToBottom();
-            }
-            // Luôn mark as read khi có tin nhắn mới trong phòng đang mở
-            markMessagesAsRead();
-          }
-        } catch (error) {
-          console.error("Error handling new message:", error);
-        }
-      });
-
-      socket.on("group-message-recalled", (recallData) => {
-        if (recallData.groupId === groupId) {
-          setMessages((prev) =>
-            prev.map((msg) => {
-              if (msg.groupMessageId === recallData.messageId) {
-                return {
-                  ...msg,
-                  content: "Tin nhắn đã bị thu hồi",
-                  status: "recalled",
-                  metadata: {
-                    ...msg.metadata,
-                    recalledBy: recallData.recalledBy,
-                    recalledAt: recallData.recalledAt,
-                  },
-                };
+              if (existingMessage) {
+                return prev;
               }
-              return msg;
-            })
-          );
+
+              return [...prev, newMessage].sort(
+                (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+              );
+            });
+            scrollToBottom();
+          }
         }
-      });
+      } catch (error) {
+        console.error("Error handling new message:", error);
+      }
+    });
 
-      socket.on("group-message-deleted", (deleteData) => {
-        console.log("Received delete event:", deleteData);
-        if (deleteData.groupId === groupId) {
-          // Remove message from UI for all users
-          setMessages((prev) =>
-            prev.filter(
-              (msg) => msg.groupMessageId !== deleteData.deletedMessageId
-            )
-          );
-          console.log("Message removed:", deleteData.deletedMessageId);
-        }
-      });
+    socket.current.on("group-message-recalled", (recallData) => {
+      if (recallData.groupId === groupId) {
+        setMessages((prev) =>
+          prev.map((msg) => {
+            if (msg.groupMessageId === recallData.messageId) {
+              return {
+                ...msg,
+                content: "Tin nhắn đã bị thu hồi",
+                status: "recalled",
+                metadata: {
+                  ...msg.metadata,
+                  recalledBy: recallData.recalledBy,
+                  recalledAt: recallData.recalledAt,
+                },
+              };
+            }
+            return msg;
+          })
+        );
+      }
+    });
 
-      socket.on("user-joined", ({ userId, metadata }) => {
-        // Handle user joined event
-        console.log(`User ${userId} joined the group`);
-      });
+    socket.current.on("group-message-deleted", (deleteData) => {
+      console.log("Received delete event:", deleteData);
+      if (deleteData.groupId === groupId) {
+        // Remove message from UI for all users
+        setMessages((prev) =>
+          prev.filter(
+            (msg) => msg.groupMessageId !== deleteData.deletedMessageId
+          )
+        );
+        console.log("Message removed:", deleteData.deletedMessageId);
+      }
+    });
 
-      socket.on("user-left", ({ userId }) => {
-        // Handle user left event
-        console.log(`User ${userId} left the group`);
-      });
+    socket.current.on("user-joined", ({ userId, metadata }) => {
+      // Handle user joined event
+      console.log(`User ${userId} joined the group`);
+    });
 
-      socket.on("error", ({ message }) => {
-        setError(message);
-      });
+    socket.current.on("user-left", ({ userId }) => {
+      // Handle user left event
+      console.log(`User ${userId} left the group`);
+    });
 
-      // Add new socket event for unread count
-      socket.on("group-history", ({ messages, unreadCount }) => {
-        setUnreadCount(unreadCount);
-      });
-    }
+    socket.current.on("error", ({ message }) => {
+      setError(message);
+    });
 
     // Cleanup on unmount
     return () => {
-      if (socket && groupId) {
-        socket.emit("leave-group", groupId);
-        socket.off("new-group-message");
-        socket.off("group-message-recalled");
-        socket.off("group-message-deleted");
-        socket.off("user-joined");
-        socket.off("user-left");
-        socket.off("error");
-        socket.off("group-history");
+      if (socket.current) {
+        socket.current.emit("leave-group", groupId);
+        socket.current.off("new-group-message");
+        socket.current.off("group-message-recalled");
+        socket.current.off("group-message-deleted");
+        socket.current.off("user-joined");
+        socket.current.off("user-left");
+        socket.current.off("error");
       }
     };
-  }, [socket, groupId]);
-
-  // Load lastReadMessageId from localStorage when component mounts
-  useEffect(() => {
-    const storedLastRead = localStorage.getItem(`lastRead_${groupId}`);
-    if (storedLastRead) {
-      setLastReadMessageId(storedLastRead);
-    }
-  }, [groupId]);
-
-  // Save lastReadMessageId to localStorage when it changes
-  useEffect(() => {
-    if (lastReadMessageId) {
-      localStorage.setItem(`lastRead_${groupId}`, lastReadMessageId);
-    }
-  }, [lastReadMessageId, groupId]);
+  }, [groupId, currentUserId]);
 
   const getCurrentUserId = async () => {
     try {
@@ -272,7 +233,6 @@ const GroupChat = ({ selectedChat }) => {
 
       if (response.status === "success") {
         setGroupDetails(response.data);
-        dispatch(setSelectedGroup(response.data));
         setLoading(false);
       } else {
         throw new Error("Không nhận được dữ liệu từ server");
@@ -373,7 +333,6 @@ const GroupChat = ({ selectedChat }) => {
 
         // Filter out messages that have been recalled or deleted
         const filteredMessages = messageArray.filter((msg) => {
-          if (msg.type === 'system') return true; // luôn giữ lại system message
           const isRecalled = msg.recallStatus === "recalled";
           const isDeleted =
             msg.deleteStatus === "deleted" && msg.deletedBy === currentUserId;
@@ -440,13 +399,7 @@ const GroupChat = ({ selectedChat }) => {
       return null;
     } catch (error) {
       console.error("Error uploading files:", error);
-      // Check for the specific size exceeded error
-      if (error.response && error.response.data && error.response.data.code === 'TOTAL_SIZE_EXCEEDED') {
-        setUploadErrorModal({ show: true, message: error.response.data.message });
-      } else {
-        // Handle other upload errors by showing a generic message or adding to uploadErrors list
-        setUploadErrors((prev) => [...prev, error.message]);
-      }
+      setUploadErrors((prev) => [...prev, error.message]);
       return null;
     } finally {
       setIsUploading(false);
@@ -506,39 +459,7 @@ const GroupChat = ({ selectedChat }) => {
             );
 
             // Emit socket event with the same format as mobile
-            socket.emit("new-group-message", messageData);
-
-            // Update group's lastMessage
-            try {
-              const lastMessageData = {
-                lastMessage: {
-                  content: `[File] ${file.type}`,
-                  type: "file",
-                  senderId: currentUserId,
-                  timestamp: messageData.createdAt,
-                  fileType: file.type
-                },
-                lastMessageAt: messageData.createdAt
-              };
-              
-              await api.put(
-                `/groups/${groupId}`,
-                lastMessageData
-              );
-              
-              if (socket) {
-                socket.emit("group:updated", {
-                  groupId,
-                  type: "LAST_MESSAGE_UPDATED",
-                  data: {
-                    ...lastMessageData.lastMessage,
-                    lastMessageAt: messageData.createdAt
-                  }
-                });
-              }
-            } catch (error) {
-              console.error("Error updating group's lastMessage:", error);
-            }
+            socket.current.emit("new-group-message", messageData);
           }
         }
       } else if (message.trim()) {
@@ -568,38 +489,7 @@ const GroupChat = ({ selectedChat }) => {
           );
 
           // Emit socket event with the same format as mobile
-          socket.emit("new-group-message", messageData);
-
-          // Update group's lastMessage
-          try {
-            const lastMessageData = {
-              lastMessage: {
-                content: message.trim(),
-                type: "text",
-                senderId: currentUserId,
-                timestamp: messageData.createdAt
-              },
-              lastMessageAt: messageData.createdAt
-            };
-            
-            await api.put(
-              `/groups/${groupId}`,
-              lastMessageData
-            );
-            
-            if (socket) {
-              socket.emit("group:updated", {
-                groupId,
-                type: "LAST_MESSAGE_UPDATED",
-                data: {
-                  ...lastMessageData.lastMessage,
-                  lastMessageAt: messageData.createdAt
-                }
-              });
-            }
-          } catch (error) {
-            console.error("Error updating group's lastMessage:", error);
-          }
+          socket.current.emit("new-group-message", messageData);
         }
       }
 
@@ -617,7 +507,7 @@ const GroupChat = ({ selectedChat }) => {
 
   const handleRecallMessage = async (messageId) => {
     try {
-      socket.emit("recall-group-message", {
+      socket.current.emit("recall-group-message", {
         groupId,
         messageId,
       });
@@ -637,7 +527,7 @@ const GroupChat = ({ selectedChat }) => {
         );
 
         // Emit socket event for deletion
-        socket.emit("delete-group-message", {
+        socket.current.emit("delete-group-message", {
           groupId,
           messageId,
           deletedBy: currentUserId,
@@ -688,31 +578,20 @@ const GroupChat = ({ selectedChat }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const getFileIcon = (mimeType, fileName = "") => {
-    // Ưu tiên kiểm tra đuôi file nếu có
-    const ext = fileName.split('.').pop().toLowerCase();
-
-    if (mimeType.includes("word") || ext === "doc" || ext === "docx") {
-      return <img src="/icons/word.svg" alt="Word" style={{ width: 50, height: 50 }} />;
-    }
-    if (mimeType.includes("pdf") || ext === "pdf") {
-      return <img src="/icons/pdf.svg" alt="PDF" style={{ width: 50, height: 50 }} />;
-    }
-    if (mimeType.includes("excel") || ext === "xls" || ext === "xlsx") {
-      return <img src="/icons/excel.png" alt="Excel" style={{ width: 50, height: 50 }} />;
-    }
-    if (mimeType.includes("powerpoint") || ext === "ppt" || ext === "pptx") {
-      return <img src="/icons/ppt.png" alt="PowerPoint" style={{ width: 50, height: 50 }} />;
-    }
-    if (mimeType.includes("zip") || mimeType.includes("rar") || ext === "zip" || ext === "rar") {
-      return <img src="/icons/zip.png" alt="Archive" style={{ width: 50, height: 50 }} />;
-    }
-    if (mimeType.includes("image")) {
-      return <FileImage size={24} />;
-    }
-    if (mimeType.includes("video")) {
-      return <FileVideo size={24} />;
-    }
+  const getFileIcon = (mimeType) => {
+    if (mimeType.includes("image")) return <FileImage size={24} />;
+    if (mimeType.includes("video")) return <FileVideo size={24} />;
+    if (mimeType.includes("pdf")) return <FileText size={24} />;
+    if (mimeType.includes("word") || mimeType.includes("document"))
+      return <FileText size={24} />;
+    if (mimeType.includes("powerpoint") || mimeType.includes("presentation"))
+      return <FileText size={24} />;
+    if (
+      mimeType.includes("zip") ||
+      mimeType.includes("rar") ||
+      mimeType.includes("archive")
+    )
+      return <FileArchive size={24} />;
     return <File size={24} />;
   };
 
@@ -722,12 +601,15 @@ const GroupChat = ({ selectedChat }) => {
     const isVideo = fileType.startsWith("video/");
     const fileUrl = message.fileUrl || message.content;
 
+    // Extract filename from S3 URL if no fileName is provided
     let displayFileName = message.fileName;
     if (!displayFileName && fileUrl) {
       try {
+        // Extract filename from URL (assumes URL format like https://media-zalolite.s3.ap-southeast-1.amazonaws.com/filename.ext)
         const urlParts = fileUrl.split("/");
         displayFileName = decodeURIComponent(urlParts[urlParts.length - 1]);
       } catch (error) {
+        console.error("Error extracting filename from URL:", error);
         displayFileName = "Unknown file";
       }
     }
@@ -738,37 +620,37 @@ const GroupChat = ({ selectedChat }) => {
           <img
             src={fileUrl}
             alt={displayFileName}
-            style={{ maxWidth: 220, borderRadius: 10, cursor: "pointer" }}
             onClick={() => setFullscreenMedia({ type: "image", url: fileUrl })}
           />
         ) : isVideo ? (
           <video
             controls
-            style={{ maxWidth: 220, borderRadius: 10, cursor: "pointer" }}
             onClick={() => setFullscreenMedia({ type: "video", url: fileUrl })}
           >
             <source src={fileUrl} type={fileType} />
             Your browser does not support the video tag.
           </video>
         ) : (
-          <>
-            <div className="file-icon">{getFileIcon(fileType, displayFileName)}</div>
-            <div className="file-meta">
-              <div className="file-meta-row">
-                <span className="file-name" title={displayFileName}>{displayFileName}</span>
-                <a
-                  href={fileUrl}
-                  download={displayFileName}
-                  className="download-button"
-                  onClick={e => e.stopPropagation()}
-                  title="Tải xuống"
-                >
-                  <Download size={22} />
-                </a>
+          <div className="file-info">
+            <div className="file-icon">{getFileIcon(fileType)}</div>
+            <div className="file-details">
+              <div className="file-name" title={displayFileName}>
+                {displayFileName}
               </div>
-              <div className="file-desc">Tải về để xem lâu dài</div>
+              <div className="file-size">
+                {message.fileSize ? formatFileSize(message.fileSize) : ""}
+              </div>
             </div>
-          </>
+            <a
+              href={fileUrl}
+              download={displayFileName}
+              className="download-button"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Download size={16} />
+              <span>Tải xuống</span>
+            </a>
+          </div>
         )}
       </div>
     );
@@ -777,67 +659,42 @@ const GroupChat = ({ selectedChat }) => {
   const renderFullscreenModal = () => {
     if (!fullscreenMedia) return null;
 
-    const isImage = fullscreenMedia.type === "image";
-    const isVideo = fullscreenMedia.type === "video";
-    const url = fullscreenMedia.url;
-    const fileName = url ? url.split("/").pop() : "media";
-
     return (
-      <div className="modal-overlay">
-        <div className={isImage ? "image-preview-modal" : "video-preview-modal"}>
-          <div className="modal-header">
-            <button
-              className="close-button"
-              onClick={() => setFullscreenMedia(null)}
-            >
-              <X size={24} />
-            </button>
-            <button
-              className="expand-button"
-              onClick={() => window.open(url, '_blank')}
-            >
-              <Maximize2 size={24} />
-            </button>
-          </div>
-          <div className={isImage ? "image-container" : "video-container"}>
-            {isImage ? (
-              <img src={url} alt="Preview" />
-            ) : (
-              <video src={url} controls autoPlay />
-            )}
-          </div>
+      <div
+        className="fullscreen-modal"
+        onClick={() => setFullscreenMedia(null)}
+      >
+        <div
+          className="fullscreen-content"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {fullscreenMedia.type === "image" ? (
+            <img src={fullscreenMedia.url} alt="Fullscreen" />
+          ) : (
+            <video controls autoPlay>
+              <source src={fullscreenMedia.url} type="video/mp4" />
+              Your browser does not support the video tag.
+            </video>
+          )}
+          <button
+            className="close-fullscreen"
+            onClick={() => setFullscreenMedia(null)}
+          >
+            <X size={20} />
+          </button>
         </div>
       </div>
     );
   };
 
   const renderMessage = (msg) => {
-    if (msg.type === 'system') {
-      let icon = null;
-      if (msg.content.toLowerCase().includes('tên nhóm')) {
-        icon = <FileEdit size={13} color="#2e89ff" style={{ marginRight: 6 }} />;
-      } else if (msg.content.toLowerCase().includes('avatar') || msg.content.toLowerCase().includes('ảnh đại diện')) {
-        icon = <ImageIcon size={13} color="#2e89ff" style={{ marginRight: 6 }} />;
-      } else {
-        icon = <Info size={13} color="#2e89ff" style={{ marginRight: 6 }} />;
-      }
-      return (
-        <div className="system-message">
-          {icon}
-          <span dangerouslySetInnerHTML={{ __html: msg.content }} />
-        </div>
-      );
-    }
     const isMe = msg.senderId === currentUserId;
     const isRecalled = msg.status === "recalled";
-    const isUnread = unreadCount > 0 && msg.groupMessageId === lastReadMessageId;
 
     return (
       <div
         key={msg.groupMessageId}
-        className={`message-container ${isMe ? "my-message" : "other-message"} ${
-          isUnread ? "unread" : ""
-        }`}
+        className={`message-container ${isMe ? "my-message" : "other-message"}`}
         onContextMenu={(e) => {
           e.preventDefault();
           setSelectedMessage(msg);
@@ -948,127 +805,6 @@ const GroupChat = ({ selectedChat }) => {
     );
   };
 
-  // Add new function to mark messages as read
-  const markMessagesAsRead = async () => {
-    try {
-      const response = await api.post(`/chat-group/${groupId}/read`);
-      if (response.status === 200) {
-        setUnreadCount(0);
-      }
-    } catch (error) {
-      console.error("Error marking messages as read:", error);
-    }
-  };
-
-  // Update useEffect for socket connection
-  useEffect(() => {
-    fetchGroupDetails();
-    loadChatHistory();
-    getCurrentUserId();
-
-    // Join group when component mounts
-    if (socket && groupId) {
-      socket.emit("join-group", groupId);
-      // Mark messages as read when joining group
-      markMessagesAsRead();
-    }
-
-    // ... existing socket event listeners ...
-
-    // Add new socket event for unread count
-    if (socket) {
-      socket.on("group-history", ({ messages, unreadCount }) => {
-        setUnreadCount(unreadCount);
-      });
-    }
-
-    // Cleanup on unmount
-    return () => {
-      if (socket && groupId) {
-        socket.emit("leave-group", groupId);
-        socket.off("new-group-message");
-        socket.off("group-message-recalled");
-        socket.off("group-message-deleted");
-        socket.off("user-joined");
-        socket.off("user-left");
-        socket.off("error");
-        socket.off("group-history");
-      }
-    };
-  }, [socket, groupId]);
-
-  // Update handleScroll to mark messages as read when scrolling to bottom
-  const handleScroll = () => {
-    const element = messagesEndRef.current;
-    if (element) {
-      const { scrollTop, scrollHeight, clientHeight } = element;
-      if (scrollHeight - scrollTop === clientHeight) {
-        markMessagesAsRead();
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (!groupUpdates || groupUpdates.groupId !== groupId) return;
-
-    // Gọi lại API để lấy thông tin nhóm mới nhất khi có cập nhật
-    fetchGroupDetails();
-
-    // Cập nhật Redux
-    dispatch(updateGroup(groupUpdates));
-    // if (groupUpdates.type === 'NAME_UPDATED') {
-    //   dispatch(updateGroupName({ groupId: groupUpdates.groupId, name: groupUpdates.data.name }));
-    //   setMessages(prev => [...prev, {
-    //     type: 'system',
-    //     content: `Tên nhóm đã đổi thành ${groupUpdates.data.name}`,
-    //     createdAt: new Date().toISOString()
-    //   }]);
-    // }
-    // if (groupUpdates.type === 'AVATAR_UPDATED') {
-    //   dispatch(updateGroupAvatar({ groupId: groupUpdates.groupId, avatar: groupUpdates.data.avatarUrl }));
-    //   setMessages(prev => [...prev, {
-    //     type: 'system',
-    //     content: `Avatar nhóm đã được cập nhật.`,
-    //     createdAt: new Date().toISOString()
-    //   }]);
-    // }
-    // Có thể bổ sung các loại event khác
-  }, [groupUpdates, groupId, dispatch]);
-
-  useEffect(() => {
-    if (!socket || !groupId) return;
-
-    // Lắng nghe event cập nhật nhóm
-    const handleGroupUpdated = (payload) => {
-      if (payload.groupId === groupId) {
-        fetchGroupDetails(); // Cập nhật info nhóm
-    
-      }
-    };
-    socket.on('group:updated', handleGroupUpdated);
-
-    return () => {
-      socket.off('group:updated', handleGroupUpdated);
-    };
-  }, [socket, groupId]);
-
-  useEffect(() => {
-    if (!socket || !groupId) return;
-
-    // Lắng nghe event giải tán nhóm
-    const handleGroupDissolved = (dissolvedGroupId) => {
-      if (dissolvedGroupId === groupId) {
-        dispatch(removeGroup(groupId)); // <--- dispatch action xóa group
-        navigate('/app');
-      }
-    };
-    socket.on('group:dissolved', handleGroupDissolved);
-
-    return () => {
-      socket.off('group:dissolved', handleGroupDissolved);
-    };
-  }, [socket, groupId, dispatch, navigate]);
-
   if (loading) {
     return <div className="loading">Đang tải...</div>;
   }
@@ -1103,7 +839,7 @@ const GroupChat = ({ selectedChat }) => {
           </button>
           <div className="header-title">
             <h1>{groupDetails?.name}</h1>
-            <p>{reduxSelectedGroup?.members?.length || 0} thành viên</p>
+            <p>{groupDetails?.members?.length || 0} thành viên</p>
           </div>
           <div className="header-actions">
             <button
@@ -1142,11 +878,7 @@ const GroupChat = ({ selectedChat }) => {
             </span>
           </div>
 
-          {messages.map((msg, idx) => (
-            <React.Fragment key={msg.groupMessageId || msg.createdAt || idx}>
-              {renderMessage(msg)}
-            </React.Fragment>
-          ))}
+          {messages.map(renderMessage)}
           <div ref={messagesEndRef} />
         </div>
 
@@ -1294,8 +1026,7 @@ const GroupChat = ({ selectedChat }) => {
             <button
               className="modal-button"
               onClick={() => {
-                setForwardMessageContent(selectedMessage.content);
-                setShowForwardModal(true);
+                handleForwardMessage(selectedMessage.groupMessageId);
                 setShowMessageOptions(false);
               }}
             >
@@ -1321,7 +1052,7 @@ const GroupChat = ({ selectedChat }) => {
         type="file"
         ref={fileInputRef}
         style={{ display: "none" }}
-        accept="image/*,video/*"
+        accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar"
         multiple
         onChange={handleFileSelect}
       />
@@ -1335,91 +1066,6 @@ const GroupChat = ({ selectedChat }) => {
       />
 
       {renderFullscreenModal()}
-
-      {/* Upload Error Modal */}
-      {uploadErrorModal.show && (
-        <div className="modal-overlay" onClick={() => setUploadErrorModal({ show: false, message: "" })}>
-          <div className="modal-content">
-            <div className="modal-header">
-              <h2>Lỗi Upload</h2>
-            </div>
-            <div className="modal-body">
-              <div className="error-message-box">
-              <AlertCircle size={24} color="#ff4d4f" style={{ marginRight: 10 }} />
-                <p>{uploadErrorModal.message}</p>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="modal-button close-button-modal" onClick={() => setUploadErrorModal({ show: false, message: "" })}>
-                Đóng
-              </button>
-              <button className="modal-button retry-button-modal" onClick={() => { /* TODO: Add retry logic */ setUploadErrorModal({ show: false, message: "" }); }}>
-                Thử lại
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Forward Message Modal */}
-      {showForwardModal && (
-        <ForwardMessageModal
-          isOpen={showForwardModal}
-          onClose={() => setShowForwardModal(false)}
-          onForward={async (receivers) => {
-            setForwarding(true);
-            setForwardError(null);
-            try {
-              // receivers: array of {id, type ('group' or 'conversation'), phone?}
-              const currentTime = new Date().toISOString(); // Giống app
-              for (const receiver of receivers) {
-                if (receiver.type === 'group') {
-                  await forwardGroupMessage(groupId, selectedMessage.groupMessageId, receiver.id, 'group');
-                } else {
-                  // Nếu là cá nhân, forward qua socket giống app
-                  const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                  let messageData = {
-                    tempId,
-                    receiverPhone: receiver.id,// Ưu tiên phone
-                    content: selectedMessage.content,
-                    type: 'text',
-                    timestamp: currentTime,
-                  };
-
-                  // Xử lý nếu tin nhắn gốc là file
-                  if (selectedMessage.type === 'file') {
-                    messageData = {
-                      ...messageData,
-                      type: 'file',
-                      fileUrl: selectedMessage.fileUrl || selectedMessage.content,
-                      fileType: selectedMessage.fileType || 
-                                (selectedMessage.content.match(/\.(jpg|jpeg|png|gif)$/i) ? 'image/jpeg' :
-                                 selectedMessage.content.match(/\.(mp4|mov|avi)$/i) ? 'video/mp4' : 
-                                 'application/octet-stream'),
-                      fileName: selectedMessage.fileName || selectedMessage.content.split('/').pop(),
-                      fileSize: selectedMessage.fileSize
-                    };
-                  }
-                  
-                  // Emit socket giống app
-                  console.log("Receiver object:", receiver);
-                  console.log("WEB EMITTING send-message:", JSON.stringify(messageData, null, 2)); // <--- LOG CÁI NÀY
-
-                  socket.emit("send-message", messageData);
-                }
-              }
-              setShowForwardModal(false);
-            } catch (err) {
-              console.error("Error forwarding message:", err);
-              setForwardError('Chuyển tiếp thất bại!');
-            } finally {
-              setForwarding(false);
-            }
-          }}
-          messageContent={forwardMessageContent}
-          userId={currentUserId} 
-        />
-      )}
     </div>
   );
 };

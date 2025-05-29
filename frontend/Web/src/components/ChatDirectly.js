@@ -8,6 +8,7 @@ import React, {
   useCallback,
 } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { io } from "socket.io-client";
 import EmojiPicker from "emoji-picker-react";
 import {
   ChevronLeft,
@@ -36,15 +37,12 @@ import {
   FileVideo,
   FileArchive,
   AlertCircle,
-  Maximize2,
 } from "lucide-react";
 import api, { getBaseUrl, getApiUrl } from "../config/api";
 import "./css/ChatDirectly.css";
 import MessageContextMenu from "./MessageContextMenu";
 import ForwardMessageModal from "./ForwardMessageModal";
 import ConfirmModal from "../../../Web/src/components/ConfirmModal";
-import { SocketContext } from "../App";
-import VideoCall from './VideoCall';
 
 const ChatDirectly = () => {
   const { phone } = useParams();
@@ -52,7 +50,7 @@ const ChatDirectly = () => {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const socket = useContext(SocketContext);
+  const [socket, setSocket] = useState(null);
   const [userInfo, setUserInfo] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -102,109 +100,29 @@ const ChatDirectly = () => {
     title: "",
     message: "",
   });
-  const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
 
-  // Lấy userId từ localStorage
-  const user = JSON.parse(localStorage.getItem('user'));
-  const identity = user?.userId || phone;
   const extractFilenameFromUrl = (url) => {
     if (!url) return null;
+
     try {
-      // Ưu tiên lấy tên file từ query string nếu có
-      const urlObj = new URL(url, window.location.origin);
-      const filenameParam = urlObj.searchParams.get("filename");
+      // Try to get the filename from the URL
+      const urlParts = url.split("/");
+      const lastPart = urlParts[urlParts.length - 1];
+
+      // Check if the URL contains a filename parameter
+      const urlParams = new URLSearchParams(url);
+      const filenameParam = urlParams.get("filename");
+
       if (filenameParam) {
         return decodeURIComponent(filenameParam);
       }
-      // Nếu không có, lấy phần cuối cùng sau dấu /
-      let lastPart = url.split("/").pop();
-      // Nếu có dấu ?, cắt bỏ phần query string
-      if (lastPart.includes("?")) {
-        lastPart = lastPart.split("?")[0];
-      }
-      return decodeURIComponent(lastPart);
+
+      // If no filename parameter, use the last part of the URL
+      return lastPart;
     } catch (error) {
       console.error("Error extracting filename from URL:", error);
       return null;
     }
-  };
-
-  const formatDate = (timestamp) => {
-    try {
-      if (!timestamp) return "";
-      const date = new Date(timestamp);
-      if (isNaN(date.getTime())) return "";
-      return date.toLocaleDateString("vi-VN");
-    } catch (error) {
-      console.warn("Date formatting error:", error);
-      return "";
-    }
-  };
-
-  const formatFileSize = (bytes) => {
-    if (!bytes || isNaN(bytes)) return "";
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  };
-
-  const getFileIcon = (mimeType, fileName = "") => {
-    // Ưu tiên kiểm tra đuôi file nếu có
-    const ext = fileName.split('.').pop().toLowerCase();
-
-    // Kiểm tra đuôi file trước
-    if (ext === "doc" || ext === "docx") {
-      return <img src="/icons/word.svg" alt="Word" style={{ width:40 , height: 40 }} />;
-    }
-    if (ext === "pdf") {
-      return <img src="/icons/pdf.svg" alt="PDF" style={{ width: 40, height: 40 }} />;
-    }
-    if (ext === "xls" || ext === "xlsx") {
-      return <img src="/icons/excel.png" alt="Excel" style={{ width: 40, height: 40 }} />;
-    }
-    if (ext === "ppt" || ext === "pptx") {
-      return <img src="/icons/ppt.png" alt="PowerPoint" style={{ width: 40, height: 40 }} />;
-    }
-    if (ext === "zip" || ext === "rar") {
-      return <img src="/icons/zip.png" alt="Archive" style={{ width: 40, height: 40 }} />;
-    }
-
-    // Nếu không có đuôi file, mới kiểm tra mimeType
-    if (mimeType) {
-      if (mimeType.includes("word")) {
-        return <img src="/icons/word.svg" alt="Word" style={{ width: 40, height: 40 }} />;
-      }
-      if (mimeType.includes("pdf")) {
-        return <img src="/icons/pdf.svg" alt="PDF" style={{ width: 40, height: 40 }} />;
-      }
-      if (mimeType.includes("excel")) {
-        return <img src="/icons/excel.png" alt="Excel" style={{ width: 40, height: 40 }} />;
-      }
-      if (mimeType.includes("powerpoint")) {
-        return <img src="/icons/ppt.png" alt="PowerPoint" style={{ width: 40, height: 40 }} />;
-      }
-      if (mimeType.includes("zip") || mimeType.includes("rar")) {
-        return <img src="/icons/zip.png" alt="Archive" style={{ width: 40, height: 40 }} />;
-      }
-    }
-  };
-
-  const handleDownloadFile = (url, fileName) => {
-    let downloadFileName = fileName;
-    if (!downloadFileName && url) {
-      downloadFileName = extractFilenameFromUrl(url);
-    }
-    if (!downloadFileName) {
-      downloadFileName = "downloaded-file";
-    }
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = downloadFileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   // Close emoji picker when clicking outside
@@ -241,6 +159,18 @@ const ChatDirectly = () => {
     } catch (err) {
       console.error("User info error:", err);
       setError("Không thể tải thông tin người dùng");
+    }
+  };
+
+  const formatDate = (timestamp) => {
+    try {
+      if (!timestamp) return "";
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return "";
+      return date.toLocaleDateString("vi-VN");
+    } catch (error) {
+      console.warn("Date formatting error:", error);
+      return "";
     }
   };
 
@@ -413,16 +343,7 @@ const ChatDirectly = () => {
                       isRecalled ? "recalled" : ""
                     }`}
                   >
-                    {isRecalled ? (
-                      <div className="recalled-message-box">
-                        <span className="recalled-icon" style={{ marginRight: 6, verticalAlign: 'middle' }}>
-                          <svg width="18" height="18" fill="#1976d2" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18.2A8.2 8.2 0 1 1 12 3.8a8.2 8.2 0 0 1 0 16.4zm-.9-5.7h1.8v1.8h-1.8v-1.8zm0-7.2h1.8v5.4h-1.8V7.3z"/></svg>
-                        </span>
-                        <span className="recalled-text" style={{ fontStyle: 'italic', color: '#1976d2' }}>
-                          Tin nhắn đã bị thu hồi
-                        </span>
-                      </div>
-                    ) : msg.type === "file" ? (
+                    {msg.type === "file" ? (
                       <div className="file-message">
                         {msg.fileType?.startsWith("image/") ? (
                           <div
@@ -446,25 +367,20 @@ const ChatDirectly = () => {
                             }
                           >
                             <div className="document-icon">
-                              {getFileIcon(msg.fileType, msg.fileName || extractFilenameFromUrl(msg.content))}
+                              {getFileIcon(msg.fileType)}
                             </div>
                             <div className="document-info">
-                              <div className="document-name" style={{ fontWeight: 700, color: '#1565c0' }}>
-                                {msg.fileName || extractFilenameFromUrl(msg.content) || "File"}
+                              <div className="document-name">
+                                {msg.fileName ||
+                                  extractFilenameFromUrl(msg.content) ||
+                                  "File"}
                               </div>
-                              {msg.fileSize && !isNaN(msg.fileSize) && msg.fileSize > 0 && (
-                                <div className="document-size">
-                                  {formatFileSize(msg.fileSize)}
-                                </div>
-                              )}
-                              <div className="document-desc" style={{ color: '#1976d2', fontSize: 13, marginTop: 2 }}>
-                                Tải về để xem lâu dài
+                              <div className="document-size">
+                                {formatFileSize(msg.fileSize)}
                               </div>
                             </div>
                             <div className="document-download">
-                              <button onClick={() => handleDownloadFile(msg.content, msg.fileName)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                                <Download size={20} color="#1976d2" />
-                              </button>
+                              <Download size={20} />
                             </div>
                           </div>
                         )}
@@ -495,7 +411,7 @@ const ChatDirectly = () => {
                     </div>
                   </div>
 
-                  {/* {!isRecalled && (
+                  {!isRecalled && (
                     <div className="message-actions">
                       <button
                         className="action-button forward"
@@ -508,14 +424,13 @@ const ChatDirectly = () => {
                         <button
                           className="action-button more"
                           onClick={(e) => handleContextMenu(e, msg)}
-                          onContextMenu={(e) => handleContextMenu(e, msg)}
                           title="Thêm"
                         >
                           <MoreHorizontal size={16} />
                         </button>
                       )}
                     </div>
-                  )} */}
+                  )}
                 </div>
               );
             })}
@@ -604,12 +519,31 @@ const ChatDirectly = () => {
   };
 
   useEffect(() => {
-    if (!socket) return;
-    setLoading(true);
-    socket.emit("join-chat", { receiverPhone: phone });
+    const token = localStorage.getItem("accessToken");
+    if (!token) {
+      navigate("/login");
+      return;
+    }
 
-    socket.on("new-message", (msg) => {
+    setLoading(true); // Set loading when starting to fetch data
+
+    const newSocket = io(getBaseUrl(), {
+      auth: { token },
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      transports: ["websocket"],
+      withCredentials: true,
+    });
+
+    newSocket.on("connect", () => {
+      console.log("Socket connected");
+      newSocket.emit("join-chat", { receiverPhone: phone });
+    });
+
+    newSocket.on("new-message", (msg) => {
       if (!msg || !msg.messageId) return;
+
       setMessages((prev) => {
         const exists = prev.some(
           (m) =>
@@ -618,13 +552,18 @@ const ChatDirectly = () => {
               m.senderPhone === msg.senderPhone &&
               Math.abs(m.timestamp - msg.timestamp) < 1000)
         );
+
         if (exists) return prev;
+
+        // Cập nhật newest timestamp
         setOldestMessageDate(Math.min(msg.timestamp, oldestMessageDate || 0));
+
         return [...prev, { ...msg, status: "received" }];
       });
       scrollToBottom();
     });
-    socket.on("typing", ({ senderPhone }) => {
+
+    newSocket.on("typing", ({ senderPhone }) => {
       if (senderPhone === phone) {
         setIsTyping(true);
         if (typingTimeoutRef.current) {
@@ -633,12 +572,14 @@ const ChatDirectly = () => {
         typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 3000);
       }
     });
-    socket.on("stop_typing", ({ senderPhone }) => {
+
+    newSocket.on("stop_typing", ({ senderPhone }) => {
       if (senderPhone === phone) {
         setIsTyping(false);
       }
     });
-    socket.on("message-recalled", ({ messageId }) => {
+
+    newSocket.on("message-recalled", ({ messageId }) => {
       setMessages((prev) =>
         prev.map((msg) =>
           msg.messageId === messageId
@@ -647,13 +588,16 @@ const ChatDirectly = () => {
         )
       );
     });
-    socket.on("message-deleted", ({ messageId }) => {
+
+    newSocket.on("message-deleted", ({ messageId }) => {
       setMessages((prev) =>
         prev.map((msg) =>
           msg.messageId === messageId ? { ...msg, status: "deleted" } : msg
         )
       );
     });
+
+    setSocket(newSocket);
 
     // Initial load
     Promise.all([fetchUserInfo(), loadChatHistory()])
@@ -662,23 +606,19 @@ const ChatDirectly = () => {
         setError("Không thể tải dữ liệu chat");
       })
       .finally(() => {
-        setLoading(false);
+        setLoading(false); // Ensure loading is set to false after all initial loads
       });
 
     return () => {
-      if (socket) {
-        socket.emit("leave-chat", { receiverPhone: phone });
-        socket.off("new-message");
-        socket.off("typing");
-        socket.off("stop_typing");
-        socket.off("message-recalled");
-        socket.off("message-deleted");
+      if (newSocket) {
+        newSocket.emit("leave-chat", { receiverPhone: phone });
+        newSocket.disconnect();
       }
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
     };
-  }, [socket, phone, loadChatHistory]);
+  }, [phone, navigate, loadChatHistory]);
 
   const handleRecallMessage = async () => {
     try {
@@ -974,6 +914,53 @@ const ChatDirectly = () => {
     setShowVideoPreview(true);
   };
 
+  const handleDownloadFile = (url, fileName) => {
+    // For document files, use the exact filename from S3 if available
+    let downloadFileName = fileName;
+
+    if (!downloadFileName && url) {
+      // Try to extract the exact filename from the URL
+      downloadFileName = extractFilenameFromUrl(url);
+    }
+
+    // If still no filename, use a default name
+    if (!downloadFileName) {
+      downloadFileName = "downloaded-file";
+    }
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = downloadFileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getFileIcon = (mimeType) => {
+    if (mimeType.includes("image")) return <FileImage size={24} />;
+    if (mimeType.includes("video")) return <FileVideo size={24} />;
+    if (mimeType.includes("pdf")) return <FileText size={24} />;
+    if (mimeType.includes("word") || mimeType.includes("document"))
+      return <FileText size={24} />;
+    if (mimeType.includes("powerpoint") || mimeType.includes("presentation"))
+      return <FileText size={24} />;
+    if (
+      mimeType.includes("zip") ||
+      mimeType.includes("rar") ||
+      mimeType.includes("archive")
+    )
+      return <FileArchive size={24} />;
+    return <File size={24} />;
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
+
   const onEmojiClick = (emojiObject) => {
     const cursor = document.querySelector(".message-input").selectionStart;
     const text =
@@ -1011,15 +998,11 @@ const ChatDirectly = () => {
   };
 
   const handleForwardMessage = async (selectedUsers) => {
-    // Log từng receiverPhone để kiểm tra kiểu dữ liệu
-    selectedUsers.forEach((receiverPhone, idx) => {
-      console.log(`receiverPhone[${idx}]:`, receiverPhone, 'type:', typeof receiverPhone);
-    });
     try {
       const promises = selectedUsers.map((receiverPhone) =>
         api.post("/chat/messages/forward", {
           messageId: forwardModal.messageId,
-          receiverPhone:receiverPhone.id,
+          receiverPhone,
           content: forwardModal.messageContent,
         })
       );
@@ -1036,10 +1019,6 @@ const ChatDirectly = () => {
       console.error("Error forwarding message:", error);
       alert("Không thể chuyển tiếp tin nhắn. Vui lòng thử lại sau.");
     }
-  };
-
-  const handleVideoCall = () => {
-    setIsVideoCallOpen(true);
   };
 
   if (loading) return <div className="loading">Đang tải...</div>;
@@ -1069,14 +1048,7 @@ const ChatDirectly = () => {
         </div>
         <div className="header-actions">
           {[Search, Phone, Video, UserPlus, Settings].map((Icon, i) => (
-            <button 
-              key={i}
-              onClick={() => {
-                if (Icon === Video) {
-                  handleVideoCall();
-                }
-              }}
-            >
+            <button key={i}>
               <Icon size={20} />
             </button>
           ))}
@@ -1226,10 +1198,10 @@ const ChatDirectly = () => {
                 <X size={24} />
               </button>
               <button
-                className="expand-button"
-                onClick={() => window.open(previewImage, '_blank')}
+                className="download-button"
+                onClick={() => handleDownloadFile(previewImage, "image.jpg")}
               >
-                <Maximize2 size={24} />
+                <Download size={24} />
               </button>
             </div>
             <div className="image-container">
@@ -1251,10 +1223,10 @@ const ChatDirectly = () => {
                 <X size={24} />
               </button>
               <button
-                className="expand-button"
-                onClick={() => window.open(previewVideo, '_blank')}
+                className="download-button"
+                onClick={() => handleDownloadFile(previewVideo, "video.mp4")}
               >
-                <Maximize2 size={24} />
+                <Download size={24} />
               </button>
             </div>
             <div className="video-container">
@@ -1373,15 +1345,6 @@ const ChatDirectly = () => {
           </div>
         </div>
       )}
-
-      <VideoCall
-        isOpen={isVideoCallOpen}
-        onClose={() => setIsVideoCallOpen(false)}
-        identity={identity}
-        receiverPhone={phone}
-        receiverName={userInfo?.name || phone}
-        roomName={`room_${phone}`}
-      />
     </div>
   );
 };

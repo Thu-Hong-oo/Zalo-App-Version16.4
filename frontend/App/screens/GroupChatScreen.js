@@ -48,7 +48,6 @@ import { getApiUrl, getBaseUrl, api } from "../config/api";
 import axios from "axios";
 import { WebView } from 'react-native-webview';
 import { sendMessage, forwardMessage } from "../modules/chat/controller";
-import RenderHtml from 'react-native-render-html';
 // import jwt_decode from "jwt-decode"; // Tạm thời comment lại
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -106,9 +105,6 @@ const GroupChatScreen = () => {
   const [deletedMessages, setDeletedMessages] = useState(new Set());
   const [showDocumentPreview, setShowDocumentPreview] = useState(false);
   const [previewDocument, setPreviewDocument] = useState(null);
-  const [showErrorModal, setShowErrorModal] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [showFileTypeModal, setShowFileTypeModal] = useState(false);
 
   const viewabilityConfig = {
     itemVisiblePercentThreshold: 50,
@@ -149,31 +145,6 @@ const GroupChatScreen = () => {
 
     fetchGroupDetails();
   }, [groupId]);
-  useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", () => {
-      navigation.getParent()?.setOptions({
-        tabBarStyle: { display: "none" },
-        tabBarVisible: false,
-      });
-    });
-
-    const unsubscribeBlur = navigation.addListener("blur", () => {
-      navigation.getParent()?.setOptions({
-        tabBarStyle: undefined,
-        tabBarVisible: true,
-      });
-    });
-
-    return () => {
-      unsubscribe();
-      unsubscribeBlur();
-      navigation.getParent()?.setOptions({
-        tabBarStyle: undefined,
-        tabBarVisible: true,
-      });
-    };
-  }, [navigation]);
-
 
   const getUserIdFromToken = async () => {
     try {
@@ -755,7 +726,6 @@ const GroupChatScreen = () => {
         receivers.map(async (receiver) => {
           try {
             if (receiver.type === 'conversation') {
-
               const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
               
               let messageData = {
@@ -827,8 +797,6 @@ const GroupChatScreen = () => {
                   preview: messageData.content
                 });
               } else {
-                console.log("APP EMITTING send-message:", JSON.stringify(messageData, null, 2)); // <--- LOG CÁI NÀY
-
                 socket.emit("send-message", messageData);
               }
 
@@ -973,21 +941,13 @@ const GroupChatScreen = () => {
             Accept: "application/json",
           },
           onUploadProgress: (progressEvent) => {
-            const progress = ((progressEvent.loaded / progressEvent.total) * 100).toFixed(2);
+            const progress = (progressEvent.loaded / progressEvent.total) * 100;
             setUploadProgress(progress);
           },
         }
       );
 
       console.log("Upload response:", response.data);
-
-      if (response.data.status === "error") {
-        setErrorMessage(response.data.message || "Không thể upload file");
-        setShowErrorModal(true);
-        return;
-      }
-
-      setUploadProgress(100);
 
       if (response.data.status === "success") {
         const uploadedFiles = response.data.data.files;
@@ -997,9 +957,7 @@ const GroupChatScreen = () => {
         console.log("File URLs:", fileUrls);
 
         if (!uploadedFiles || !fileUrls || uploadedFiles.length !== fileUrls.length) {
-          setErrorMessage("Dữ liệu file không hợp lệ từ server");
-          setShowErrorModal(true);
-          return;
+          throw new Error("Dữ liệu file không hợp lệ từ server");
         }
 
         // Tạo và lưu tin nhắn cho mỗi file
@@ -1058,13 +1016,11 @@ const GroupChatScreen = () => {
                 });
               }
             } else {
-              setErrorMessage(messageResponse.message || "Failed to save message");
-              setShowErrorModal(true);
+              throw new Error(messageResponse.message || "Failed to save message");
             }
           } catch (error) {
             console.error("Error saving message to DynamoDB:", error);
-            setErrorMessage(error.message || "Không thể lưu tin nhắn");
-            setShowErrorModal(true);
+            Alert.alert("Lỗi", "Không thể lưu tin nhắn");
           }
         }
 
@@ -1072,11 +1028,12 @@ const GroupChatScreen = () => {
         setShowFilePreview(false);
         setSelectedFiles([]);
         scrollToBottom();
+      } else {
+        throw new Error(response.data.message || "Upload failed");
       }
     } catch (error) {
       console.error("Upload error:", error);
-      setErrorMessage(error.response?.data?.message || "Không thể tải lên file");
-      setShowErrorModal(true);
+      Alert.alert("Lỗi", error.message || "Không thể tải lên file");
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
@@ -1084,82 +1041,108 @@ const GroupChatScreen = () => {
   };
 
   const handleAttachPress = async () => {
-    setShowFileTypeModal(true);
-  };
+    Alert.alert(
+      "Chọn loại file",
+      "Bạn muốn đính kèm loại file nào?",
+      [
+        {
+          text: "Hình ảnh",
+          onPress: async () => {
+            try {
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: "Images",
+                allowsMultipleSelection: true,
+                selectionLimit: 10,
+                quality: 1,
+              });
 
-  const handleFileTypeSelect = async (type) => {
-    setShowFileTypeModal(false);
-    try {
-      if (type === 'image') {
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: "Images",
-          allowsMultipleSelection: true,
-          selectionLimit: 10,
-          quality: 1,
-        });
+              if (!result.canceled) {
+                const newFiles = result.assets.map((asset) => ({
+                  uri: asset.uri,
+                  type: "image/jpeg",
+                  name: `image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`,
+                  mimeType: asset.mimeType || "image/jpeg",
+                  size: asset.fileSize || 0,
+                }));
+                setSelectedFiles((prev) => [...prev, ...newFiles]);
+                setShowFilePreview(true);
+              }
+            } catch (error) {
+              console.error("Error picking image:", error);
+              Alert.alert("Lỗi", "Không thể chọn ảnh");
+            }
+          }
+        },
+        {
+          text: "Video",
+          onPress: async () => {
+            try {
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: "Videos",
+                allowsMultipleSelection: true,
+                selectionLimit: 5,
+                quality: 1,
+              });
 
-        if (!result.canceled) {
-          const newFiles = result.assets.map((asset) => ({
-            uri: asset.uri,
-            type: "image/jpeg",
-            name: `image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`,
-            mimeType: asset.mimeType || "image/jpeg",
-            size: asset.fileSize || 0,
-          }));
-          setSelectedFiles((prev) => [...prev, ...newFiles]);
-          setShowFilePreview(true);
+              if (!result.canceled) {
+                const newFiles = result.assets.map((asset) => ({
+                  uri: asset.uri,
+                  type: "video/mp4",
+                  name: `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.mp4`,
+                  mimeType: asset.mimeType || "video/mp4",
+                  size: asset.fileSize || 0,
+                }));
+                setSelectedFiles((prev) => [...prev, ...newFiles]);
+                setShowFilePreview(true);
+              }
+            } catch (error) {
+              console.error("Error picking video:", error);
+              Alert.alert("Lỗi", "Không thể chọn video");
+            }
+          }
+        },
+        {
+          text: "Tài liệu",
+          onPress: async () => {
+            try {
+              const result = await DocumentPicker.getDocumentAsync({
+                type: [
+                  "application/pdf",
+                  "application/msword",
+                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                  "application/vnd.ms-powerpoint",
+                  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                  "application/vnd.ms-excel",
+                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                  "text/plain",
+                ],
+                multiple: true,
+                copyToCacheDirectory: true,
+              });
+
+              if (result.type !== "cancel") {
+                const newFiles = result.assets.map((asset) => ({
+                  uri: asset.uri,
+                  type: asset.mimeType,
+                  name: asset.name,
+                  mimeType: asset.mimeType,
+                  size: asset.size || 0,
+                }));
+                setSelectedFiles((prev) => [...prev, ...newFiles]);
+                setShowFilePreview(true);
+              }
+            } catch (error) {
+              console.error("Error picking document:", error);
+              Alert.alert("Lỗi", "Không thể chọn tài liệu");
+            }
+          }
+        },
+        {
+          text: "Hủy",
+          style: "cancel"
         }
-      } else if (type === 'video') {
-        const result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: "Videos",
-          allowsMultipleSelection: true,
-          selectionLimit: 5,
-          quality: 1,
-        });
-
-        if (!result.canceled) {
-          const newFiles = result.assets.map((asset) => ({
-            uri: asset.uri,
-            type: "video/mp4",
-            name: `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.mp4`,
-            mimeType: asset.mimeType || "video/mp4",
-            size: asset.fileSize || 0,
-          }));
-          setSelectedFiles((prev) => [...prev, ...newFiles]);
-          setShowFilePreview(true);
-        }
-      } else if (type === 'document') {
-        const result = await DocumentPicker.getDocumentAsync({
-          type: [
-            "application/pdf",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/vnd.ms-powerpoint",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "application/vnd.ms-excel",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "text/plain",
-          ],
-          multiple: true,
-          copyToCacheDirectory: true,
-        });
-
-        if (result.type !== "cancel") {
-          const newFiles = result.assets.map((asset) => ({
-            uri: asset.uri,
-            type: asset.mimeType,
-            name: asset.name,
-            mimeType: asset.mimeType,
-            size: asset.size || 0,
-          }));
-          setSelectedFiles((prev) => [...prev, ...newFiles]);
-          setShowFilePreview(true);
-        }
-      }
-    } catch (error) {
-      console.error(`Error picking ${type}:`, error);
-      Alert.alert("Lỗi", `Không thể chọn ${type === 'image' ? 'ảnh' : type === 'video' ? 'video' : 'tài liệu'}`);
-    }
+      ]
+    );
   };
 
   const formatFileSize = (bytes) => {
@@ -1177,30 +1160,6 @@ const GroupChatScreen = () => {
     return "document-outline";
   };
 
-  const downloadFile = async (url) => {
-    try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Lỗi", "Cần quyền truy cập thư viện để tải file");
-        return;
-      }
-
-      const fileUri = FileSystem.documentDirectory + url.split("/").pop();
-      const downloadResult = await FileSystem.downloadAsync(url, fileUri);
-
-      if (downloadResult.status === 200) {
-        const asset = await MediaLibrary.createAssetAsync(downloadResult.uri);
-        await MediaLibrary.createAlbumAsync("Zalo Lite", asset, false);
-        Alert.alert("Thành công", "File đã được tải xuống thư viện");
-      } else {
-        Alert.alert("Lỗi", "Không thể tải file");
-      }
-    } catch (error) {
-      console.error("Error downloading file:", error);
-      Alert.alert("Lỗi", "Không thể tải file");
-    }
-  };
-
   const handleFilePress = async (message) => {
     try {
       if (message.type === "file" && message.content) {
@@ -1210,17 +1169,16 @@ const GroupChatScreen = () => {
         } else if (message.fileType?.startsWith("video/")) {
           setPreviewVideo(message.content);
           setShowVideoPreview(true);
-        } else if (message.fileType?.includes("pdf") || 
-                  message.fileType?.includes("word") || 
-                  message.fileType?.includes("powerpoint")) {
-          // Hiển thị modal với thông tin file và các tùy chọn
-          setPreviewDocument(message.content);
-          setShowDocumentPreview(true);
+        } else if (message.fileType?.includes("pdf") || message.fileType?.includes("word") || message.fileType?.includes("powerpoint")) {
+          // Mở file trực tiếp với Google Drive Viewer
+          const driveUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(message.content)}`;
+          Linking.openURL(driveUrl);
         } else {
           // Xử lý các loại file khác
           try {
             const fileUrl = message.content;
-            await Linking.openURL(fileUrl);
+            const driveUrl = `https://drive.google.com/viewerng/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
+            await Linking.openURL(driveUrl);
           } catch (error) {
             console.error("Error handling file press:", error);
             Alert.alert("Lỗi", "Không thể mở file: " + error.message);
@@ -1231,20 +1189,6 @@ const GroupChatScreen = () => {
       console.error("Error handling file press:", error);
       Alert.alert("Lỗi", "Không thể mở file: " + error.message);
     }
-  };
-
-  const getFileTypeName = (extension) => {
-    const types = {
-      'pdf': 'PDF Document',
-      'doc': 'Microsoft Word',
-      'docx': 'Microsoft Word',
-      'xls': 'Microsoft Excel',
-      'xlsx': 'Microsoft Excel',
-      'ppt': 'Microsoft PowerPoint',
-      'pptx': 'Microsoft PowerPoint',
-      'txt': 'Text Document'
-    };
-    return types[extension?.toLowerCase()] || 'Unknown File Type';
   };
 
   if (loading) {
@@ -1328,23 +1272,6 @@ const GroupChatScreen = () => {
           if (isMyMessage && item.status === "deleted") return null;
 
           const renderMessageContent = () => {
-            if (item.type === "system") {
-              return (
-                <View style={styles.systemMessageContainer}>
-                  <View style={styles.systemMessageBubble}>
-                    <Ionicons name="information-circle-outline" size={18} color="#2196F3" />
-                    <RenderHtml
-                      contentWidth={SCREEN_WIDTH}
-                      source={{ html: item.content }}
-                      baseStyle={styles.systemMessageText}
-                    />
-                  </View>
-                  <Text style={[styles.messageTime, { color: '#888', marginTop: 2 }]}> 
-                    {formatTime(item.createdAt)}
-                  </Text>
-                </View>
-              );
-            }
             if (item.status === "recalled") {
               return (
                 <Text style={[
@@ -1362,51 +1289,45 @@ const GroupChatScreen = () => {
               // Kiểm tra nếu là hình ảnh
               if (item.fileType?.startsWith("image/") || item.content.match(/\.(jpg|jpeg|png|gif)$/i)) {
                 return (
-                  <TouchableOpacity onPress={() => handleFilePress(item)}>
-                    <Image
-                      source={{ uri: item.content }}
-                      style={styles.fileImage}
-                      resizeMode="cover"
-                    />
-                  </TouchableOpacity>
+                  <Image
+                    source={{ uri: item.content }}
+                    style={styles.fileImage}
+                    resizeMode="cover"
+                  />
                 );
               }
               // Kiểm tra nếu là video
               else if (item.fileType?.startsWith("video/") || item.content.match(/\.(mp4|mov|avi)$/i)) {
                 return (
-                  <TouchableOpacity onPress={() => handleFilePress(item)}>
-                    <View style={styles.videoContainer}>
-                      <Video
-                        source={{ uri: item.content }}
-                        style={styles.video}
-                        resizeMode="cover"
-                        useNativeControls
-                      />
-                      <View style={styles.playButton}>
-                        <Ionicons name="play" size={24} color="white" />
-                      </View>
+                  <View style={styles.videoContainer}>
+                    <Video
+                      source={{ uri: item.content }}
+                      style={styles.video}
+                      resizeMode="cover"
+                      useNativeControls
+                    />
+                    <View style={styles.playButton}>
+                      <Ionicons name="play" size={24} color="white" />
                     </View>
-                  </TouchableOpacity>
+                  </View>
                 );
               }
               // Các loại file khác
               else {
                 return (
-                  <TouchableOpacity onPress={() => handleFilePress(item)}>
-                    <View style={styles.documentContainer}>
-                      <Ionicons
-                        name={getFileIcon(item.fileType)}
-                        size={24}
-                        color={isMyMessage ? "white" : "#666"}
-                      />
-                      <Text style={[
-                        styles.fileName,
-                        isMyMessage ? styles.myMessageText : styles.otherMessageText
-                      ]}>
-                        {item.fileName || item.content.split("/").pop() || "Tài liệu"}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
+                  <View style={styles.documentContainer}>
+                    <Ionicons
+                      name={getFileIcon(item.fileType)}
+                      size={24}
+                      color={isMyMessage ? "white" : "#666"}
+                    />
+                    <Text style={[
+                      styles.fileName,
+                      isMyMessage ? styles.myMessageText : styles.otherMessageText
+                    ]}>
+                      {item.fileName || item.content.split("/").pop() || "Tài liệu"}
+                    </Text>
+                  </View>
                 );
               }
             }
@@ -1422,11 +1343,6 @@ const GroupChatScreen = () => {
             );
           };
 
-          // Nếu là system message thì chỉ render bubble căn giữa, không avatar, không senderName
-          if (item.type === "system") {
-            return renderMessageContent();
-          }
-
           return (
             <TouchableOpacity
               onLongPress={() => showMessageOptions(item)}
@@ -1435,7 +1351,7 @@ const GroupChatScreen = () => {
                 isMyMessage ? styles.myMessage : styles.otherMessage,
               ]}
             >
-              {item.type !== "system" && !isMyMessage && (
+              {!isMyMessage && (
                 <Image
                   source={{ uri: item.senderAvatar || "https://via.placeholder.com/50" }}
                   style={styles.avatar}
@@ -1637,106 +1553,72 @@ const GroupChatScreen = () => {
         onForward={handleForwardMessage}
       />
 
-      {/* Image Preview Modal */}
-      <Modal visible={showImagePreview} transparent={true} animationType="fade">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setShowImagePreview(false)}
-            >
-              <Ionicons name="close" size={30} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.downloadButton}
-              onPress={() => downloadFile(previewImage)}
-            >
-              <Ionicons name="download" size={30} color="white" />
-            </TouchableOpacity>
-          </View>
-          <Image
-            source={{ uri: previewImage }}
-            style={styles.fullscreenImage}
-            resizeMode="contain"
-          />
-        </View>
-      </Modal>
-
-      {/* Video Preview Modal */}
-      <Modal visible={showVideoPreview} transparent={true} animationType="fade">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setShowVideoPreview(false)}
-            >
-              <Ionicons name="close" size={30} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.downloadButton}
-              onPress={() => downloadFile(previewVideo)}
-            >
-              <Ionicons name="download" size={30} color="white" />
-            </TouchableOpacity>
-          </View>
-          <Video
-            source={{ uri: previewVideo }}
-            style={styles.fullscreenVideo}
-            resizeMode="contain"
-            useNativeControls
-            shouldPlay
-          />
-        </View>
-      </Modal>
-
-      {/* Document Preview Modal */}
-      <Modal visible={showDocumentPreview} transparent={true} animationType="fade">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.documentHeader}>
-              <Ionicons 
-                name={getFileIcon(previewDocument?.split('.').pop())} 
-                size={50} 
-                color="#1877f2" 
-              />
-              <Text style={styles.documentTitle} numberOfLines={10}>
-                {previewDocument?.split('/').pop() || 'Tài liệu'}
-              </Text>
-            </View>
-            
-            <View style={styles.documentInfo}>
-              <Text style={styles.documentInfoText}>
-                Loại file: {getFileTypeName(previewDocument?.split('.').pop())}
-              </Text>
-            </View>
-
-            <View style={styles.buttonContainer}>
+      {showImagePreview && (
+        <Modal visible={showImagePreview} transparent={true} animationType="fade">
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
               <TouchableOpacity
-                style={[styles.button, styles.downloadButton]}
-                onPress={() => downloadFile(previewDocument)}
+                style={styles.closeButton}
+                onPress={() => setShowImagePreview(false)}
               >
-                <Ionicons name="download" size={24} color="white" />
-                <Text style={styles.buttonText}>Tải về</Text>
+                <Ionicons name="close" size={30} color="white" />
               </TouchableOpacity>
+            </View>
+            <Image
+              source={{ uri: previewImage }}
+              style={styles.fullscreenImage}
+              resizeMode="contain"
+            />
+          </View>
+        </Modal>
+      )}
 
+      {showVideoPreview && (
+        <Modal visible={showVideoPreview} transparent={true} animationType="fade">
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
               <TouchableOpacity
-                style={[styles.button, styles.openButton]}
-                onPress={() => Linking.openURL(previewDocument)}
+                style={styles.closeButton}
+                onPress={() => setShowVideoPreview(false)}
               >
-                <Ionicons name="open-outline" size={24} color="white" />
-                <Text style={styles.buttonText}>Tải về</Text>
+                <Ionicons name="close" size={30} color="white" />
               </TouchableOpacity>
+            </View>
+            <Video
+              source={{ uri: previewVideo }}
+              style={styles.fullscreenVideo}
+              resizeMode="contain"
+              useNativeControls
+              shouldPlay
+            />
+          </View>
+        </Modal>
+      )}
 
+      {showDocumentPreview && (
+        <Modal visible={showDocumentPreview} transparent={true} animationType="fade">
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
               <TouchableOpacity
-                style={[styles.button, styles.closeButton]}
+                style={styles.closeButton}
                 onPress={() => setShowDocumentPreview(false)}
               >
-                <Text style={styles.closeButtonText}>Đóng</Text>
+                <Ionicons name="close" size={30} color="white" />
               </TouchableOpacity>
             </View>
+            <WebView
+              source={{ uri: previewDocument }}
+              style={styles.fullscreenDocument}
+              startInLoadingState={true}
+              renderLoading={() => (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#1877f2" />
+                </View>
+              )}
+            />
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
 
       {/* File Preview Modal */}
       <Modal
@@ -1753,33 +1635,11 @@ const GroupChatScreen = () => {
             <ScrollView style={styles.fileList}>
               {selectedFiles.map((file, index) => (
                 <View key={index} style={styles.fileItem}>
-                  {file.type.startsWith('image/') ? (
-                    <Image
-                      source={{ uri: file.uri }}
-                      style={styles.fileThumbnail}
-                      resizeMode="cover"
-                    />
-                  ) : file.type.startsWith('video/') ? (
-                    <View style={styles.videoThumbnailContainer}>
-                      <Video
-                        source={{ uri: file.uri }}
-                        style={styles.fileThumbnail}
-                        resizeMode="cover"
-                        shouldPlay={false}
-                        isMuted={true}
-                        isLooping={false}
-                      />
-                      <View style={styles.playIconContainer}>
-                        <Ionicons name="play" size={20} color="white" />
-                      </View>
-                    </View>
-                  ) : (
-                    <Ionicons
-                      name={getFileIcon(file.type)}
-                      size={24}
-                      color="#1877f2"
-                    />
-                  )}
+                  <Ionicons
+                    name={getFileIcon(file.type)}
+                    size={24}
+                    color="#1877f2"
+                  />
                   <View style={styles.fileInfo}>
                     <Text style={styles.fileName} numberOfLines={1}>
                       {file.name}
@@ -1828,84 +1688,6 @@ const GroupChatScreen = () => {
             )}
           </View>
         </View>
-      </Modal>
-
-      {/* Error Modal */}
-      <Modal
-        visible={showErrorModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowErrorModal(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Lỗi Upload File</Text>
-            <Text style={styles.errorMessage}>{errorMessage}</Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.confirmButton]}
-                onPress={() => {
-                  setShowErrorModal(false);
-                  setShowFilePreview(false);
-                  setSelectedFiles([]);
-                }}
-              >
-                <Text style={styles.buttonText}>Xác nhận</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* File Type Selection Modal */}
-      <Modal
-        visible={showFileTypeModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowFileTypeModal(false)}
-      >
-        <TouchableOpacity 
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowFileTypeModal(false)}
-        >
-          <View style={styles.fileTypeModalContent}>
-            <View style={styles.fileTypeModalHeader}>
-              <Text style={styles.fileTypeModalTitle}>Chọn loại file</Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setShowFileTypeModal(false)}
-              >
-                <Ionicons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-            
-            <Text style={styles.fileTypeModalSubtitle}>Bạn muốn đính kèm loại file nào?</Text>
-            
-            <View style={styles.fileTypeOptions}>
-              <TouchableOpacity
-                style={styles.fileTypeOption}
-                onPress={() => handleFileTypeSelect('image')}
-              >
-                <Text style={styles.fileTypeOptionText}>HÌNH ẢNH</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.fileTypeOption}
-                onPress={() => handleFileTypeSelect('video')}
-              >
-                <Text style={styles.fileTypeOptionText}>VIDEO</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.fileTypeOption}
-                onPress={() => handleFileTypeSelect('document')}
-              >
-                <Text style={styles.fileTypeOptionText}>TÀI LIỆU</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );
@@ -2186,17 +1968,16 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,1)", // Màu background của modal khi click vào preview ảnh
+    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     alignItems: "center",
   },
   modalContent: {
     backgroundColor: "white",
-    borderRadius: 15,
-    width: "100%",
-    maxWidth: 400,
-    maxHeight: "80%",
+    borderRadius: 10,
     padding: 20,
+    width: "90%",
+    maxHeight: "80%",
   },
   modalTitle: {
     fontSize: 18,
@@ -2216,24 +1997,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 8,
   },
-  fileThumbnail: {
-    width: 50,
-    height: 50,
-    borderRadius: 4,
-    marginRight: 10,
-  },
   fileInfo: {
     flex: 1,
     marginLeft: 10,
   },
-  fileName: {
-    fontSize: 14,
-    color: "#333",
-    marginBottom: 4,
-  },
   fileSize: {
     fontSize: 12,
     color: "#666",
+    marginTop: 2,
   },
   removeFileButton: {
     padding: 5,
@@ -2277,9 +2048,6 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: 10,
   },
-  downloadButton: {
-    padding: 10,
-  },
   fullscreenImage: {
     width: "100%",
     height: "100%",
@@ -2299,133 +2067,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "white",
-  },
-  errorMessage: {
-    fontSize: 16,
-    color: '#ff3b30',
-    textAlign: 'center',
-    marginVertical: 20,
-    paddingHorizontal: 20,
-  },
-  confirmButton: {
-    backgroundColor: '#1877f2',
-  },
-  documentHeader: {
-    alignItems: "center",
-    marginBottom: 20,
-    paddingHorizontal: 10,
-  },
-  documentTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginTop: 10,
-    textAlign: "center",
-    color: "#333",
-  },
-  documentInfo: {
-    width: "100%",
-    padding: 15,
-    backgroundColor: "#f5f5f5",
-    borderRadius: 10,
-    marginBottom: 20,
-  },
-  documentInfoText: {
-    fontSize: 14,
-    color: "#666",
-    marginVertical: 5,
-  },
-  buttonContainer: {
-    width: "100%",
-    gap: 10,
-  },
-  button: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 12,
-    borderRadius: 8,
-    width: "100%",
-  },
-  openButton: {
-    backgroundColor: "#4CAF50",
-  },
-  closeButtonText: {
-    color: "#666",
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  fileTypeModalContent: {
-    backgroundColor: 'white',
-    borderRadius: 15,
-    padding: 20,
-    width: '80%',
-    maxWidth: 400,
-  },
-  fileTypeModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  fileTypeModalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  fileTypeModalSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 20,
-  },
-  fileTypeOptions: {
-    gap: 10,
-  },
-  fileTypeOption: {
-    padding: 15,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  fileTypeOptionText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-  },
-  videoThumbnailContainer: {
-    position: 'relative',
-    marginRight: 10,
-  },
-  playIconContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 4,
-  },
-  systemMessageContainer: {
-    alignItems: 'center',
-    width: '100%',
-    marginVertical: 6,
-  },
-  systemMessageBubble: {
-    backgroundColor: '#f0f2f5',
-    borderRadius: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    maxWidth: '90%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  systemMessageText: {
-    color: '#666',
-    fontStyle: 'italic',
-    fontSize: 15,
-    marginLeft: 6,
   },
 });
 

@@ -26,7 +26,6 @@ import UpdateAvatarScreen from "./screens/UpdateAvatarScreen";
 import PersonalDetailScreen from "./screens/PersonalDetailScreen";
 import ChatDirectlyScreen from "./screens/ChatDirectlyScreen";
 
-
 import FriendRequestsScreen from "./screens/FriendRequestsScreen";
 import GroupChatScreen from "./screens/GroupChatScreen";
 import GroupCreateScreen from "./screens/GroupCreationScreen";
@@ -86,6 +85,7 @@ function AuthStack() {
 function ChatStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
+   
       <Stack.Screen name="Chat" component={ChatScreen} />
       <Stack.Screen name="ChatDirectly" component={ChatDirectlyScreen} /> 
       <Stack.Screen name="GroupChat" component={GroupChatScreen} />
@@ -93,7 +93,6 @@ function ChatStack() {
       <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} />
       <Stack.Screen name="GroupSetting" component={GroupSettingScreen} />
       <Stack.Screen name="GroupAddMembers" component={GroupAddMembersScreen} />
-
     </Stack.Navigator>
   );
 }
@@ -251,6 +250,17 @@ export default function App() {
 
     init();
   }, []);
+
+  useEffect(() => {
+  (async () => {
+    const u = await getStoredUser();
+    if (u && !u.userId) {
+      // gọi API /users/byPhone để lấy userId hoặc ép người dùng login lại
+      await AsyncStorage.clear();
+    }
+  })();
+}, []);
+
 
   const authContext = {
     isLoggedIn,

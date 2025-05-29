@@ -1,10 +1,10 @@
-const groupService = require('./groupService');
-const { GroupMemberService, MEMBER_ROLES } = require('./groupMemberService');
+const { groupService, GroupMemberService, MEMBER_ROLES } = require('./index');
 const { createGroupSchema, updateGroupSchema, addMemberSchema, updateMemberSchema } = require('./group.validator');
+const { GROUP_EVENTS } = require('./group.model');
+const { emitEvent } = require('../events');
+const userController = require('../user/controller');
 const { s3 } = require('../../config/aws');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
-const { DynamoDB } = require('aws-sdk');
 
 class GroupController {
   /**
@@ -44,7 +44,7 @@ class GroupController {
         name: req.body.name // Explicitly pass the name
       });
 
-      // emitEvent(GROUP_EVENTS.CREATED, group);
+      emitEvent(GROUP_EVENTS.CREATED, group);
       res.status(201).json(group);
     } catch (error) {
       console.error('Create group error:', error);
@@ -78,6 +78,7 @@ class GroupController {
       }
 
       const group = await groupService.updateGroup(req.params.groupId, req.body);
+      emitEvent(GROUP_EVENTS.UPDATED, group);
       res.json(group);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -90,11 +91,7 @@ class GroupController {
   async deleteGroup(req, res) {
     try {
       const group = await groupService.deleteGroup(req.params.groupId);
-      // PHÁT SOCKET.IO
-      const io = req.app.get('io');
-      if (io) {
-        io.to(`group:${req.params.groupId}`).emit('group:dissolved', req.params.groupId);
-      }
+      emitEvent(GROUP_EVENTS.DELETED, group);
       res.json({ message: 'Group deleted successfully' });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -111,26 +108,13 @@ class GroupController {
         return res.status(400).json({ error: error.details[0].message });
       }
 
-      // Lấy userId của người thực hiện (người thêm thành viên)
-      const addedBy = req.user.userId;
-
       const member = await GroupMemberService.addMember(
         req.params.groupId,
         req.body.userId,
-        req.body.role,
-        addedBy // truyền thêm trường addedBy
+        req.body.role
       );
 
-      // PHÁT SOCKET.IO
-      const io = req.app.get('io');
-      if (io) {
-        const members = await GroupMemberService.getGroupMembers(req.params.groupId);
-        io.to(`group:${req.params.groupId}`).emit('group:member_joined', {
-          groupId: req.params.groupId,
-          members
-        });
-      }
-
+      emitEvent(GROUP_EVENTS.MEMBER_ADDED, member);
       res.status(201).json(member);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -165,16 +149,7 @@ class GroupController {
         req.body
       );
 
-     // emitEvent(GROUP_EVENTS.MEMBER_UPDATED, member);
-      // PHÁT SOCKET.IO
-      const io = req.app.get('io');
-      if (io) {
-        const members = await GroupMemberService.getGroupMembers(req.params.groupId);
-        io.to(`group:${req.params.groupId}`).emit('group:member_updated', {
-          groupId: req.params.groupId,
-          members
-        });
-      }
+      emitEvent(GROUP_EVENTS.MEMBER_UPDATED, member);
       res.json(member);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -187,15 +162,10 @@ class GroupController {
   async removeMember(req, res) {
     try {
       await GroupMemberService.removeMember(req.params.groupId, req.params.memberId);
-  
-      const io = req.app.get('io');
-      if (io) {
-        const members = await GroupMemberService.getGroupMembers(req.params.groupId);
-        io.to(`group:${req.params.groupId}`).emit('group:member_removed', {
-          groupId: req.params.groupId,
-          members
-        });
-      }
+      emitEvent(GROUP_EVENTS.MEMBER_REMOVED, {
+        groupId: req.params.groupId,
+        userId: req.params.memberId
+      });
       res.json({ message: 'Member removed successfully' });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -271,26 +241,6 @@ class GroupController {
         // Cập nhật URL avatar trong database
         const updatedGroup = await groupService.updateGroupAvatar(groupId, s3Response.Location);
 
-        // Lưu tin nhắn hệ thống vào bảng group-message
-        const dynamoDB = new DynamoDB.DocumentClient();
-        const messageId = uuidv4();
-        const timestamp = new Date().toISOString();
-        const systemMessage = {
-          groupMessageId: messageId,
-          groupId,
-          senderId: userId,
-          content: `Ảnh đại diện nhóm đã thay đổi`,
-          type: 'system',
-          createdAt: timestamp,
-          updatedAt: timestamp,
-          status: 'sent',
-          metadata: { event: 'AVATAR_UPDATED', avatarUrl: s3Response.Location }
-        };
-        await dynamoDB.put({
-          TableName: process.env.GROUP_MESSAGE_TABLE,
-          Item: systemMessage
-        }).promise();
-
         // Thông báo cho các thành viên qua socket
         const io = req.app.get('io');
         if (io) {
@@ -298,9 +248,6 @@ class GroupController {
             groupId,
             type: 'AVATAR_UPDATED',
             data: { avatarUrl: s3Response.Location }
-          });
-          io.to(`group:${groupId}`).emit('new-group-message', {
-            ...systemMessage
           });
         }
 
@@ -351,28 +298,17 @@ class GroupController {
         });
       }
 
+      // Kiểm tra quyền (chỉ admin mới được cập nhật)
+      const member = await GroupMemberService.getMember(groupId, userId);
+      if (!member || member.role !== 'ADMIN') {
+        return res.status(403).json({
+          status: 'error',
+          message: 'Bạn không có quyền đổi tên nhóm'
+        });
+      }
+
       // Cập nhật tên nhóm
       const updatedGroup = await groupService.updateGroup(groupId, { name: name.trim() });
-
-      // Lưu tin nhắn hệ thống vào bảng group-message
-      const dynamoDB = new DynamoDB.DocumentClient();
-      const messageId = uuidv4();
-      const timestamp = new Date().toISOString();
-      const systemMessage = {
-        groupMessageId: messageId,
-        groupId,
-        senderId: userId,
-        content: `Tên nhóm đã đổi thành <b>\"${name.trim()}\"</b>`,
-        type: 'system',
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        status: 'sent',
-        metadata: { event: 'NAME_UPDATED' }
-      };
-      await dynamoDB.put({
-        TableName: process.env.GROUP_MESSAGE_TABLE,
-        Item: systemMessage
-      }).promise();
 
       // Thông báo cho các thành viên qua socket
       const io = req.app.get('io');
@@ -381,9 +317,6 @@ class GroupController {
           groupId,
           type: 'NAME_UPDATED',
           data: { name: name.trim() }
-        });
-        io.to(`group:${groupId}`).emit('new-group-message', {
-          ...systemMessage
         });
       }
 

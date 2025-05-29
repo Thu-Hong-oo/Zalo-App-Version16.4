@@ -18,6 +18,8 @@ import api from "../config/api";
 import { Pressable } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback } from "react";
+import { useRoute } from "@react-navigation/native";
+
 
 export default function ContactsScreen({ navigation }) {
   /* ✅ quickAccess thành state để có setQuickAccess  */
@@ -31,6 +33,7 @@ export default function ContactsScreen({ navigation }) {
   const [contacts,    setContacts]    = useState([]);
   const [selectedFriend, setSelectedFriend] = useState(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const route = useRoute();
 
   const handleDeleteFriendPress = (friend) => {
     setSelectedFriend(friend);
@@ -61,29 +64,39 @@ export default function ContactsScreen({ navigation }) {
   
   /* 🔸 đọc userId từ AsyncStorage */
   const getCurrentUserId = async () => {
-    const stored = await AsyncStorage.getItem("user");
-    if (!stored) return null;
-    const { userId, phone } = JSON.parse(stored);
-    return userId || phone || null;
+    const raw = await AsyncStorage.getItem("user");
+    if (!raw) return null;
+    return JSON.parse(raw).userId ?? null;
   };
 
-  /* ===== Lấy danh sách bạn bè ===== */
+ /* 1️⃣  refetch khi Screen focus HOẶC param “refresh” thay đổi */
   useFocusEffect(
-    useCallback(() => {
-      const fetchFriends = async () => {
-        const uid = await getCurrentUserId();
-        if (!uid) return;
-        try {
-          const res = await api.get(`/friends/${uid}`);
-          if (res.data.success) setContacts(res.data.friends);
-        } catch (err) {
-          console.error("Lỗi lấy danh sách bạn (focus):", err);
+  useCallback(() => {
+    fetchFriends();
+  }, [route.params?.refresh])    // ⏎ auto reload khi Accept lời mời hoặc gửi lời mời
+);
+
+      /* 2️⃣ fetchFriends */
+    const fetchFriends = async () => {
+      const uid = await getCurrentUserId();   // LUÔN là userId
+      if (!uid) {
+          await AsyncStorage.clear();          // xoá session cũ
+          navigation.reset({ index: 0, routes: [{ name: "Login" }] });
+          return;
         }
-      };
-  
-      fetchFriends();
-    }, [])
-  );
+
+      try {
+        const { data } = await api.get(`/friends/list/${uid}`);
+        if (data.success) {
+            // phòng khi DB lỡ có record (userId, friendId) trùng nhau
+            const filtered = data.friends.filter(f => f.userId !== uid);
+            setContacts(filtered);
+          }
+
+      } catch (e) {
+        console.error("Lỗi lấy danh sách bạn:", e);
+      }
+    };
   
   
   /* ===== Đếm lời mời kết bạn ===== */
