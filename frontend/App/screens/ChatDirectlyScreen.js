@@ -47,41 +47,18 @@ const createParticipantId = (phone1, phone2) => {
 
 // Hàm trả về icon file phù hợp cho React Native
 const getFileIcon = (mimeType, fileName = "", size = 40) => {
-  // Ưu tiên kiểm tra đuôi file nếu có
   const ext = fileName.split('.').pop().toLowerCase();
-
   let iconSource = null;
 
-  // Kiểm tra đuôi file trước
   if (ext === "doc" || ext === "docx") {
-    iconSource = require("../assets/icons/word.svg");
+    iconSource = require("../assets/icons/word.png");
   } else if (ext === "pdf") {
-    iconSource = require("../assets/icons/pdf.svg");
+    iconSource = require("../assets/icons/pdf.png");
   } else if (ext === "xls" || ext === "xlsx") {
     iconSource = require("../assets/icons/excel.png");
   } else if (ext === "ppt" || ext === "pptx") {
     iconSource = require("../assets/icons/ppt.png");
   } else if (ext === "zip" || ext === "rar") {
-    iconSource = require("../assets/icons/zip.png");
-  }
-
-  // Nếu không có đuôi file, mới kiểm tra mimeType
-  if (!iconSource && mimeType) {
-    if (mimeType.includes("word")) {
-      iconSource = require("../assets/icons/word.svg");
-    } else if (mimeType.includes("pdf")) {
-      iconSource = require("../assets/icons/pdf.svg");
-    } else if (mimeType.includes("excel") || mimeType.includes("spreadsheet")) {
-      iconSource = require("../assets/icons/excel.png");
-    } else if (mimeType.includes("powerpoint")) {
-      iconSource = require("../assets/icons/ppt.png");
-    } else if (mimeType.includes("zip") || mimeType.includes("rar")) {
-      iconSource = require("../assets/icons/zip.png");
-    }
-  }
-
-  // Nếu không nhận diện được thì dùng icon zip mặc định
-  if (!iconSource) {
     iconSource = require("../assets/icons/zip.png");
   }
 
@@ -802,13 +779,6 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       item.senderPhone !== otherParticipantPhone || item.senderPhone === "me";
     if (isMyMessage && item.status === "deleted") return null;
 
-    // console.log("Rendering message:", {
-    //   id: item.messageId,
-    //   tempId: item.tempId,
-    //   status: item.status,
-    //   content: item.content,
-    // });
-
     const handleFilePress = async () => {
       if (item.status === "recalled") return;
       if (item.fileType?.startsWith("image/")) {
@@ -859,46 +829,55 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
             {item.content}
           </Text>
         ) : item.type === "file" ? (
-          <TouchableOpacity onPress={handleFilePress}>
-            {item.fileType?.startsWith("image/") ? (
+          item.fileType?.startsWith("image/") ? (
+            <TouchableOpacity onPress={handleFilePress}>
               <Image
                 source={{ uri: item.content }}
                 style={styles.imgPreview}
                 resizeMode="contain"
               />
-            ) : item.fileType?.startsWith("video/") ? (
+              <TouchableOpacity
+                style={styles.downloadButtonFile}
+                onPress={() => downloadFile(item.content)}
+              >
+                <Ionicons name="download" size={24} color="#1877f2" />
+              </TouchableOpacity>
+            </TouchableOpacity>
+          ) : item.fileType?.startsWith("video/") ? (
+            <TouchableOpacity onPress={handleFilePress}>
               <Video
                 source={{ uri: item.content }}
                 style={styles.videoPreview}
                 resizeMode="contain"
                 useNativeControls
               />
-            ) : (
-              <View style={styles.fileContainer}>
-                <Ionicons
-                  name="document"
-                  size={24}
-                  color={isMyMessage ? "white" : "black"}
-                />
-                <Text
-                  style={[styles.fileName, isMyMessage && styles.myMessageText]}
-                >
-                  {
-                    (() => {
-                      try {
-                        const url = new URL(item.content);
-                        const pathname = url.pathname;
-                        return pathname.split('/').pop();
-                      } catch (e) {
-                        console.error("Error parsing file URL:", e);
-                        return item.content.split("/").pop(); // Fallback in case of URL parsing error
-                      }
-                    })()
+              <TouchableOpacity
+                style={styles.downloadButtonFile}
+                onPress={() => downloadFile(item.content)}
+              >
+                <Ionicons name="download" size={24} color="#1877f2" />
+              </TouchableOpacity>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.fileContainer}>
+              {getFileIcon(item.fileType, item.content.split('/').pop(), 40)}
+              <Text
+                style={styles.fileName}
+                numberOfLines={1}
+                ellipsizeMode="middle"
+              >
+                {(() => {
+                  try {
+                    const url = new URL(item.content);
+                    const pathname = url.pathname;
+                    return pathname.split('/').pop();
+                  } catch (e) {
+                    return item.content.split("/").pop();
                   }
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
+                })()}
+              </Text>
+            </View>
+          )
         ) : null}
         <View style={styles.messageFooter}>
           <Text
@@ -1470,11 +1449,24 @@ const styles = StyleSheet.create({
   fileContainer: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 5,
+    padding: 10,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    marginBottom: 8,
+    minWidth: 180,
+    maxWidth: SCREEN_WIDTH * 0.7,
   },
   fileName: {
-    marginLeft: 5,
-    fontSize: 14,
+    marginLeft: 10,
+    fontSize: 15,
+    color: "#222",
+    fontWeight: "bold",
+    flex: 1,
+    maxWidth: SCREEN_WIDTH * 0.35,
+  },
+  downloadButtonFile: {
+    marginLeft: 10,
+    padding: 4,
   },
   modalContainer: {
     flex: 1,
