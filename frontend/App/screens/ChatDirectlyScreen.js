@@ -843,20 +843,22 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
               </TouchableOpacity>
             </TouchableOpacity>
           ) : item.fileType?.startsWith("video/") ? (
-            <TouchableOpacity onPress={handleFilePress}>
+            <View style={styles.fullWidthVideoMsgContainer}>
               <Video
                 source={{ uri: item.content }}
-                style={styles.videoPreview}
+                style={styles.fullWidthVideoMsg}
                 resizeMode="contain"
-                useNativeControls
+                useNativeControls={false}
+                shouldPlay={true}
+                isMuted={true}
+                isLooping={true}
               />
               <TouchableOpacity
-                style={styles.downloadButtonFile}
-                onPress={() => downloadFile(item.content)}
-              >
-                <Ionicons name="download" size={24} color="#1877f2" />
-              </TouchableOpacity>
-            </TouchableOpacity>
+                style={StyleSheet.absoluteFill}
+                onPress={handleFilePress}
+                activeOpacity={0.7}
+              />
+            </View>
           ) : (
             <TouchableOpacity onPress={handleFilePress}>
               <View style={styles.fileContainer}>
@@ -1652,6 +1654,20 @@ const styles = StyleSheet.create({
   },
   deleteText: {
     color: "#ff3b30",
+  },
+  fullWidthVideoMsgContainer: {
+    width: '100%',
+    aspectRatio: 16/9,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
+    alignSelf: 'center',
+    maxWidth: '100%',
+  },
+  fullWidthVideoMsg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
   },
 });
 
