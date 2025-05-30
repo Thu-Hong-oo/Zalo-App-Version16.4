@@ -27,7 +27,7 @@ import {
   forwardMessage,
   deleteMessage,
 } from "../modules/chat/controller";
-import { getAccessToken } from "../services/storage";
+import { getAccessToken, getUserInfo } from "../services/storage";
 import * as ImagePicker from "expo-image-picker";
 import { Video } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
@@ -37,12 +37,38 @@ import ForwardMessageModal from "./ForwardMessageModal";
 import { getApiUrl, getBaseUrl, api } from "../config/api";
 import { Icon } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import { LinearGradient } from 'expo-linear-gradient';
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 // Hàm tạo conversationId
 const createParticipantId = (phone1, phone2) => {
   return [phone1, phone2].sort().join("_");
+};
+
+// Hàm trả về icon file phù hợp cho React Native
+const getFileIcon = (mimeType, fileName = "", size = 40) => {
+  const ext = fileName.split('.').pop().toLowerCase();
+  let iconSource = null;
+
+  if (ext === "doc" || ext === "docx") {
+    iconSource = require("../assets/icons/word.png");
+  } else if (ext === "pdf") {
+    iconSource = require("../assets/icons/pdf.png");
+  } else if (ext === "xls" || ext === "xlsx") {
+    iconSource = require("../assets/icons/excel.png");
+  } else if (ext === "ppt" || ext === "pptx") {
+    iconSource = require("../assets/icons/ppt.png");
+  } else if (ext === "zip" || ext === "rar") {
+    iconSource = require("../assets/icons/zip.png");
+  }
+
+  return (
+    <Image
+      source={iconSource}
+      style={{ width: size, height: size, resizeMode: "contain" }}
+    />
+  );
 };
 
 const ChatDirectlyScreen = ({ route, navigation }) => {
@@ -82,6 +108,14 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   const [isNearTop, setIsNearTop] = useState(false);
   const [scrollPosition, setScrollPosition] = useState(0);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
+
+  const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
+  const [callId, setCallId] = useState(null);
+  const [roomName, setRoomName] = useState(null);
+  const [myPhone, setMyPhone] = useState(null);
+  const [incomingCall, setIncomingCall] = useState(null);
+
+  const [showFileTypeModal, setShowFileTypeModal] = useState(false);
 
   const formatDate = (timestamp) => {
     try {
@@ -672,13 +706,18 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsMultipleSelection: true,
         selectionLimit: 10,
+        quality: 1,
       });
 
       if (!result.canceled) {
-        const files = result.assets.map((asset) => ({
-          uri: asset.uri,
-          type: "image/jpeg",
-          name: `image_${Date.now()}.jpg`,
+        const files = await Promise.all(result.assets.map(async (asset) => {
+          const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+          return {
+            uri: asset.uri,
+            type: "image/jpeg",
+            name: `image_${Date.now()}.jpg`,
+            size: fileInfo.size || 0,
+          };
         }));
         setSelectedFiles(files);
         setShowFilePreview(true);
@@ -694,13 +733,18 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
         allowsMultipleSelection: true,
         selectionLimit: 5,
+        quality: 1,
       });
 
       if (!result.canceled) {
-        const files = result.assets.map((asset) => ({
-          uri: asset.uri,
-          type: "video/mp4",
-          name: `video_${Date.now()}.mp4`,
+        const files = await Promise.all(result.assets.map(async (asset) => {
+          const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+          return {
+            uri: asset.uri,
+            type: "video/mp4",
+            name: `video_${Date.now()}.mp4`,
+            size: fileInfo.size || 0,
+          };
         }));
         setSelectedFiles(files);
         setShowFilePreview(true);
@@ -719,6 +763,15 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
           "application/vnd.ms-powerpoint",
           "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          "application/vnd.ms-excel",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "application/zip",
+          "application/rar",
+          "application/7z",
+          "application/x-7z-compressed",
+          "application/x-rar-compressed",
+          "application/x-zip-compressed",
+          "application/x-7z-compressed",
         ],
         multiple: true,
         copyToCacheDirectory: true,
@@ -739,18 +792,97 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       Alert.alert("Lỗi", "Không thể chọn file");
     }
   };
-
+  const getCallIcon = (type, status, color = '#1877f2') => {
+    if (type === 'video') {
+      switch (status) {
+        case 'started': return <Ionicons name="videocam-outline" size={20} color={color} />;
+        case 'ended': return <Ionicons name="videocam" size={20} color={color} />;
+        case 'missed': return <Ionicons name="videocam-off" size={20} color={color} />;
+        case 'declined': return <Ionicons name="videocam-off" size={20} color={color} />;
+        case 'cancelled': return <Ionicons name="videocam-off" size={20} color={color} />;
+        default: return <Ionicons name="videocam" size={20} color={color} />;
+      }
+    } else {
+      switch (status) {
+        case 'started': return <Ionicons name="call-outline" size={20} color={color} />;
+        case 'ended': return <Ionicons name="call" size={20} color={color} />;
+        case 'missed': return <Ionicons name="call-missed" size={20} color={color} />;
+        case 'declined': return <Ionicons name="call-end" size={20} color={color} />;
+        case 'cancelled': return <Ionicons name="call-end" size={20} color={color} />;
+        default: return <Ionicons name="call" size={20} color={color} />;
+      }
+    }
+  };
+  const formatDuration = (seconds) => {
+    if (!seconds && seconds !== 0) return '';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+  
+  const getCallText = (type, status, duration) => {
+    if (type === 'video') {
+      switch (status) {
+        case 'started': return 'Bắt đầu video call';
+        case 'ended': return `Kết thúc video call${duration ? ` (${formatDuration(duration)})` : ''}`;
+        case 'missed': return 'Video call nhỡ';
+        case 'declined': return 'Video call bị từ chối';
+        case 'cancelled': return 'Cuộc gọi video đã bị hủy';
+        default: return 'Video call';
+      }
+    } else {
+      switch (status) {
+        case 'started': return 'Bắt đầu cuộc gọi thoại';
+        case 'ended': return `Kết thúc cuộc gọi thoại${duration ? ` (${formatDuration(duration)})` : ''}`;
+        case 'missed': return 'Cuộc gọi nhỡ';
+        case 'declined': return 'Cuộc gọi bị từ chối';
+        case 'cancelled': return 'Cuộc gọi thoại đã bị hủy';
+        default: return 'Cuộc gọi thoại';
+      }
+    }
+  };
   const renderMessage = ({ item }) => {
     const isMyMessage =
       item.senderPhone !== otherParticipantPhone || item.senderPhone === "me";
     if (isMyMessage && item.status === "deleted") return null;
 
-    // console.log("Rendering message:", {
-    //   id: item.messageId,
-    //   tempId: item.tempId,
-    //   status: item.status,
-    //   content: item.content,
-    // });
+
+    // Block render cho call/video/audio
+    if (["call", "video", "audio"].includes(item.type)) {
+      return (
+        <View
+          style={[
+            styles.messageContainer,
+            isMyMessage ? styles.myMessage : styles.otherMessage,
+            {
+              flexDirection: 'row',
+              alignItems: 'center',
+              marginVertical: 5,
+              backgroundColor: isMyMessage ? '#1877f2' : '#E4E6EB',
+              alignSelf: isMyMessage ? 'flex-end' : 'flex-start',
+              maxWidth: '80%',
+            },
+          ]}
+        >
+          {getCallIcon(item.type, item.callStatus || item.status, isMyMessage ? 'white' : '#1877f2')}
+          <View style={{ marginLeft: 8 }}>
+            <Text
+              style={[
+                styles.messageText,
+                isMyMessage ? styles.myMessageText : styles.otherMessageText,
+                { fontWeight: 'bold' },
+              ]}
+            >
+              {getCallText(item.type, item.callStatus || item.status, item.duration)}
+            </Text>
+            <Text style={[styles.messageTime, isMyMessage && styles.myMessageTime]}>
+              {formatTime(item.timestamp)}
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
 
     const handleFilePress = async () => {
       if (item.status === "recalled") return;
@@ -761,12 +893,11 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         setPreviewVideo(item.content);
         setShowVideoPreview(true);
       } else {
+        // Nếu là file tài liệu thì mở link trên trình duyệt để tải về
         try {
-          const supported = await Linking.canOpenURL(item.content);
-          if (supported) await Linking.openURL(item.content);
-          else Alert.alert("Không thể mở file", "URL: " + item.content);
-        } catch (error) {
-          Alert.alert("Lỗi", "Không thể mở file");
+          await Linking.openURL(item.content);
+        } catch (e) {
+          Alert.alert("Lỗi", "Không thể mở trình duyệt để tải file.");
         }
       }
     };
@@ -802,35 +933,54 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
             {item.content}
           </Text>
         ) : item.type === "file" ? (
-          <TouchableOpacity onPress={handleFilePress}>
-            {item.fileType?.startsWith("image/") ? (
+          item.fileType?.startsWith("image/") ? (
+            <TouchableOpacity onPress={handleFilePress}>
               <Image
                 source={{ uri: item.content }}
                 style={styles.imgPreview}
                 resizeMode="contain"
               />
-            ) : item.fileType?.startsWith("video/") ? (
+            </TouchableOpacity>
+          ) : item.fileType?.startsWith("video/") ? (
+            <View style={styles.fullWidthVideoMsgContainer}>
               <Video
                 source={{ uri: item.content }}
-                style={styles.videoPreview}
+                style={styles.fullWidthVideoMsg}
                 resizeMode="contain"
-                useNativeControls
+                useNativeControls={false}
+                shouldPlay={true}
+                isMuted={true}
+                isLooping={true}
               />
-            ) : (
+              <TouchableOpacity
+                style={StyleSheet.absoluteFill}
+                onPress={handleFilePress}
+                activeOpacity={0.7}
+              />
+            </View>
+          ) : (
+            <TouchableOpacity onPress={handleFilePress}>
               <View style={styles.fileContainer}>
-                <Ionicons
-                  name="document"
-                  size={24}
-                  color={isMyMessage ? "white" : "black"}
-                />
+                {getFileIcon(item.fileType, item.content.split('/').pop(), 40)}
                 <Text
-                  style={[styles.fileName, isMyMessage && styles.myMessageText]}
+                  style={styles.fileName}
+                  numberOfLines={1}
+                  ellipsizeMode="middle"
                 >
-                  {item.content.split("/").pop()}
+                  {(() => {
+                    try {
+                      const url = new URL(item.content);
+                      const pathname = url.pathname;
+                      return pathname.split('/').pop();
+                    } catch (e) {
+                      return item.content.split("/").pop();
+                    }
+                  })()}
                 </Text>
+                {/* Không hiển thị nút tải file cho các loại file tài liệu */}
               </View>
-            )}
-          </TouchableOpacity>
+            </TouchableOpacity>
+          )
         ) : null}
         <View style={styles.messageFooter}>
           <Text
@@ -895,13 +1045,6 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       console.error("Error downloading file:", error);
       Alert.alert("Lỗi", "Không thể tải file");
     }
-  };
-
-  const getFileIcon = (mimeType) => {
-    if (mimeType?.includes("pdf")) return "document-text";
-    if (mimeType?.includes("word")) return "document-text";
-    if (mimeType?.includes("powerpoint")) return "document-text";
-    return "document";
   };
 
   const formatFileSize = (bytes) => {
@@ -1005,6 +1148,74 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
     }
   }, [isNearTop]);
 
+  // Lấy số điện thoại của mình
+  useEffect(() => {
+    getUserInfo().then(user => setMyPhone(user?.phone));
+  }, []);
+
+  // Hàm gọi video
+  const handleVideoCall = async () => {
+    try {
+      const now = Date.now();
+      const res = await api.post('/video-call/room', { roomName: `room_${now}` });
+      setCallId(res.data.data.callId);
+      setRoomName(res.data.data.room.name);
+      const localUser = await getUserInfo();
+      navigation.navigate('VideoCall', {
+        token: res.data.data.token,
+        roomName: res.data.data.room.name,
+        callId: res.data.data.callId,
+        receiverPhone: otherParticipantPhone,
+        isCreator: true,
+        identity: localUser?.phone,
+        localName: localUser?.name || 'Bạn',
+        localAvatar: localUser?.avatar || '',
+        remoteName: title || 'Đối phương',
+        remoteAvatar: avatar || '',
+      });
+    } catch (err) {
+      Alert.alert('Lỗi', 'Không thể tạo phòng video call');
+    }
+  };
+
+  // Lắng nghe các event socket liên quan đến video call
+  useEffect(() => {
+    if (!socket) return;
+
+    socket.on('incoming-video-call', (data) => {
+      setIncomingCall(data);
+    });
+
+    socket.on('call-accepted', ({ callId, roomName, ...data }) => {
+      setIncomingCall(null);
+      navigation.navigate('VideoCall', { callId, roomName, ...data });
+    });
+
+    socket.on('call-declined', ({ callId }) => {
+      Alert.alert('Cuộc gọi bị từ chối');
+      setIncomingCall(null);
+    });
+
+    socket.on('call-ended', ({ callId }) => {
+      Alert.alert('Cuộc gọi đã kết thúc');
+      setIncomingCall(null);
+      navigation.goBack();
+    });
+
+    socket.on('call-timeout', ({ callId }) => {
+      Alert.alert('Cuộc gọi nhỡ');
+      setIncomingCall(null);
+    });
+
+    return () => {
+      socket.off('incoming-video-call');
+      socket.off('call-accepted');
+      socket.off('call-declined');
+      socket.off('call-ended');
+      socket.off('call-timeout');
+    };
+  }, [socket]);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1877f2" />
@@ -1073,14 +1284,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.attachButton}
-            onPress={() => {
-              Alert.alert("Chọn loại file", "Bạn muốn gửi loại file nào?", [
-                { text: "Ảnh", onPress: pickImage },
-                { text: "Video", onPress: pickVideo },
-                { text: "Tài liệu", onPress: pickDocument },
-                { text: "Hủy", style: "cancel" },
-              ]);
-            }}
+            onPress={() => setShowFileTypeModal(true)}
           >
             <Ionicons name="image" size={24} color="#666" />
           </TouchableOpacity>
@@ -1118,7 +1322,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
               {selectedFiles.map((file, index) => (
                 <View key={index} style={styles.fileItem}>
                   <Ionicons
-                    name={getFileIcon(file.type)}
+                    name={getFileIcon(file.type, file.name, 24)}
                     size={24}
                     color="#1877f2"
                   />
@@ -1173,19 +1377,28 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       </Modal>
       <Modal visible={showImagePreview} transparent={true} animationType="fade">
         <View style={styles.modalContainer}>
+          <LinearGradient
+            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
+            style={styles.gradientOverlay}
+            pointerEvents="none"
+          />
           <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setShowImagePreview(false)}
-            >
-              <Ionicons name="close" size={30} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.downloadButton}
-              onPress={() => downloadFile(previewImage)}
-            >
-              <Ionicons name="download" size={30} color="white" />
-            </TouchableOpacity>
+            <View style={styles.iconCircle}>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowImagePreview(false)}
+              >
+                <Ionicons name="close" size={30} color="white" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.iconCircle}>
+              <TouchableOpacity
+                style={styles.downloadButton}
+                onPress={() => downloadFile(previewImage)}
+              >
+                <Ionicons name="download" size={30} color="white" />
+              </TouchableOpacity>
+            </View>
           </View>
           <Image
             source={{ uri: previewImage }}
@@ -1196,19 +1409,28 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
       </Modal>
       <Modal visible={showVideoPreview} transparent={true} animationType="fade">
         <View style={styles.modalContainer}>
+          <LinearGradient
+            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
+            style={styles.gradientOverlay}
+            pointerEvents="none"
+          />
           <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setShowVideoPreview(false)}
-            >
-              <Ionicons name="close" size={30} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.downloadButton}
-              onPress={() => downloadFile(previewVideo)}
-            >
-              <Ionicons name="download" size={30} color="white" />
-            </TouchableOpacity>
+            <View style={styles.iconCircle}>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowVideoPreview(false)}
+              >
+                <Ionicons name="close" size={30} color="white" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.iconCircle}>
+              <TouchableOpacity
+                style={styles.downloadButton}
+                onPress={() => downloadFile(previewVideo)}
+              >
+                <Ionicons name="download" size={30} color="white" />
+              </TouchableOpacity>
+            </View>
           </View>
           <Video
             source={{ uri: previewVideo }}
@@ -1282,6 +1504,95 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+      {/* Modal nhận cuộc gọi */}
+      <Modal visible={!!incomingCall} transparent animationType="fade">
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0008' }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 24, alignItems: 'center' }}>
+            <Text style={{ fontSize: 18, fontWeight: 'bold' }}>Cuộc gọi đến</Text>
+            <Text style={{ marginVertical: 8 }}>{incomingCall?.senderPhone}</Text>
+            <View style={{ flexDirection: 'row', marginTop: 16 }}>
+              <TouchableOpacity
+                style={{ backgroundColor: '#4caf50', padding: 16, borderRadius: 50, marginRight: 16 }}
+                onPress={async () => {
+                  socket.emit('accept-video-call', { callId: incomingCall.callId });
+                  const localUser = await getUserInfo();
+                  navigation.navigate('VideoCall', {
+                    callId: incomingCall.callId,
+                    roomName: incomingCall.roomName,
+                    identity: localUser?.phone,
+                    localName: localUser?.name || 'Bạn',
+                    localAvatar: localUser?.avatar || '',
+                    remoteName: incomingCall.senderName || incomingCall.senderPhone,
+                    remoteAvatar: incomingCall.senderAvatar || '',
+                    receiverPhone: incomingCall.senderPhone,
+                    isCreator: false,
+                  });
+                  setIncomingCall(null);
+                }}
+              >
+                <Ionicons name="call" size={32} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ backgroundColor: '#f44336', padding: 16, borderRadius: 50 }}
+                onPress={() => {
+                  socket.emit('decline-video-call', { callId: incomingCall.callId });
+                  setIncomingCall(null);
+                }}
+              >
+                <Ionicons name="call-end" size={32} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={showFileTypeModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowFileTypeModal(false)}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.3)',
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}>
+          <View style={{
+            backgroundColor: 'white',
+            borderRadius: 12,
+            width: '80%',
+            padding: 20,
+            alignItems: 'center',
+            position: 'relative'
+          }}>
+            {/* Nút X */}
+            <TouchableOpacity
+              style={{
+                position: 'absolute',
+                top: 10,
+                right: 10,
+                zIndex: 10
+              }}
+              onPress={() => setShowFileTypeModal(false)}
+            >
+              <Ionicons name="close" size={28} color="#333" />
+            </TouchableOpacity>
+            <Text style={{ fontWeight: 'bold', fontSize: 18, marginBottom: 10 }}>Chọn loại file</Text>
+            <Text style={{ marginBottom: 20 }}>Bạn muốn gửi loại file nào?</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+              <TouchableOpacity onPress={() => { setShowFileTypeModal(false); pickImage(); }}>
+                <Text style={{ color: '#1877f2', fontWeight: 'bold', fontSize: 16 }}>ẢNH</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setShowFileTypeModal(false); pickVideo(); }}>
+                <Text style={{ color: '#1877f2', fontWeight: 'bold', fontSize: 16 }}>VIDEO</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { setShowFileTypeModal(false); pickDocument(); }}>
+                <Text style={{ color: '#1877f2', fontWeight: 'bold', fontSize: 16 }}>TÀI LIỆU</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -1397,9 +1708,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   imgPreview: {
-    width: SCREEN_WIDTH * 0.6,
-    height: SCREEN_WIDTH * 0.4,
-    borderRadius: 10,
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 16,
+    alignSelf: 'center',
+    marginVertical: 2,
+    maxHeight: 400,
+    backgroundColor: '#f0f2f5',
   },
   videoPreview: {
     width: SCREEN_WIDTH * 0.6,
@@ -1409,17 +1724,30 @@ const styles = StyleSheet.create({
   fileContainer: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 5,
+    padding: 10,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    marginBottom: 8,
+    minWidth: 180,
+    maxWidth: SCREEN_WIDTH * 0.7,
   },
   fileName: {
-    marginLeft: 5,
-    fontSize: 14,
+    marginLeft: 10,
+    fontSize: 15,
+    color: "#222",
+    fontWeight: "bold",
+    flex: 1,
+    maxWidth: SCREEN_WIDTH * 0.35,
+  },
+  downloadButtonFile: {
+    marginLeft: 10,
+    padding: 4,
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalContent: {
     backgroundColor: "white",
@@ -1490,8 +1818,8 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     padding: 20,
-    paddingTop: 50,
     zIndex: 1,
   },
   closeButton: {
@@ -1501,13 +1829,16 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   fullscreenImage: {
-    width: "100%",
-    height: "100%",
+    width: '100%',
+    height: '100%',
+    alignSelf: 'center',
+    backgroundColor: 'black',
   },
   fullscreenVideo: {
-    width: "100%",
-    height: "100%",
-    backgroundColor: "black",
+    width: '100%',
+    height: '100%',
+    alignSelf: 'center',
+    backgroundColor: '#e4e6eb',
   },
   attachButton: {
     padding: 8,
@@ -1597,6 +1928,37 @@ const styles = StyleSheet.create({
   },
   deleteText: {
     color: "#ff3b30",
+  },
+  fullWidthVideoMsgContainer: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    backgroundColor: 'transparent',
+  },
+  fullWidthVideoMsg: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 16,
+    backgroundColor: 'transparent',
+    alignSelf: 'center',
+    maxHeight: 400,
+  },
+  iconCircle: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 24,
+    padding: 6,
+    marginHorizontal: 4,
+  },
+  gradientOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+    zIndex: 2,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
 });
 

@@ -34,6 +34,7 @@ const VideoCall = ({
   const [callDuration, setCallDuration] = useState(0);
   const durationInterval = useRef(null);
   const [isCallEnded, setIsCallEnded] = useState(false);
+  const [shouldConnectRoom, setShouldConnectRoom] = useState(isCreator);
 
   const localMediaRef = useRef();
   const remoteMediaRef = useRef();
@@ -81,96 +82,7 @@ const VideoCall = ({
     }
   };
 
-  // Socket event handlers
-  useEffect(() => {
-    if (!socket || !isOpen) return;
-
-    // Kiểm tra đầy đủ thông tin trước khi đăng ký các event
-    if (!identity || !receiverPhone || !callId) {
-      console.error('VideoCall: thiếu thông tin cần thiết', { identity, receiverPhone, callId });
-      return;
-    }
-
-    const handleCallAccepted = (data) => {
-      if (data.callId === callId) {
-        setCallStatus('connected');
-        setConnecting(false);
-        // Gửi thông tin cuộc gọi bắt đầu
-        sendCallInfo('started');
-      }
-    };
-
-    const handleCallDeclined = (data) => {
-      if (data.callId === callId) {
-        setCallStatus('declined');
-        // Gửi thông tin cuộc gọi bị từ chối
-        sendCallInfo('declined');
-        handleEndCall();
-      }
-    };
-
-    const handleCallEnded = (data) => {
-      if (data.callId === callId) {
-        setCallStatus('ended');
-        handleEndCall();
-      }
-    };
-
-    const handleCallTimeout = (data) => {
-      if (data.callId === callId) {
-        setCallStatus('missed');
-        // Gửi thông tin cuộc gọi nhỡ
-        sendCallInfo('missed');
-        handleEndCall();
-      }
-    };
-
-    // WebRTC handlers
-    const handleCallOffer = ({ offer, callerId }) => {
-      if (socket) {
-        socket.emit('video-call-answer', {
-          callerId,
-          answer: offer
-        });
-      }
-    };
-
-    const handleCallAnswer = ({ answer }) => {
-      if (socket) {
-        socket.emit('video-call-answer', {
-          answer
-        });
-      }
-    };
-
-    const handleCallIceCandidate = ({ candidate }) => {
-      if (socket) {
-        socket.emit('ice-candidate', {
-          candidate
-        });
-      }
-    };
-
-    socket.on('call-accepted', handleCallAccepted);
-    socket.on('call-declined', handleCallDeclined);
-    socket.on('call-ended', handleCallEnded);
-    socket.on('call-timeout', handleCallTimeout);
-    socket.on('video-call-offer', handleCallOffer);
-    socket.on('video-call-answer', handleCallAnswer);
-    socket.on('ice-candidate', handleCallIceCandidate);
-
-    return () => {
-      socket.off('call-accepted', handleCallAccepted);
-      socket.off('call-declined', handleCallDeclined);
-      socket.off('call-ended', handleCallEnded);
-      socket.off('call-timeout', handleCallTimeout);
-      socket.off('video-call-offer', handleCallOffer);
-      socket.off('video-call-answer', handleCallAnswer);
-      socket.off('ice-candidate', handleCallIceCandidate);
-    };
-  }, [socket, isOpen, callId]);
-
-  // Get token and create room
+  // useEffect khởi tạo phòng và gửi invite nếu là creator
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
@@ -186,6 +98,13 @@ const VideoCall = ({
           const res = await api.post('/video-call/room', { roomName: `room_${Date.now()}` });
           name = res.data.data.room.name;
           setRoomName(name);
+
+          // Gửi invite lên backend
+          socket.emit('video-call-invite', {
+            receiverPhone,
+            roomName: name,
+            callType: 'video'
+          });
         }
 
         // Get token
@@ -204,9 +123,62 @@ const VideoCall = ({
     return () => { cancelled = true; };
   }, [isOpen, isCreator, identity]);
 
-  // Connect to Twilio room
+  // Lắng nghe các event socket từ backend
   useEffect(() => {
-    if (!isOpen || !token || !roomName) return;
+    if (!socket || !isOpen) return;
+    if (!identity || !receiverPhone || !callId) {
+      console.error('VideoCall: thiếu thông tin cần thiết', { identity, receiverPhone, callId });
+      return;
+    }
+
+    const handleCallAccepted = (data) => {
+      if (data.callId === callId) {
+        setCallStatus('connected');
+        setConnecting(false);
+        setShouldConnectRoom(true); // Chỉ khi nhận được call-accepted mới connect Twilio room nếu là receiver
+        sendCallInfo('started');
+      }
+    };
+
+    const handleCallDeclined = (data) => {
+      if (data.callId === callId) {
+        setCallStatus('declined');
+        sendCallInfo('declined');
+        handleEndCall();
+      }
+    };
+
+    const handleCallEnded = (data) => {
+      if (data.callId === callId) {
+        setCallStatus('ended');
+        handleEndCall();
+      }
+    };
+
+    const handleCallTimeout = (data) => {
+      if (data.callId === callId) {
+        setCallStatus('missed');
+        sendCallInfo('missed');
+        handleEndCall();
+      }
+    };
+
+    socket.on('call-accepted', handleCallAccepted);
+    socket.on('call-declined', handleCallDeclined);
+    socket.on('call-ended', handleCallEnded);
+    socket.on('call-timeout', handleCallTimeout);
+
+    return () => {
+      socket.off('call-accepted', handleCallAccepted);
+      socket.off('call-declined', handleCallDeclined);
+      socket.off('call-ended', handleCallEnded);
+      socket.off('call-timeout', handleCallTimeout);
+    };
+  }, [socket, isOpen, callId]);
+
+  // Connect to Twilio room chỉ khi shouldConnectRoom true
+  useEffect(() => {
+    if (!isOpen || !token || !roomName || !shouldConnectRoom) return;
     let currentRoom;
 
     const connectToRoom = async () => {
@@ -224,14 +196,10 @@ const VideoCall = ({
             video: { width: 640 }
           });
           setLocalTracks(tracks);
-
-          // Publish tracks to room
           tracks.forEach(track => {
             currentRoom.localParticipant.publishTrack(track);
           });
-
         } catch (err) {
-          console.error('Lỗi khi lấy local tracks:', err);
           setError('Không truy cập được camera: ' + err.message);
           setLocalTracks([]);
           return;
@@ -241,14 +209,11 @@ const VideoCall = ({
           setRemoteConnected(true);
           setCallStatus('connected');
           setConnecting(false);
-          
-          // Start duration timer
           if (!durationInterval.current) {
             durationInterval.current = setInterval(() => {
               setCallDuration(prev => prev + 1);
             }, 1000);
           }
-
           participant.tracks.forEach(publication => {
             if (publication.isSubscribed) {
               if (remoteMediaRef.current) {
@@ -256,13 +221,11 @@ const VideoCall = ({
               }
             }
           });
-
           participant.on('trackSubscribed', track => {
             if (remoteMediaRef.current) {
               remoteMediaRef.current.appendChild(track.attach());
             }
           });
-
           participant.on('trackUnsubscribed', track => {
             track.detach().forEach(element => element.remove());
           });
@@ -276,15 +239,12 @@ const VideoCall = ({
             remoteMediaRef.current.innerHTML = '';
           }
         });
-
         currentRoom.on('disconnected', () => {
           setRemoteConnected(false);
           setConnecting(false);
           handleEndCall();
         });
-
       } catch (err) {
-        console.error('Error connecting to room:', err);
         setError('Không thể kết nối đến cuộc gọi. Vui lòng thử lại.');
         setConnecting(false);
       }
@@ -305,7 +265,7 @@ const VideoCall = ({
         durationInterval.current = null;
       }
     };
-  }, [isOpen, token, roomName]);
+  }, [isOpen, token, roomName, shouldConnectRoom]);
 
   useEffect(() => {
     if (isOpen) {
@@ -405,29 +365,25 @@ const VideoCall = ({
   const handleEndCall = () => {
     if (isCallEnded) return;
     setIsCallEnded(true);
-
-    // Dọn dẹp local tracks trước
     cleanupLocalTracks();
-    
     if (room) {
       room.disconnect();
       setRoom(null);
     }
-    
     if (remoteMediaRef.current) {
       remoteMediaRef.current.innerHTML = '';
     }
-    
     if (durationInterval.current) {
       clearInterval(durationInterval.current);
       durationInterval.current = null;
     }
-
     if (socket && callId) {
       if (callStatus === 'connected') {
         sendCallInfo('ended', callDuration);
+        socket.emit('end-video-call', { callId });
       } else if ((callStatus === 'connecting' || callStatus === 'ringing') && isCreator) {
         sendCallInfo('cancelled');
+        socket.emit('end-video-call', { callId });
       }
     }
     onClose();
