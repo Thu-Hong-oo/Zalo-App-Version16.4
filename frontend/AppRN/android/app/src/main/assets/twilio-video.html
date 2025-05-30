@@ -57,11 +57,6 @@
       const localAvatar = getVar('localAvatar', '');
       const remoteAvatar = getVar('remoteAvatar', '');
 
-      console.log('window.token:', window.token);
-      console.log('window.roomName:', window.roomName);
-      console.log('localName:', localName);
-      console.log('remoteName:', remoteName);
-
       function showError(msg) {
         document.getElementById('error').innerText = msg;
       }
@@ -202,13 +197,21 @@
       document.addEventListener('message', function(event) {
         try {
           const data = JSON.parse(event.data);
-          console.log('Nhận data từ React Native:', data);
           window.token = data.token;
           window.roomName = data.roomName;
           window.localName = data.localName;
           window.remoteName = data.remoteName;
           window.localAvatar = data.localAvatar;
           window.remoteAvatar = data.remoteAvatar;
+          // Log sau khi nhận biến
+          console.log('[HTML] Đã nhận biến từ React Native:', {
+            token: window.token,
+            roomName: window.roomName,
+            localName: window.localName,
+            remoteName: window.remoteName,
+            localAvatar: window.localAvatar,
+            remoteAvatar: window.remoteAvatar,
+          });
           waitForVars();
         } catch (e) {
           console.log('Lỗi parse message:', e);
