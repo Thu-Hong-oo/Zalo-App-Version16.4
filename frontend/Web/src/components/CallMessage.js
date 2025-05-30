@@ -31,7 +31,7 @@ const CallMessage = ({ message }) => {
   const getCallText = (status, duration) => {
     if (isVideo) {
       switch (status) {
-        case 'started': return 'Bắt đầu video call';
+        // case 'started': return 'Bắt đầu video call';
         case 'ended': return `Kết thúc video call${duration ? ` (${formatDuration(duration)})` : ''}`;
         case 'missed': return 'Video call nhỡ';
         case 'declined': return 'Video call bị từ chối';
@@ -40,7 +40,7 @@ const CallMessage = ({ message }) => {
       }
     } else {
       switch (status) {
-        case 'started': return 'Bắt đầu cuộc gọi thoại';
+        // case 'started': return 'Bắt đầu cuộc gọi thoại';
         case 'ended': return `Kết thúc cuộc gọi thoại${duration ? ` (${formatDuration(duration)})` : ''}`;
         case 'missed': return 'Cuộc gọi nhỡ';
         case 'declined': return 'Cuộc gọi bị từ chối';

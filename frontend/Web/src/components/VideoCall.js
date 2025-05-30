@@ -206,6 +206,7 @@ const VideoCall = ({
         }
 
         const handleParticipant = participant => {
+          console.log('[WEB] participantConnected:', participant.identity);
           setRemoteConnected(true);
           setCallStatus('connected');
           setConnecting(false);
@@ -216,17 +217,20 @@ const VideoCall = ({
           }
           participant.tracks.forEach(publication => {
             if (publication.isSubscribed) {
+              console.log('[WEB] Đã nhận track:', publication.track.kind, 'từ', participant.identity);
               if (remoteMediaRef.current) {
                 remoteMediaRef.current.appendChild(publication.track.attach());
               }
             }
           });
           participant.on('trackSubscribed', track => {
+            console.log('[WEB] trackSubscribed:', track.kind, 'từ', participant.identity);
             if (remoteMediaRef.current) {
               remoteMediaRef.current.appendChild(track.attach());
             }
           });
           participant.on('trackUnsubscribed', track => {
+            console.log('[WEB] trackUnsubscribed:', track.kind, 'từ', participant.identity);
             track.detach().forEach(element => element.remove());
           });
         };

@@ -1,141 +1,150 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { TwilioVideo } from 'react-native-twilio-video-webrtc';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import React, { useEffect, useState, useRef } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
+import { ActivityIndicator, View, Text, Image, StyleSheet } from 'react-native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import api from '../config/api';
 
-const VideoCallScreen = ({ route, navigation }) => {
-  const { token, roomName, callId, receiverPhone, isCreator } = route.params;
-  const twilioRef = useRef(null);
-  const [isVideoConnected, setIsVideoConnected] = useState(false);
-  const [status, setStatus] = useState('connecting');
+const VideoCallScreen = (props) => {
+  const route = props.route || useRoute();
+  const navigation = useNavigation();
+  const webviewRef = useRef();
+  const {
+    identity,
+    roomName: roomNameParam,
+    localName = 'Bạn',
+    remoteName = 'Đối phương',
+    localAvatar = '',
+    remoteAvatar = '',
+    callId,
+    receiverPhone,
+    roomId // hoặc chatId, nếu có
+  } = route.params;
+  const [token, setToken] = useState(null);
+  const [roomName, setRoomName] = useState(roomNameParam || null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isCameraOff, setIsCameraOff] = useState(false);
-  const [callDuration, setCallDuration] = useState(0);
-  const durationInterval = useRef(null);
 
   useEffect(() => {
-    if (isVideoConnected) {
-      durationInterval.current = setInterval(() => {
-        setCallDuration(prev => prev + 1);
-      }, 1000);
-    }
-    return () => {
-      if (durationInterval.current) {
-        clearInterval(durationInterval.current);
+    const fetchData = async () => {
+      try {
+        let room = roomNameParam;
+        // Nếu chưa có roomName, tạo mới
+        if (!room) {
+          const resRoom = await api.post('/video-call/room', { roomName: `room_${Date.now()}` });
+          room = resRoom.data.data.room.name;
+          setRoomName(room);
+        }
+        // Lấy token
+        const resToken = await api.post('/video-call/token', { identity });
+        setToken(resToken.data.data.token);
+        setLoading(false);
+      } catch (err) {
+        setError('Không thể lấy token hoặc tạo phòng!');
+        setLoading(false);
       }
     };
-  }, [isVideoConnected]);
+    fetchData();
+  }, []);
 
-  const onConnect = () => {
+  // Đường dẫn file local cho Android
+  const localHtml = 'file:///android_asset/twilio-video.html';
+
+  // Hàm gửi trạng thái cuộc gọi về backend
+  const sendCallStatus = async (status = 'cancelled', duration = 0) => {
     try {
-      twilioRef.current?.connect({ accessToken: token, roomName });
-      setStatus('connecting');
-    } catch (err) {
-      setError(err.message);
-    }
+      await api.post('/video-call/status', {
+        callId,
+        roomName,
+        status,
+        duration,
+        receiverPhone,
+        senderPhone: identity,
+      });
+    } catch (e) {}
   };
 
-  const onEndCall = async () => {
-    try {
-      twilioRef.current?.disconnect();
-      setStatus('disconnected');
-      
-      // Gửi thông tin cuộc gọi kết thúc
-      if (callId) {
-        await api.post('/video-call/status', {
-          callId,
-          roomName,
-          status: status === 'connected' ? 'ended' : 'cancelled',
-          duration: callDuration,
-          receiverPhone,
-          senderPhone: route.params.identity
-        });
-      }
-      
+  // Lắng nghe sự kiện từ WebView
+  const handleWebViewMessage = (event) => {
+    if (event.nativeEvent.data === 'call-ended') {
+      sendCallStatus('cancelled', 0);
       navigation.goBack();
-    } catch (err) {
-      console.error('Error ending call:', err);
     }
   };
 
-  const toggleMute = () => {
-    twilioRef.current?.setLocalAudioEnabled(!isMuted);
-    setIsMuted(!isMuted);
-  };
+  if (loading || !token || !roomName) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.userInfo}>
+            <Image 
+              source={{ uri: remoteAvatar || 'https://via.placeholder.com/50' }} 
+              style={styles.avatar}
+            />
+            <Text style={styles.name}>{remoteName}</Text>
+          </View>
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#1877f2" />
+          <Text style={styles.loadingText}>Đang kết nối...</Text>
+        </View>
+      </View>
+    );
+  }
 
-  const toggleCamera = () => {
-    twilioRef.current?.setLocalVideoEnabled(!isCameraOff);
-    setIsCameraOff(!isCameraOff);
-  };
-
-  const formatDuration = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.userInfo}>
+            <Image 
+              source={{ uri: remoteAvatar || 'https://via.placeholder.com/50' }} 
+              style={styles.avatar}
+            />
+            <Text style={styles.name}>{remoteName}</Text>
+          </View>
+        </View>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      </View>
+    );
+  }
+  console.log('VideoCallScreen token:', token);
+  console.log('VideoCallScreen roomName:', roomName);
 
   return (
-    <View style={styles.container}>
-      {!isVideoConnected && (
-        <TouchableOpacity style={styles.connectButton} onPress={onConnect}>
-          <Text style={styles.connectButtonText}>Join Video Call</Text>
-        </TouchableOpacity>
-      )}
-      
-      <TwilioVideo
-        ref={twilioRef}
-        onRoomDidConnect={() => {
-          setIsVideoConnected(true);
-          setStatus('connected');
-        }}
-        onRoomDidDisconnect={() => {
-          setIsVideoConnected(false);
-          setStatus('disconnected');
-        }}
-        onRoomDidFailToConnect={err => {
-          setError('Failed to connect: ' + err.error);
-          setStatus('disconnected');
-        }}
-        onParticipantAddedVideoTrack={() => {}}
-        onParticipantRemovedVideoTrack={() => {}}
-        style={styles.video}
-      />
-
-      {isVideoConnected && (
-        <View style={styles.controls}>
-          <TouchableOpacity 
-            style={[styles.controlButton, isMuted && styles.controlButtonActive]} 
-            onPress={toggleMute}
-          >
-            {isMuted ? <Ionicons name="mic-off" size={24} color="#fff" /> : <Ionicons name="mic" size={24} color="#fff" />}
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.controlButton, isCameraOff && styles.controlButtonActive]} 
-            onPress={toggleCamera}
-          >
-            {isCameraOff ? <Ionicons name="videocam-off" size={24} color="#fff" /> : <Ionicons name="videocam" size={24} color="#fff" />}
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.controlButton, styles.endCallButton]} 
-            onPress={onEndCall}
-          >
-            <Ionicons name="call" size={24} color="#fff" />
-          </TouchableOpacity>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <View style={styles.header}>
+        <View style={styles.userInfo}>
+          <Image
+            source={{ uri: remoteAvatar || 'https://via.placeholder.com/50' }} 
+            style={styles.avatar}
+          />
+          <Text style={styles.name}>{remoteName}</Text>
         </View>
-      )}
-
-      {callDuration > 0 && (
-        <Text style={styles.duration}>{formatDuration(callDuration)}</Text>
-      )}
-
-      {error && (
-        <Text style={styles.error}>{error}</Text>
-      )}
-    </View>
+      </View>
+      <WebView
+        ref={webviewRef}
+        source={{ uri: localHtml }}
+        style={{ flex: 1 }}
+        javaScriptEnabled
+        domStorageEnabled
+        allowsInlineMediaPlayback
+        mediaPlaybackRequiresUserAction={false}
+        onLoadEnd={() => {
+          webviewRef.current.postMessage(JSON.stringify({
+            token,
+            roomName,
+            localName,
+            remoteName,
+            localAvatar,
+            remoteAvatar,
+          }));
+        }}
+        onMessage={handleWebViewMessage}
+      />
+    </SafeAreaView>
   );
 };
 
@@ -144,64 +153,46 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
-  video: {
-    flex: 1,
-  },
-  controls: {
+  header: {
+    padding: 15,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     position: 'absolute',
-    bottom: 40,
+    top: 0,
     left: 0,
     right: 0,
+    zIndex: 10,
+  },
+  userInfo: {
     flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 10,
+  },
+  name: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
   },
-  controlButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#666',
+  loadingText: {
+    color: '#fff',
+    marginTop: 10,
+  },
+  errorContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 10,
   },
-  controlButtonActive: {
-    backgroundColor: '#e74c3c',
-  },
-  endCallButton: {
-    backgroundColor: '#e74c3c',
-  },
-  connectButton: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: [{ translateX: -75 }, { translateY: -25 }],
-    backgroundColor: '#1877f2',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 5,
-  },
-  connectButtonText: {
-    color: '#fff',
-    fontSize: 16,
-  },
-  duration: {
-    position: 'absolute',
-    top: 40,
-    left: 0,
-    right: 0,
-    textAlign: 'center',
-    color: '#fff',
-    fontSize: 16,
-  },
-  error: {
-    position: 'absolute',
-    top: 40,
-    left: 0,
-    right: 0,
-    textAlign: 'center',
-    color: '#e74c3c',
+  errorText: {
+    color: 'red',
     fontSize: 16,
   },
 });

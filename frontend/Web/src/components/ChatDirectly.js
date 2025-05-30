@@ -104,8 +104,11 @@ const ChatDirectly = () => {
     message: "",
   });
   const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
+  const [videoCallRoomName, setVideoCallRoomName] = useState(null);
+  const [videoCallId, setVideoCallId] = useState(null);
   const [callId, setCallId] = useState(null);
   const [roomName, setRoomName] = useState(null);
+  const [incomingCall, setIncomingCall] = useState(null);
 
   // Lấy userId từ localStorage
   const user = JSON.parse(localStorage.getItem('user'));
@@ -1015,6 +1018,19 @@ const ChatDirectly = () => {
     }
   };
 
+  // Định nghĩa hàm mở giao diện video call
+  const openVideoCall = (roomName, callId) => {
+    setVideoCallRoomName(roomName);
+    setVideoCallId(callId);
+    setIsVideoCallOpen(true);
+  };
+  // Định nghĩa hàm đóng giao diện video call
+  const closeVideoCall = () => {
+    setIsVideoCallOpen(false);
+    setVideoCallRoomName(null);
+    setVideoCallId(null);
+  };
+
   const handleVideoCall = async () => {
     try {
       const now = Date.now();
@@ -1026,6 +1042,44 @@ const ChatDirectly = () => {
       alert('Không thể tạo phòng video call');
     }
   };
+
+  useEffect(() => {
+    if (!socket) return;
+
+    socket.on('incoming-video-call', (data) => {
+      setIncomingCall(data);
+    });
+
+    socket.on('call-accepted', ({ callId, roomName }) => {
+      setIncomingCall(null);
+      openVideoCall(roomName, callId);
+    });
+
+    socket.on('call-declined', ({ callId }) => {
+      alert('Cuộc gọi bị từ chối');
+      setIncomingCall(null);
+    });
+
+    socket.on('call-ended', ({ callId }) => {
+      alert('Cuộc gọi đã kết thúc');
+      setIncomingCall(null);
+      closeVideoCall();
+    });
+
+    socket.on('call-timeout', ({ callId }) => {
+      alert('Cuộc gọi nhỡ');
+      setIncomingCall(null);
+      closeVideoCall();
+    });
+
+    return () => {
+      socket.off('incoming-video-call');
+      socket.off('call-accepted');
+      socket.off('call-declined');
+      socket.off('call-ended');
+      socket.off('call-timeout');
+    };
+  }, [socket]);
 
   if (loading) return <div className="loading">Đang tải...</div>;
   if (error) return <div className="error">{error}</div>;
@@ -1361,14 +1415,42 @@ const ChatDirectly = () => {
 
       <VideoCall
         isOpen={isVideoCallOpen}
-        onClose={() => setIsVideoCallOpen(false)}
+        onClose={closeVideoCall}
         identity={identity}
         receiverPhone={phone}
         receiverName={userInfo?.name || phone}
-        roomName={roomName}
+        roomName={videoCallRoomName}
         isCreator={true}
-        callId={callId}
+        callId={videoCallId}
       />
+
+      {incomingCall && (
+        <div className="incoming-call-modal" style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999
+        }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 32, minWidth: 300, textAlign: 'center' }}>
+            <h3>Cuộc gọi đến từ {incomingCall.name}</h3>
+            <button
+              style={{ background: '#4caf50', color: '#fff', padding: 12, borderRadius: 8, margin: 8, fontSize: 16 }}
+              onClick={() => {
+                socket.emit('accept-video-call', { callId: incomingCall.callId });
+              }}
+            >
+              Nhận cuộc gọi
+            </button>
+            <button
+              style={{ background: '#f44336', color: '#fff', padding: 12, borderRadius: 8, margin: 8, fontSize: 16 }}
+              onClick={() => {
+                socket.emit('decline-video-call', { callId: incomingCall.callId });
+                setIncomingCall(null);
+              }}
+            >
+              Từ chối
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

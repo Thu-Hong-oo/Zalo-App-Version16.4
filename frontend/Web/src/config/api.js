@@ -2,7 +2,10 @@ import axios from "axios";
 
 // Cấu hình API
 
-const COMPUTER_IP = "192.168.2.118";
+
+const COMPUTER_IP = "172.20.32.89";
+
+
 
 const BASE_URL = `http://${COMPUTER_IP}:3000`;
 
