@@ -1,16 +1,12 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getGroupDetails, getRecentContacts } from '../services/group';
 import './css/GroupSidebar.css';
 import { Users, Camera, Pencil, ChevronLeft, MoreVertical, UserPlus, Crown } from 'lucide-react';
 import api from '../config/api';
-import { SocketContext } from '../App';
-import { useDispatch, useSelector } from 'react-redux';
-import { setSelectedGroup, updateGroupName, updateGroupAvatar, updateGroupMembers, updateGroup, removeGroup } from '../redux/slices/groupSlice';
-import MemberInfoModal from './MemberInfoModal';
-import SelfProfileModal from './SelfProfileModal';
+import socketService from '../config/io';
 
-const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates }) => {
+const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate }) => {
   const navigate = useNavigate();
   const [groupInfo, setGroupInfo] = useState(null);
   const [members, setMembers] = useState([]);
@@ -42,15 +38,8 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
   const [showLeaveWarning, setShowLeaveWarning] = useState(false);
   const [showTransferSuccess, setShowTransferSuccess] = useState(false);
   const [showLeaveSuccess, setShowLeaveSuccess] = useState(false);
-  const [showRemoveModal, setShowRemoveModal] = useState(false);
-  const [memberToRemove, setMemberToRemove] = useState(null);
-  const [selectedMemberInfo, setSelectedMemberInfo] = useState(null);
-  const [commonGroups, setCommonGroups] = useState(0);
-  const [showSelfProfileModal, setShowSelfProfileModal] = useState(false);
 
-  const socket = useContext(SocketContext);
-  const dispatch = useDispatch();
-  const reduxSelectedGroup = useSelector(state => state.group.selectedGroup);
+  const socket = socketService.connect();
 
   useEffect(() => {
     if (isOpen && groupId) {
@@ -76,66 +65,6 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
     };
   }, [isOpen, groupId, socket]);
 
-  useEffect(() => {
-    if (!groupUpdates || groupUpdates.groupId !== groupId) return;
-    if (groupUpdates.type === 'NAME_UPDATED') {
-      setGroupInfo(prev => ({ ...prev, name: groupUpdates.data.name }));
-    }
-    if (groupUpdates.type === 'AVATAR_UPDATED') {
-      setGroupInfo(prev => ({ ...prev, avatar: groupUpdates.data.avatarUrl }));
-    }
-    // Có thể bổ sung các loại event khác
-  }, [groupUpdates, groupId]);
-
-  useEffect(() => {
-    if (!socket || !groupId) return;
-
-    // Cập nhật thông tin nhóm khi có thay đổi
-    const handleGroupUpdated = (payload) => {
-      if (payload.groupId === groupId) {
-        dispatch(updateGroup(payload));
-        fetchGroupInfo();
-      }
-    };
-
-    // Khi nhóm bị giải tán
-    const handleGroupDissolved = (dissolvedGroupId) => {
-      if (dissolvedGroupId === groupId) {
-        dispatch(removeGroup(groupId));
-        onClose();
-        navigate('/app');
-      }
-    };
-
-    // Khi có thành viên mới
-    const handleMemberJoined = (payload) => {
-      if (payload.groupId === groupId) {
-        dispatch(updateGroupMembers({ groupId, members: payload.members }));
-        fetchGroupInfo();
-      }
-    };
-
-    // Khi có thành viên rời nhóm hoặc bị xóa
-    const handleMemberRemoved = (payload) => {
-      if (payload.groupId === groupId) {
-        dispatch(updateGroupMembers({ groupId, members: payload.members }));
-        fetchGroupInfo();
-      }
-    };
-
-    socket.on('group:updated', handleGroupUpdated);
-    socket.on('group:dissolved', handleGroupDissolved);
-    socket.on('group:member_joined', handleMemberJoined);
-    socket.on('group:member_removed', handleMemberRemoved);
-
-    return () => {
-      socket.off('group:updated', handleGroupUpdated);
-      socket.off('group:dissolved', handleGroupDissolved);
-      socket.off('group:member_joined', handleMemberJoined);
-      socket.off('group:member_removed', handleMemberRemoved);
-    };
-  }, [socket, groupId, dispatch, navigate, onClose]);
-
   const fetchGroupInfo = async () => {
     try {
       setLoading(true);
@@ -144,7 +73,6 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
         setGroupInfo(response.data);
         setMembers(response.data.members || []);
         setNotifications(response.data.notifications !== false);
-        dispatch(setSelectedGroup(response.data));
         
         // Kiểm tra role của người dùng hiện tại trong danh sách thành viên
         const currentMember = response.data.members?.find(member => member.userId === currentUser?.userId);
@@ -216,7 +144,6 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       await fetchGroupInfo();
-      dispatch(updateGroupAvatar({ groupId, avatar: URL.createObjectURL(file) }));
       if (onGroupUpdate) onGroupUpdate();
     } catch (error) {
       console.error('Error updating avatar:', error);
@@ -232,7 +159,6 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
       setLoading(true);
       await api.put(`/groups/${groupId}/name`, { name: newGroupName.trim() });
       await fetchGroupInfo();
-      dispatch(updateGroupName({ groupId, name: newGroupName.trim() }));
       if (onGroupUpdate) onGroupUpdate();
       setShowEditName(false);
     } catch (error) {
@@ -460,7 +386,6 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
 
       await Promise.all(promises);
       await fetchGroupInfo();
-      dispatch(updateGroupMembers({ groupId, members: [...members, ...selectedUsers] }));
       setShowAddMembersModal(false);
       setSelectedUsers([]);
       setSearchPhone('');
@@ -488,45 +413,6 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
       setRecentContacts([]);
     }
   }, [showAddMembersModal]);
-
-  const handleRemoveMember = async (userId) => {
-    try {
-      setLoading(true);
-      await api.delete(`/groups/${groupId}/members/${userId}`);
-      await fetchGroupInfo();
-      dispatch(updateGroupMembers({ groupId, members: members.filter(m => m.userId !== userId) }));
-      if (onGroupUpdate) onGroupUpdate();
-    } catch (error) {
-      alert('Không thể xóa thành viên: ' + (error.response?.data?.message || error.message || 'Đã có lỗi xảy ra'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleShowMemberInfo = async (member) => {
-    try {
-      const res = await api.get(`/users/byId/${member.userId}`);
-      const userInfo = res.data;
-      setSelectedMemberInfo({
-        ...member,
-        ...userInfo,
-      });
-      // Gọi API lấy số nhóm chung như cũ
-      try {
-        const userGroups = await api.get(`/users/${member.userId}/groups`);
-        const myGroups = await api.get(`/users/${currentUser.userId}/groups`);
-        const common = userGroups.data.groups.filter(g1 =>
-          myGroups.data.groups.some(g2 => g2.groupId === g1.groupId)
-        );
-        setCommonGroups(common.length);
-      } catch (e) {
-        setCommonGroups(0);
-      }
-    } catch (e) {
-      setSelectedMemberInfo(member);
-      setCommonGroups(0);
-    }
-  };
 
   return (
     <div className={`group-sidebar ${!isOpen ? 'hidden' : ''}`}>
@@ -557,7 +443,7 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
                   </div>
                 )}
                 <label className="edit-avatar" htmlFor="avatar-input">
-                  <Camera size={16} color="black" />
+                  <Camera size={16} color="#fff" />
                   <input
                     type="file"
                     id="avatar-input"
@@ -663,7 +549,7 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
 
           <div className="group-members-section">
             <div className="group-section-header">
-              <h2>Danh sách thành viên ({reduxSelectedGroup?.members?.length || 0})</h2>
+              <h2>Danh sách thành viên ({members.length})</h2>
               <button className="group-more-button">
                 <MoreVertical size={20} />
               </button>
@@ -674,19 +560,8 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
                 const isCurrentUser = member.userId === currentUser?.userId;
 
                 return (
-                  <div
-                  
-                    className="group-member-item"
-                   
-                  >
-                    <div className="group-member-avatar"  key={member.userId}
-                    onClick={() => {
-                      if (member.userId === currentUser.userId) {
-                        setShowSelfProfileModal(true);
-                      } else {
-                        handleShowMemberInfo(member);
-                      }
-                    }}>
+                  <div key={member.userId} className="group-member-item">
+                    <div className="group-member-avatar">
                       <img 
                         src={member.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=random`}
                         alt={member.name}
@@ -697,14 +572,7 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
                       />
                     </div>
                     <div className="group-member-info">
-                      <div className="group-member-name" key={member.userId}
-                    onClick={() => {
-                      if (member.userId === currentUser.userId) {
-                        setShowSelfProfileModal(true);
-                      } else {
-                        handleShowMemberInfo(member);
-                      }
-                    }}>
+                      <div className="group-member-name">
                         {member.name}
                         {member.role === 'ADMIN' && (
                           <span className="group-admin-badge">
@@ -717,12 +585,6 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
                         )}
                       </div>
                     </div>
-                    {/* Nút xóa thành viên nếu là admin và không phải chính mình */}
-                    {isAdmin && !isCurrentUser && (
-                      <button className="remove-member-btn" onClick={() => { setMemberToRemove(member); setShowRemoveModal(true); }}>
-                        Xóa
-                      </button>
-                    )}
                   </div>
                 );
               })}
@@ -845,114 +707,116 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
         <div className="modal">
           <div className="modal-content">
             <h3>Thêm thành viên</h3>
-            <div className="add-members-scrollable-content" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-              {/* Search section */}
-              <div className="search-section">
-                <div className="search-input">
-                  <input
-                    type="text"
-                    value={searchPhone}
-                    onChange={(e) => setSearchPhone(e.target.value)}
-                    placeholder="Nhập số điện thoại"
-                  />
-                  <button onClick={handleSearchUser} disabled={isSearching || !searchPhone.trim()}>
-                    {isSearching ? 'Đang tìm...' : 'Tìm kiếm'}
-                  </button>
-                </div>
-                {searchResult && (
-                  <div className="search-result">
-                    <div className="user-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', gap: '12px', padding: '8px 0' }}>
-                      <img 
-                        src={searchResult.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(searchResult.name)}&background=random`}
-                        alt={searchResult.name}
-                        style={{ width: 40, height: 40, borderRadius: '50%' }}
-                        onError={(e) => {
-                          e.target.onerror = null;
-                          e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(searchResult.name)}&background=random`;
-                        }}
-                      />
-                      <div className="user-info" style={{ flex: 1, marginLeft: 12, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-                        <span className="user-name">{searchResult.name}</span>
-                        {/* <span className="user-phone">{searchResult.phone}</span> */}
-                      </div>
-                      {members.some(member => member.userId === searchResult.userId) ? (
-                        <button disabled className="already-member">Đã là thành viên</button>
-                      ) : (
-                        <button 
-                          onClick={() => handleSelectUser(searchResult)}
-                          disabled={selectedUsers.some(u => u.userId === searchResult.userId)}
-                        >
-                          {selectedUsers.some(u => u.userId === searchResult.userId) ? 'Đã chọn' : 'Thêm'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
+            
+            {/* Search section */}
+            <div className="search-section">
+              <div className="search-input">
+                <input
+                  type="text"
+                  value={searchPhone}
+                  onChange={(e) => setSearchPhone(e.target.value)}
+                  placeholder="Nhập số điện thoại"
+                />
+                <button onClick={handleSearchUser} disabled={isSearching || !searchPhone.trim()}>
+                  {isSearching ? 'Đang tìm...' : 'Tìm kiếm'}
+                </button>
               </div>
-              {/* Selected users */}
-              {selectedUsers.length > 0 && (
-                <div className="selected-users">
-                  <h4>Đã chọn ({selectedUsers.length})</h4>
-                  <div className="selected-users-list">
-                    {selectedUsers.map(user => (
-                      <div key={user.userId} className="selected-user-item">
-                        <img 
-                          src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`}
-                          alt={user.name}
-                          onError={(e) => {
-                            e.target.onerror = null;
-                            e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`;
-                          }}
-                        />
-                        <span>{user.name}</span>
-                        <button onClick={() => handleRemoveUser(user.userId)}>×</button>
-                      </div>
-                    ))}
+              
+              {searchResult && (
+                <div className="search-result">
+                  <div className="user-item">
+                    <img 
+                      src={searchResult.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(searchResult.name)}&background=random`}
+                      alt={searchResult.name}
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(searchResult.name)}&background=random`;
+                      }}
+                    />
+                    <div className="user-info">
+                      <span className="user-name">{searchResult.name}</span>
+                      <span className="user-phone">{searchResult.phone}</span>
+                    </div>
+                    {members.some(member => member.userId === searchResult.userId) ? (
+                      <button disabled className="already-member">Đã là thành viên</button>
+                    ) : (
+                      <button 
+                        onClick={() => handleSelectUser(searchResult)}
+                        disabled={selectedUsers.some(u => u.userId === searchResult.userId)}
+                      >
+                        {selectedUsers.some(u => u.userId === searchResult.userId) ? 'Đã chọn' : 'Thêm'}
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
-              {/* Recent contacts */}
-              <div className="recent-contacts">
-                <h4>Trò chuyện gần đây</h4>
-                {error && <div className="error-message">{error}</div>}
-                {fetchingContacts ? (
-                  <div className="loading">Đang tải danh sách liên hệ...</div>
-                ) : (
-                  <div className="recent-contacts-list">
-                    {recentContacts.length > 0 ? (
-                      recentContacts
-                        .filter(contact => !members.some(member => member.userId === contact.userId))
-                        .map(contact => (
-                          <div key={contact.userId} className="user-item">
-                            <img 
-                              src={contact.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(contact.name)}&background=random`}
-                              alt={contact.name}
-                              onError={(e) => {
-                                e.target.onerror = null;
-                                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(contact.name)}&background=random`;
-                              }}
-                            />
-                            <div className="user-info">
-                              <span className="user-name">{contact.name}</span>
-                              <span className="user-phone">{contact.phone}</span>
-                            </div>
-                            <button 
-                              onClick={() => handleSelectUser(contact)}
-                              disabled={selectedUsers.some(u => u.userId === contact.userId)}
-                            >
-                              {selectedUsers.some(u => u.userId === contact.userId) ? 'Đã chọn' : 'Thêm'}
-                            </button>
-                          </div>
-                        ))
-                    ) : (
-                      <div className="no-contacts">Không có cuộc trò chuyện nào gần đây</div>
-                    )}
-                  </div>
-                )}
-              </div>
             </div>
-            {/* Modal actions đặt ngoài vùng scrollable */}
-            <div className="modal-actions add-members-modal-actions">
+
+            {/* Selected users */}
+            {selectedUsers.length > 0 && (
+              <div className="selected-users">
+                <h4>Đã chọn ({selectedUsers.length})</h4>
+                <div className="selected-users-list">
+                  {selectedUsers.map(user => (
+                    <div key={user.userId} className="selected-user-item">
+                      <img 
+                        src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`}
+                        alt={user.name}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`;
+                        }}
+                      />
+                      <span>{user.name}</span>
+                      <button onClick={() => handleRemoveUser(user.userId)}>×</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recent contacts */}
+            <div className="recent-contacts">
+              <h4>Trò chuyện gần đây</h4>
+              {error && <div className="error-message">{error}</div>}
+              {fetchingContacts ? (
+                <div className="loading">Đang tải danh sách liên hệ...</div>
+              ) : (
+                <div className="recent-contacts-list">
+                  {recentContacts.length > 0 ? (
+                    recentContacts
+                      .filter(contact => !members.some(member => member.userId === contact.userId)) // Lọc bỏ các thành viên đã có trong nhóm
+                      .map(contact => (
+                        <div key={contact.userId} className="user-item">
+                          <img 
+                            src={contact.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(contact.name)}&background=random`}
+                            alt={contact.name}
+                            onError={(e) => {
+                              e.target.onerror = null;
+                              e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(contact.name)}&background=random`;
+                            }}
+                          />
+                          <div className="user-info">
+                            <span className="user-name">{contact.name}</span>
+                            <span className="user-phone">{contact.phone}</span>
+                          </div>
+                          <button 
+                            onClick={() => handleSelectUser(contact)}
+                            disabled={selectedUsers.some(u => u.userId === contact.userId)}
+                          >
+                            {selectedUsers.some(u => u.userId === contact.userId) ? 'Đã chọn' : 'Thêm'}
+                          </button>
+                        </div>
+                      ))
+                  ) : (
+                    <div className="no-contacts">Không có cuộc trò chuyện nào gần đây</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal actions */}
+            <div className="modal-actions">
               <button onClick={() => setShowAddMembersModal(false)}>Hủy</button>
               <button 
                 onClick={handleAddMembers}
@@ -1027,49 +891,6 @@ const GroupSidebar = ({ groupId, isOpen, onClose, onGroupUpdate, groupUpdates })
             <p>Bạn sẽ được chuyển về trang chủ...</p>
           </div>
         </div>
-      )}
-
-      {/* Modal xác nhận xóa thành viên */}
-      {showRemoveModal && (
-        <div className="modal">
-          <div className="modal-content">
-            <h3>Xác nhận xóa thành viên</h3>
-            <p>Bạn có chắc chắn muốn xóa <b>{memberToRemove?.name}</b> khỏi nhóm?</p>
-            <div className="modal-actions">
-              <button onClick={() => setShowRemoveModal(false)}>Hủy</button>
-              <button
-                className="danger"
-                onClick={async () => {
-                  await handleRemoveMember(memberToRemove.userId);
-                  setShowRemoveModal(false);
-                  setMemberToRemove(null);
-                }}
-                disabled={loading}
-              >
-                {loading ? 'Đang xóa...' : 'Xóa'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {selectedMemberInfo && (
-        <MemberInfoModal
-          member={selectedMemberInfo}
-          commonGroups={commonGroups}
-          onClose={() => setSelectedMemberInfo(null)}
-          onMessage={(member) => {
-            navigate(`/app/chat/${member.phone || member.userId}`);
-            setSelectedMemberInfo(null);
-          }}
-        />
-      )}
-
-      {showSelfProfileModal && (
-        <SelfProfileModal
-          onClose={() => setShowSelfProfileModal(false)}
-          userId={currentUser.userId}
-        />
       )}
     </div>
   );

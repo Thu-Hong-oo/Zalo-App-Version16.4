@@ -31,12 +31,11 @@ class GroupMemberService {
    * @param {string} groupId - Group ID
    * @param {string} userId - User ID
    * @param {string} role - Member role (ADMIN or MEMBER)
-   * @param {string} [addedBy] - User ID của người thêm thành viên (tùy chọn)
    * @returns {Promise<Object>} Group member information
    */
-  async addMember(groupId, userId, role = 'MEMBER', addedBy) {
+  async addMember(groupId, userId, role = 'MEMBER') {
     try {
-        console.log('Adding member:', { groupId, userId, role, addedBy });
+        console.log('Adding member:', { groupId, userId, role });
         const timestamp = new Date().toISOString();
 
         // First check if member already exists
@@ -57,26 +56,17 @@ class GroupMemberService {
                     groupId,
                     userId
                 },
-                UpdateExpression: 'set isActive = :isActive, #role = :role, updatedAt = :updatedAt, joinedAt = :joinedAt' + (addedBy ? ', addedBy = :addedBy' : ''),
-                ExpressionAttributeNames: {
-                    '#role': 'role'
-                },
+                UpdateExpression: 'set isActive = :isActive, role = :role, updatedAt = :updatedAt',
                 ExpressionAttributeValues: {
                     ':isActive': true,
                     ':role': role,
-                    ':updatedAt': timestamp,
-                    ':joinedAt': timestamp
+                    ':updatedAt': timestamp
                 },
                 ReturnValues: 'ALL_NEW'
             };
-            if (addedBy) updateParams.ExpressionAttributeValues[':addedBy'] = addedBy;
 
             const { Attributes } = await dynamodb.send(new UpdateCommand(updateParams));
             console.log('Member reactivated:', Attributes);
-            
-            // Update group's member count
-            await groupService.updateMemberCount(groupId, 1);
-            
             return Attributes;
         }
 
@@ -93,7 +83,6 @@ class GroupMemberService {
                 lastReadAt: timestamp
             }
         };
-        if (addedBy) params.Item.addedBy = addedBy;
 
         await dynamodb.send(new PutCommand(params));
         console.log('New member added');

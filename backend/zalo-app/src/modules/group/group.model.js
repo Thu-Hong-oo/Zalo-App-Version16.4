@@ -23,3 +23,15 @@
  * @property {string} lastReadTimestamp - ISO timestamp of last message read
  */
 
+const GROUP_EVENTS = {
+  CREATED: 'group.created',
+  UPDATED: 'group.updated',
+  DELETED: 'group.deleted',
+  MEMBER_ADDED: 'group.member.added',
+  MEMBER_REMOVED: 'group.member.removed',
+  MEMBER_UPDATED: 'group.member.updated'
+};
+
+module.exports = {
+  GROUP_EVENTS
+}; 

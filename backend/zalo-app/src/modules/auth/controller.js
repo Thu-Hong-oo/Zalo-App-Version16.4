@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Joi = require('joi');//Xác thực dữ liệu đầu vào
-const User = require('../user/userService');
+const User = require('../user/model');
 const twilioService = require('../../services/twilioService');
 require('dotenv').config();
 
