@@ -706,13 +706,18 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsMultipleSelection: true,
         selectionLimit: 10,
+        quality: 1,
       });
 
       if (!result.canceled) {
-        const files = result.assets.map((asset) => ({
-          uri: asset.uri,
-          type: "image/jpeg",
-          name: `image_${Date.now()}.jpg`,
+        const files = await Promise.all(result.assets.map(async (asset) => {
+          const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+          return {
+            uri: asset.uri,
+            type: "image/jpeg",
+            name: `image_${Date.now()}.jpg`,
+            size: fileInfo.size || 0,
+          };
         }));
         setSelectedFiles(files);
         setShowFilePreview(true);
@@ -728,13 +733,18 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
         allowsMultipleSelection: true,
         selectionLimit: 5,
+        quality: 1,
       });
 
       if (!result.canceled) {
-        const files = result.assets.map((asset) => ({
-          uri: asset.uri,
-          type: "video/mp4",
-          name: `video_${Date.now()}.mp4`,
+        const files = await Promise.all(result.assets.map(async (asset) => {
+          const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+          return {
+            uri: asset.uri,
+            type: "video/mp4",
+            name: `video_${Date.now()}.mp4`,
+            size: fileInfo.size || 0,
+          };
         }));
         setSelectedFiles(files);
         setShowFilePreview(true);
