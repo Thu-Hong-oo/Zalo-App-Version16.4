@@ -2,7 +2,9 @@ import axios from "axios";
 
 // Cấu hình API
 
+
 const COMPUTER_IP = "172.20.32.89";
+
 
 
 const BASE_URL = `http://${COMPUTER_IP}:3000`;
@@ -55,7 +57,6 @@ api.interceptors.request.use(
 
 // Add response interceptor to handle token refresh
 api.interceptors.response.use(
-
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
@@ -67,12 +68,14 @@ api.interceptors.response.use(
       try {
         const refreshToken = localStorage.getItem("refreshToken");
         const response = await axios.post(`${API_URL}/auth/refresh`, {
-          refreshToken
+          refreshToken,
         });
 
         if (response.data?.accessToken) {
           localStorage.setItem("accessToken", response.data.accessToken);
-          api.defaults.headers.common["Authorization"] = `Bearer ${response.data.accessToken}`;
+          api.defaults.headers.common[
+            "Authorization"
+          ] = `Bearer ${response.data.accessToken}`;
           return api(originalRequest);
         }
       } catch (refreshError) {
@@ -83,7 +86,6 @@ api.interceptors.response.use(
         window.location.href = "/login";
         return Promise.reject(refreshError);
       }
-
     }
 
     return Promise.reject(error);
@@ -93,13 +95,11 @@ api.interceptors.response.use(
 // Hàm kiểm tra kết nối tới server
 export const checkServerConnection = async () => {
   try {
-
-    const response = await axios.get(`${BASE_URL}/health`, { timeout: 5000 });  // Kiểm tra kết nối với endpoint `/health`
-    return response.status === 200;  // Nếu status là 200, server hoạt động
+    const response = await axios.get(`${BASE_URL}/health`, { timeout: 5000 }); // Kiểm tra kết nối với endpoint `/health`
+    return response.status === 200; // Nếu status là 200, server hoạt động
   } catch (error) {
-    console.error('Server connection check failed:', error);
-    return false;  // Nếu có lỗi, trả về false
-
+    console.error("Server connection check failed:", error);
+    return false; // Nếu có lỗi, trả về false
   }
 };
 

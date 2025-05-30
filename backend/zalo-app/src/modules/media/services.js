@@ -58,9 +58,12 @@ const uploadSingleFile = (file) => {
         throw error;
     }
 
+    // Tạo key duy nhất
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 8);
-    const key = `${file.originalname}`;
+    const fileExtension = path.extname(file.originalname);
+    const fileNameWithoutExt = path.basename(file.originalname, fileExtension);
+    const key = `${fileNameWithoutExt}_${timestamp}_${randomStr}${fileExtension}`;
 
     const params = {
         Bucket: BUCKETS.MEDIA,
