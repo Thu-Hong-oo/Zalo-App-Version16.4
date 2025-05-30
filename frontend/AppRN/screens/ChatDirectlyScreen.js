@@ -1072,16 +1072,16 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
   const getCallText = (type, status, duration) => {
     if (type === 'video') {
       switch (status) {
-        case 'started': return 'Bắt đầu video call';
+     
         case 'ended': return `Kết thúc video call${duration ? ` (${formatDuration(duration)})` : ''}`;
-        case 'missed': return 'Video call nhỡ';
-        case 'declined': return 'Video call bị từ chối';
+        case 'missed': return 'Cuộc gọi video bị nhỡ';
+        case 'declined': return 'Cuộc gọi video bị từ chối';
         case 'cancelled': return 'Cuộc gọi video đã bị hủy';
         default: return 'Video call';
       }
     } else {
       switch (status) {
-        case 'started': return 'Bắt đầu cuộc gọi thoại';
+        // case 'started': return 'Bắt đầu cuộc gọi thoại';
         case 'ended': return `Kết thúc cuộc gọi thoại${duration ? ` (${formatDuration(duration)})` : ''}`;
         case 'missed': return 'Cuộc gọi nhỡ';
         case 'declined': return 'Cuộc gọi bị từ chối';
@@ -1165,6 +1165,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
     if (!socket) return;
 
     socket.on('incoming-video-call', (data) => {
+      console.log('INCOMING CALL DATA:', data);
       setIncomingCall(data);
     });
 
@@ -1478,13 +1479,15 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0008' }}>
           <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 24, alignItems: 'center' }}>
             <Text style={{ fontSize: 18, fontWeight: 'bold' }}>Cuộc gọi đến</Text>
-            <Text style={{ marginVertical: 8 }}>{incomingCall?.senderPhone}</Text>
+            <Text style={{ marginVertical: 8 }}>{incomingCall?.senderName}</Text>
             <View style={{ flexDirection: 'row', marginTop: 16 }}>
               <TouchableOpacity
                 style={{ backgroundColor: '#4caf50', padding: 16, borderRadius: 50, marginRight: 16 }}
                 onPress={async () => {
                   socket.emit('accept-video-call', { callId: incomingCall.callId });
                   const localUser = await getUserInfo();
+                  // Lấy token trước khi mở VideoCall
+                  const resToken = await api.post('/video-call/token', { identity: localUser?.phone });
                   navigation.navigate('VideoCall', {
                     callId: incomingCall.callId,
                     roomName: incomingCall.roomName,
@@ -1495,6 +1498,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
                     remoteAvatar: incomingCall.senderAvatar || '',
                     receiverPhone: incomingCall.senderPhone,
                     isCreator: false,
+                    token: resToken.data.data.token, // truyền token vào đây
                   });
                   setIncomingCall(null);
                 }}
@@ -1508,7 +1512,7 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
                   setIncomingCall(null);
                 }}
               >
-                <Ionicons name="call-end" size={32} color="#fff" />
+                <Ionicons name="call-outline" size={32} color="#fff" />
               </TouchableOpacity>
             </View>
           </View>

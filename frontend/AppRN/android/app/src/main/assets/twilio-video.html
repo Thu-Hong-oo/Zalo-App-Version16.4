@@ -135,20 +135,24 @@
             }
           });
           room.on('participantConnected', participant => {
+            console.log('[MOBILE] participantConnected:', participant.identity);
             participant.tracks.forEach(publication => {
               if (publication.isSubscribed && publication.track.kind === 'video') {
+                console.log('[MOBILE] Đã nhận video track từ participant:', participant.identity);
                 document.getElementById('remote-media-div').innerHTML = '';
                 document.getElementById('remote-media-div').appendChild(publication.track.attach());
               }
             });
             participant.on('trackSubscribed', track => {
               if (track.kind === 'video') {
+                console.log('[MOBILE] trackSubscribed video từ participant:', participant.identity);
                 document.getElementById('remote-media-div').innerHTML = '';
                 document.getElementById('remote-media-div').appendChild(track.attach());
               }
             });
             participant.on('trackUnsubscribed', track => {
               if (track.kind === 'video') {
+                console.log('[MOBILE] trackUnsubscribed video từ participant:', participant.identity);
                 track.detach().forEach(element => element.remove());
                 showRemotePlaceholder();
               }
@@ -194,7 +198,22 @@
         if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage('call-ended');
       };
 
-      waitForVars();
+      // Lắng nghe message từ React Native
+      document.addEventListener('message', function(event) {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('Nhận data từ React Native:', data);
+          window.token = data.token;
+          window.roomName = data.roomName;
+          window.localName = data.localName;
+          window.remoteName = data.remoteName;
+          window.localAvatar = data.localAvatar;
+          window.remoteAvatar = data.remoteAvatar;
+          waitForVars();
+        } catch (e) {
+          console.log('Lỗi parse message:', e);
+        }
+      });
     </script>
   </body>
 </html>

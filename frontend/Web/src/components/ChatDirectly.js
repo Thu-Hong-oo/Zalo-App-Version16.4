@@ -1430,7 +1430,7 @@ const ChatDirectly = () => {
           background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999
         }}>
           <div style={{ background: '#fff', borderRadius: 16, padding: 32, minWidth: 300, textAlign: 'center' }}>
-            <h3>Cuộc gọi đến từ {incomingCall.senderPhone}</h3>
+            <h3>Cuộc gọi đến từ {incomingCall.name}</h3>
             <button
               style={{ background: '#4caf50', color: '#fff', padding: 12, borderRadius: 8, margin: 8, fontSize: 16 }}
               onClick={() => {

@@ -110,6 +110,8 @@ const VideoCallScreen = (props) => {
       </View>
     );
   }
+  console.log('VideoCallScreen token:', token);
+  console.log('VideoCallScreen roomName:', roomName);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -130,15 +132,16 @@ const VideoCallScreen = (props) => {
         domStorageEnabled
         allowsInlineMediaPlayback
         mediaPlaybackRequiresUserAction={false}
-        injectedJavaScript={`
-          window.token = '${token}';
-          window.roomName = '${roomName}';
-          window.localName = '${localName}';
-          window.remoteName = '${remoteName}';
-          window.localAvatar = '${localAvatar}';
-          window.remoteAvatar = '${remoteAvatar}';
-          true;
-        `}
+        onLoadEnd={() => {
+          webviewRef.current.postMessage(JSON.stringify({
+            token,
+            roomName,
+            localName,
+            remoteName,
+            localAvatar,
+            remoteAvatar,
+          }));
+        }}
         onMessage={handleWebViewMessage}
       />
     </SafeAreaView>

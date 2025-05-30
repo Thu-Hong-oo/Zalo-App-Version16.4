@@ -121,7 +121,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwaG9uZSI6Ijg0Mzc2O
 
 ### Lấy thông tin người dùng theo số điện thoại
 GET http://localhost:3000/api/users/84389804287
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJlYjZjYWIxNC0wNTRiLTRhYjMtOGU2OS0yMWIzOTRmZjc1ZmQiLCJwaG9uZSI6Ijg0MTIzNDU2Nzg5IiwiaWF0IjoxNzQ1OTE1MzQ1LCJleHAiOjE3NDYwMDE3NDV9.li3_v-dATEOhb1h2mRxtogwNmPxWqt6y86wT05bncwU
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJlYjZjYWIxNC0wNTRiLTRhYjMtOGU2OS0yMWIzOTRmZjc1ZmQiLCJwaG9uZSI6Ijg0MTIzNDU2Nzg5IiwiaWF0IjoxNzQ4NTc1MjA3LCJleHAiOjE3NDg2NjE2MDd9.3KmMzhgMXuNREfNyJHt3ZzotZLV9TPV51aaFZR-ZqE4
 
 ### ========== TIN NHẮN ==========
 

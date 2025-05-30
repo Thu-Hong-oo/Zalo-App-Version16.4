@@ -797,7 +797,7 @@ const sendCallMessage = async ({ conversationId, senderPhone, receiverPhone, sta
         content = 'Cuộc gọi bị từ chối';
         break;
       default:
-        content = `Cuộc gọi video: ${status}`;
+        content = `Cuộc gọi video đã bị hủy`;
     }
 
     const messageId = uuidv4();
