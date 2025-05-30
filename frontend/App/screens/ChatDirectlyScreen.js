@@ -930,12 +930,6 @@ const ChatDirectlyScreen = ({ route, navigation }) => {
                 style={styles.imgPreview}
                 resizeMode="contain"
               />
-              <TouchableOpacity
-                style={styles.downloadButtonFile}
-                onPress={() => downloadFile(item.content)}
-              >
-                <Ionicons name="download" size={24} color="#1877f2" />
-              </TouchableOpacity>
             </TouchableOpacity>
           ) : item.fileType?.startsWith("video/") ? (
             <View style={styles.fullWidthVideoMsgContainer}>
