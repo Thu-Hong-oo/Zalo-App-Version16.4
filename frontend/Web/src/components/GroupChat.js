@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useContext } from "react";
-import { SocketContext } from "../App"; 
+import { SocketContext } from "../App";
 import {
   getGroupDetails,
   getGroupMessages,
@@ -47,12 +47,17 @@ import {
   Sidebar,
   Check,
   CheckCheck,
-  Maximize2,
 } from "lucide-react";
 import "./css/GroupChat.css";
 import api, { getBaseUrl, getApiUrl } from "../config/api";
-import { useDispatch, useSelector } from 'react-redux';
-import { setSelectedGroup, updateGroup, updateGroupName, updateGroupAvatar,removeGroup } from '../redux/slices/groupSlice';
+import { useDispatch, useSelector } from "react-redux";
+import {
+  setSelectedGroup,
+  updateGroup,
+  updateGroupName,
+  updateGroupAvatar,
+  removeGroup,
+} from "../redux/slices/groupSlice";
 import ForwardMessageModal from "./ForwardMessageModal";
 
 const GroupChat = ({ selectedChat }) => {
@@ -97,12 +102,11 @@ const GroupChat = ({ selectedChat }) => {
   const socket = useContext(SocketContext);
   const [groupUpdates, setGroupUpdates] = useState(null);
   const dispatch = useDispatch();
-  const reduxSelectedGroup = useSelector(state => state.group.selectedGroup);
+  const reduxSelectedGroup = useSelector((state) => state.group.selectedGroup);
   const [showForwardModal, setShowForwardModal] = useState(false);
   const [forwarding, setForwarding] = useState(false);
   const [forwardError, setForwardError] = useState(null);
   const [forwardMessageContent, setForwardMessageContent] = useState("");
-  const [uploadErrorModal, setUploadErrorModal] = useState({ show: false, message: "" });
 
   useEffect(() => {
     fetchGroupDetails();
@@ -373,10 +377,11 @@ const GroupChat = ({ selectedChat }) => {
 
         // Filter out messages that have been recalled or deleted
         const filteredMessages = messageArray.filter((msg) => {
-          if (msg.type === 'system') return true; // luôn giữ lại system message
+          if (msg.type === "system") return true; // luôn giữ lại system message
           const isRecalled = msg.recallStatus === "recalled";
           const isDeleted =
-            msg.deleteStatus === "deleted" && msg.deletedBy === currentUserId;
+            // msg.deleteStatus === "deleted" && msg.deletedBy === currentUserId;
+            msg.deleteStatus === "deleted";
           return !isRecalled && !isDeleted;
         });
 
@@ -440,13 +445,7 @@ const GroupChat = ({ selectedChat }) => {
       return null;
     } catch (error) {
       console.error("Error uploading files:", error);
-      // Check for the specific size exceeded error
-      if (error.response && error.response.data && error.response.data.code === 'TOTAL_SIZE_EXCEEDED') {
-        setUploadErrorModal({ show: true, message: error.response.data.message });
-      } else {
-        // Handle other upload errors by showing a generic message or adding to uploadErrors list
-        setUploadErrors((prev) => [...prev, error.message]);
-      }
+      setUploadErrors((prev) => [...prev, error.message]);
       return null;
     } finally {
       setIsUploading(false);
@@ -516,24 +515,21 @@ const GroupChat = ({ selectedChat }) => {
                   type: "file",
                   senderId: currentUserId,
                   timestamp: messageData.createdAt,
-                  fileType: file.type
+                  fileType: file.type,
                 },
-                lastMessageAt: messageData.createdAt
+                lastMessageAt: messageData.createdAt,
               };
-              
-              await api.put(
-                `/groups/${groupId}`,
-                lastMessageData
-              );
-              
+
+              await api.put(`/groups/${groupId}`, lastMessageData);
+
               if (socket) {
                 socket.emit("group:updated", {
                   groupId,
                   type: "LAST_MESSAGE_UPDATED",
                   data: {
                     ...lastMessageData.lastMessage,
-                    lastMessageAt: messageData.createdAt
-                  }
+                    lastMessageAt: messageData.createdAt,
+                  },
                 });
               }
             } catch (error) {
@@ -577,24 +573,21 @@ const GroupChat = ({ selectedChat }) => {
                 content: message.trim(),
                 type: "text",
                 senderId: currentUserId,
-                timestamp: messageData.createdAt
+                timestamp: messageData.createdAt,
               },
-              lastMessageAt: messageData.createdAt
+              lastMessageAt: messageData.createdAt,
             };
-            
-            await api.put(
-              `/groups/${groupId}`,
-              lastMessageData
-            );
-            
+
+            await api.put(`/groups/${groupId}`, lastMessageData);
+
             if (socket) {
               socket.emit("group:updated", {
                 groupId,
                 type: "LAST_MESSAGE_UPDATED",
                 data: {
                   ...lastMessageData.lastMessage,
-                  lastMessageAt: messageData.createdAt
-                }
+                  lastMessageAt: messageData.createdAt,
+                },
               });
             }
           } catch (error) {
@@ -629,20 +622,17 @@ const GroupChat = ({ selectedChat }) => {
 
   const handleDeleteMessage = async (messageId) => {
     try {
-      const response = await deleteGroupMessage(groupId, messageId);
-      if (response.status === "success") {
-        // Remove message from UI immediately
-        setMessages((prev) =>
-          prev.filter((msg) => msg.groupMessageId !== messageId)
-        );
+      // Remove message from UI immediately for better UX
+      setMessages((prev) =>
+        prev.filter((msg) => msg.groupMessageId !== messageId)
+      );
 
-        // Emit socket event for deletion
-        socket.emit("delete-group-message", {
-          groupId,
-          messageId,
-          deletedBy: currentUserId,
-        });
-      }
+      // Emit socket event for deletion - server will handle the actual deletion
+      socket.emit("delete-group-message", {
+        groupId,
+        messageId,
+        deletedBy: currentUserId,
+      });
     } catch (error) {
       console.error("Error deleting message:", error);
       setError("Failed to delete message");
@@ -688,31 +678,20 @@ const GroupChat = ({ selectedChat }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const getFileIcon = (mimeType, fileName = "") => {
-    // Ưu tiên kiểm tra đuôi file nếu có
-    const ext = fileName.split('.').pop().toLowerCase();
-
-    if (mimeType.includes("word") || ext === "doc" || ext === "docx") {
-      return <img src="/icons/word.svg" alt="Word" style={{ width: 50, height: 50 }} />;
-    }
-    if (mimeType.includes("pdf") || ext === "pdf") {
-      return <img src="/icons/pdf.svg" alt="PDF" style={{ width: 50, height: 50 }} />;
-    }
-    if (mimeType.includes("excel") || ext === "xls" || ext === "xlsx") {
-      return <img src="/icons/excel.png" alt="Excel" style={{ width: 50, height: 50 }} />;
-    }
-    if (mimeType.includes("powerpoint") || ext === "ppt" || ext === "pptx") {
-      return <img src="/icons/ppt.png" alt="PowerPoint" style={{ width: 50, height: 50 }} />;
-    }
-    if (mimeType.includes("zip") || mimeType.includes("rar") || ext === "zip" || ext === "rar") {
-      return <img src="/icons/zip.png" alt="Archive" style={{ width: 50, height: 50 }} />;
-    }
-    if (mimeType.includes("image")) {
-      return <FileImage size={24} />;
-    }
-    if (mimeType.includes("video")) {
-      return <FileVideo size={24} />;
-    }
+  const getFileIcon = (mimeType) => {
+    if (mimeType.includes("image")) return <FileImage size={24} />;
+    if (mimeType.includes("video")) return <FileVideo size={24} />;
+    if (mimeType.includes("pdf")) return <FileText size={24} />;
+    if (mimeType.includes("word") || mimeType.includes("document"))
+      return <FileText size={24} />;
+    if (mimeType.includes("powerpoint") || mimeType.includes("presentation"))
+      return <FileText size={24} />;
+    if (
+      mimeType.includes("zip") ||
+      mimeType.includes("rar") ||
+      mimeType.includes("archive")
+    )
+      return <FileArchive size={24} />;
     return <File size={24} />;
   };
 
@@ -722,12 +701,15 @@ const GroupChat = ({ selectedChat }) => {
     const isVideo = fileType.startsWith("video/");
     const fileUrl = message.fileUrl || message.content;
 
+    // Extract filename from S3 URL if no fileName is provided
     let displayFileName = message.fileName;
     if (!displayFileName && fileUrl) {
       try {
+        // Extract filename from URL (assumes URL format like https://media-zalolite.s3.ap-southeast-1.amazonaws.com/filename.ext)
         const urlParts = fileUrl.split("/");
         displayFileName = decodeURIComponent(urlParts[urlParts.length - 1]);
       } catch (error) {
+        console.error("Error extracting filename from URL:", error);
         displayFileName = "Unknown file";
       }
     }
@@ -738,37 +720,37 @@ const GroupChat = ({ selectedChat }) => {
           <img
             src={fileUrl}
             alt={displayFileName}
-            style={{ maxWidth: 220, borderRadius: 10, cursor: "pointer" }}
             onClick={() => setFullscreenMedia({ type: "image", url: fileUrl })}
           />
         ) : isVideo ? (
           <video
             controls
-            style={{ maxWidth: 220, borderRadius: 10, cursor: "pointer" }}
             onClick={() => setFullscreenMedia({ type: "video", url: fileUrl })}
           >
             <source src={fileUrl} type={fileType} />
             Your browser does not support the video tag.
           </video>
         ) : (
-          <>
-            <div className="file-icon">{getFileIcon(fileType, displayFileName)}</div>
-            <div className="file-meta">
-              <div className="file-meta-row">
-                <span className="file-name" title={displayFileName}>{displayFileName}</span>
-                <a
-                  href={fileUrl}
-                  download={displayFileName}
-                  className="download-button"
-                  onClick={e => e.stopPropagation()}
-                  title="Tải xuống"
-                >
-                  <Download size={22} />
-                </a>
+          <div className="file-info">
+            <div className="file-icon">{getFileIcon(fileType)}</div>
+            <div className="file-details">
+              <div className="file-name" title={displayFileName}>
+                {displayFileName}
               </div>
-              <div className="file-desc">Tải về để xem lâu dài</div>
+              <div className="file-size">
+                {message.fileSize ? formatFileSize(message.fileSize) : ""}
+              </div>
             </div>
-          </>
+            <a
+              href={fileUrl}
+              download={displayFileName}
+              className="download-button"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Download size={16} />
+              <span>Tải xuống</span>
+            </a>
+          </div>
         )}
       </div>
     );
@@ -777,47 +759,48 @@ const GroupChat = ({ selectedChat }) => {
   const renderFullscreenModal = () => {
     if (!fullscreenMedia) return null;
 
-    const isImage = fullscreenMedia.type === "image";
-    const isVideo = fullscreenMedia.type === "video";
-    const url = fullscreenMedia.url;
-    const fileName = url ? url.split("/").pop() : "media";
-
     return (
-      <div className="modal-overlay">
-        <div className={isImage ? "image-preview-modal" : "video-preview-modal"}>
-          <div className="modal-header">
-            <button
-              className="close-button"
-              onClick={() => setFullscreenMedia(null)}
-            >
-              <X size={24} />
-            </button>
-            <button
-              className="expand-button"
-              onClick={() => window.open(url, '_blank')}
-            >
-              <Maximize2 size={24} />
-            </button>
-          </div>
-          <div className={isImage ? "image-container" : "video-container"}>
-            {isImage ? (
-              <img src={url} alt="Preview" />
-            ) : (
-              <video src={url} controls autoPlay />
-            )}
-          </div>
+      <div
+        className="fullscreen-modal"
+        onClick={() => setFullscreenMedia(null)}
+      >
+        <div
+          className="fullscreen-content"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {fullscreenMedia.type === "image" ? (
+            <img src={fullscreenMedia.url} alt="Fullscreen" />
+          ) : (
+            <video controls autoPlay>
+              <source src={fullscreenMedia.url} type="video/mp4" />
+              Your browser does not support the video tag.
+            </video>
+          )}
+          <button
+            className="close-fullscreen"
+            onClick={() => setFullscreenMedia(null)}
+          >
+            <X size={20} />
+          </button>
         </div>
       </div>
     );
   };
 
   const renderMessage = (msg) => {
-    if (msg.type === 'system') {
+    if (msg.type === "system") {
       let icon = null;
-      if (msg.content.toLowerCase().includes('tên nhóm')) {
-        icon = <FileEdit size={13} color="#2e89ff" style={{ marginRight: 6 }} />;
-      } else if (msg.content.toLowerCase().includes('avatar') || msg.content.toLowerCase().includes('ảnh đại diện')) {
-        icon = <ImageIcon size={13} color="#2e89ff" style={{ marginRight: 6 }} />;
+      if (msg.content.toLowerCase().includes("tên nhóm")) {
+        icon = (
+          <FileEdit size={13} color="#2e89ff" style={{ marginRight: 6 }} />
+        );
+      } else if (
+        msg.content.toLowerCase().includes("avatar") ||
+        msg.content.toLowerCase().includes("ảnh đại diện")
+      ) {
+        icon = (
+          <ImageIcon size={13} color="#2e89ff" style={{ marginRight: 6 }} />
+        );
       } else {
         icon = <Info size={13} color="#2e89ff" style={{ marginRight: 6 }} />;
       }
@@ -830,18 +813,21 @@ const GroupChat = ({ selectedChat }) => {
     }
     const isMe = msg.senderId === currentUserId;
     const isRecalled = msg.status === "recalled";
-    const isUnread = unreadCount > 0 && msg.groupMessageId === lastReadMessageId;
+    const isUnread =
+      unreadCount > 0 && msg.groupMessageId === lastReadMessageId;
 
     return (
       <div
         key={msg.groupMessageId}
-        className={`message-container ${isMe ? "my-message" : "other-message"} ${
-          isUnread ? "unread" : ""
-        }`}
+        className={`message-container ${
+          isMe ? "my-message" : "other-message"
+        } ${isUnread ? "unread" : ""}`}
         onContextMenu={(e) => {
           e.preventDefault();
-          setSelectedMessage(msg);
-          setShowMessageOptions(true);
+          if (msg.status !== "recalled") {
+            setSelectedMessage(msg);
+            setShowMessageOptions(true);
+          }
         }}
       >
         {!isMe && (
@@ -871,7 +857,7 @@ const GroupChat = ({ selectedChat }) => {
             <span className="message-time">{formatTime(msg.createdAt)}</span>
             {isMe && (
               <div className="message-status">
-                {msg.status === "sent" && <Clock size={12} />}
+                {msg.status === "sent" && <Check size={12} />}
                 {msg.status === "delivered" && <Check size={12} />}
                 {msg.status === "read" && <CheckCheck size={12} />}
               </div>
@@ -1042,13 +1028,12 @@ const GroupChat = ({ selectedChat }) => {
     const handleGroupUpdated = (payload) => {
       if (payload.groupId === groupId) {
         fetchGroupDetails(); // Cập nhật info nhóm
-    
       }
     };
-    socket.on('group:updated', handleGroupUpdated);
+    socket.on("group:updated", handleGroupUpdated);
 
     return () => {
-      socket.off('group:updated', handleGroupUpdated);
+      socket.off("group:updated", handleGroupUpdated);
     };
   }, [socket, groupId]);
 
@@ -1059,13 +1044,13 @@ const GroupChat = ({ selectedChat }) => {
     const handleGroupDissolved = (dissolvedGroupId) => {
       if (dissolvedGroupId === groupId) {
         dispatch(removeGroup(groupId)); // <--- dispatch action xóa group
-        navigate('/app');
+        navigate("/app");
       }
     };
-    socket.on('group:dissolved', handleGroupDissolved);
+    socket.on("group:dissolved", handleGroupDissolved);
 
     return () => {
-      socket.off('group:dissolved', handleGroupDissolved);
+      socket.off("group:dissolved", handleGroupDissolved);
     };
   }, [socket, groupId, dispatch, navigate]);
 
@@ -1321,7 +1306,7 @@ const GroupChat = ({ selectedChat }) => {
         type="file"
         ref={fileInputRef}
         style={{ display: "none" }}
-        accept="image/*,video/*"
+        accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar"
         multiple
         onChange={handleFileSelect}
       />
@@ -1336,31 +1321,6 @@ const GroupChat = ({ selectedChat }) => {
 
       {renderFullscreenModal()}
 
-      {/* Upload Error Modal */}
-      {uploadErrorModal.show && (
-        <div className="modal-overlay" onClick={() => setUploadErrorModal({ show: false, message: "" })}>
-          <div className="modal-content">
-            <div className="modal-header">
-              <h2>Lỗi Upload</h2>
-            </div>
-            <div className="modal-body">
-              <div className="error-message-box">
-              <AlertCircle size={24} color="#ff4d4f" style={{ marginRight: 10 }} />
-                <p>{uploadErrorModal.message}</p>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="modal-button close-button-modal" onClick={() => setUploadErrorModal({ show: false, message: "" })}>
-                Đóng
-              </button>
-              <button className="modal-button retry-button-modal" onClick={() => { /* TODO: Add retry logic */ setUploadErrorModal({ show: false, message: "" }); }}>
-                Thử lại
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Forward Message Modal */}
       {showForwardModal && (
         <ForwardMessageModal
@@ -1373,37 +1333,53 @@ const GroupChat = ({ selectedChat }) => {
               // receivers: array of {id, type ('group' or 'conversation'), phone?}
               const currentTime = new Date().toISOString(); // Giống app
               for (const receiver of receivers) {
-                if (receiver.type === 'group') {
-                  await forwardGroupMessage(groupId, selectedMessage.groupMessageId, receiver.id, 'group');
+                if (receiver.type === "group") {
+                  await forwardGroupMessage(
+                    groupId,
+                    selectedMessage.groupMessageId,
+                    receiver.id,
+                    "group"
+                  );
                 } else {
                   // Nếu là cá nhân, forward qua socket giống app
-                  const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                  const tempId = `temp-${Date.now()}-${Math.random()
+                    .toString(36)
+                    .substr(2, 9)}`;
                   let messageData = {
                     tempId,
-                    receiverPhone: receiver.id,// Ưu tiên phone
+                    receiverPhone: receiver.id, // Ưu tiên phone
                     content: selectedMessage.content,
-                    type: 'text',
+                    type: "text",
                     timestamp: currentTime,
                   };
 
                   // Xử lý nếu tin nhắn gốc là file
-                  if (selectedMessage.type === 'file') {
+                  if (selectedMessage.type === "file") {
                     messageData = {
                       ...messageData,
-                      type: 'file',
-                      fileUrl: selectedMessage.fileUrl || selectedMessage.content,
-                      fileType: selectedMessage.fileType || 
-                                (selectedMessage.content.match(/\.(jpg|jpeg|png|gif)$/i) ? 'image/jpeg' :
-                                 selectedMessage.content.match(/\.(mp4|mov|avi)$/i) ? 'video/mp4' : 
-                                 'application/octet-stream'),
-                      fileName: selectedMessage.fileName || selectedMessage.content.split('/').pop(),
-                      fileSize: selectedMessage.fileSize
+                      type: "file",
+                      fileUrl:
+                        selectedMessage.fileUrl || selectedMessage.content,
+                      fileType:
+                        selectedMessage.fileType ||
+                        (selectedMessage.content.match(/\.(jpg|jpeg|png|gif)$/i)
+                          ? "image/jpeg"
+                          : selectedMessage.content.match(/\.(mp4|mov|avi)$/i)
+                          ? "video/mp4"
+                          : "application/octet-stream"),
+                      fileName:
+                        selectedMessage.fileName ||
+                        selectedMessage.content.split("/").pop(),
+                      fileSize: selectedMessage.fileSize,
                     };
                   }
-                  
+
                   // Emit socket giống app
                   console.log("Receiver object:", receiver);
-                  console.log("WEB EMITTING send-message:", JSON.stringify(messageData, null, 2)); // <--- LOG CÁI NÀY
+                  console.log(
+                    "WEB EMITTING send-message:",
+                    JSON.stringify(messageData, null, 2)
+                  ); // <--- LOG CÁI NÀY
 
                   socket.emit("send-message", messageData);
                 }
@@ -1411,13 +1387,13 @@ const GroupChat = ({ selectedChat }) => {
               setShowForwardModal(false);
             } catch (err) {
               console.error("Error forwarding message:", err);
-              setForwardError('Chuyển tiếp thất bại!');
+              setForwardError("Chuyển tiếp thất bại!");
             } finally {
               setForwarding(false);
             }
           }}
           messageContent={forwardMessageContent}
-          userId={currentUserId} 
+          userId={currentUserId}
         />
       )}
     </div>
