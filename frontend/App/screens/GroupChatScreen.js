@@ -952,17 +952,11 @@ const GroupChatScreen = () => {
           type: file.type || file.mimeType,
           name: file.name,
         };
-        console.log("File object:", fileObject);
         formData.append("files", fileObject);
       });
 
-      console.log("FormData:", formData);
-
       const token = await getAccessToken();
-      console.log("Token:", token);
-
       const uploadUrl = `${getApiUrl()}/chat-group/${groupId}/upload`;
-      console.log("Upload URL:", uploadUrl);
 
       const response = await axios.post(
         uploadUrl,
@@ -980,11 +974,8 @@ const GroupChatScreen = () => {
         }
       );
 
-      console.log("Upload response:", response.data);
-
       if (response.data.status === "error") {
-        setErrorMessage(response.data.message || "Không thể upload file");
-        setShowErrorModal(true);
+        Alert.alert("Lỗi", response.data.message || "Không thể upload file");
         return;
       }
 
@@ -994,12 +985,8 @@ const GroupChatScreen = () => {
         const uploadedFiles = response.data.data.files;
         const fileUrls = response.data.data.urls;
         
-        console.log("Uploaded files:", uploadedFiles);
-        console.log("File URLs:", fileUrls);
-
         if (!uploadedFiles || !fileUrls || uploadedFiles.length !== fileUrls.length) {
-          setErrorMessage("Dữ liệu file không hợp lệ từ server");
-          setShowErrorModal(true);
+          Alert.alert("Lỗi", "Dữ liệu file không hợp lệ từ server");
           return;
         }
 
@@ -1016,8 +1003,6 @@ const GroupChatScreen = () => {
               "file",
               file.mimetype
             );
-
-            console.log("Message saved to DynamoDB:", messageResponse);
 
             if (messageResponse.status === "success") {
               // Tạo tin nhắn với ID thật từ DynamoDB
@@ -1046,7 +1031,6 @@ const GroupChatScreen = () => {
 
               // Gửi tin nhắn qua socket
               if (socket) {
-                console.log("Emitting socket message with content:", fileUrl);
                 socket.emit("new-group-message", {
                   groupId: groupId,
                   senderId: currentUserId,
@@ -1059,13 +1043,13 @@ const GroupChatScreen = () => {
                 });
               }
             } else {
-              setErrorMessage(messageResponse.message || "Failed to save message");
-              setShowErrorModal(true);
+              Alert.alert("Lỗi", messageResponse.message || "Không thể lưu tin nhắn");
+              return;
             }
           } catch (error) {
             console.error("Error saving message to DynamoDB:", error);
-            setErrorMessage(error.message || "Không thể lưu tin nhắn");
-            setShowErrorModal(true);
+            Alert.alert("Lỗi", "Không thể lưu tin nhắn");
+            return;
           }
         }
 
@@ -1076,8 +1060,7 @@ const GroupChatScreen = () => {
       }
     } catch (error) {
       console.error("Upload error:", error);
-      setErrorMessage(error.response?.data?.message || "Không thể tải lên file");
-      setShowErrorModal(true);
+      Alert.alert("Lỗi", error.response?.data?.message || "Không thể tải lên file");
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
