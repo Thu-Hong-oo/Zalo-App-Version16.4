@@ -25,13 +25,28 @@ import PersonalInfoScreen from "./screens/PersonalInfoScreen";
 import UpdateAvatarScreen from "./screens/UpdateAvatarScreen";
 import PersonalDetailScreen from "./screens/PersonalDetailScreen";
 import ChatDirectlyScreen from "./screens/ChatDirectlyScreen";
+import VideoCallScreen from "./screens/VideoCallScreen";
 
-
+import FriendRequestsScreen from "./screens/FriendRequestsScreen";
+import GroupChatScreen from "./screens/GroupChatScreen";
+import GroupCreateScreen from "./screens/GroupCreationScreen";
+import GroupSettingScreen from "./screens/GroupSettingScreen";
+import GroupAddMembersScreen from "./screens/GroupAddMembersScreen";
 // Create Auth Context
 export const AuthContext = createContext(null);
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
+const RootStack = createNativeStackNavigator();
+
+function MainAppStack() {
+  return (
+    <RootStack.Navigator screenOptions={{ headerShown: false }}>
+      <RootStack.Screen name="MainTabs" component={BottomTabs} />
+      <RootStack.Screen name="ChatDirectly" component={ChatDirectlyScreen} />
+    </RootStack.Navigator>
+  );
+}
 
 // Auth stack
 function AuthStack() {
@@ -71,9 +86,15 @@ function AuthStack() {
 function ChatStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-   
       <Stack.Screen name="Chat" component={ChatScreen} />
       <Stack.Screen name="ChatDirectly" component={ChatDirectlyScreen} /> 
+      <Stack.Screen name="GroupChat" component={GroupChatScreen} />
+      <Stack.Screen name="GroupCreation" component={GroupCreateScreen} />
+      <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} />
+      <Stack.Screen name="GroupSetting" component={GroupSettingScreen} />
+      <Stack.Screen name="GroupAddMembers" component={GroupAddMembersScreen} />
+      <Stack.Screen name="VideoCall" component={VideoCallScreen} />
+
     </Stack.Navigator>
   );
 }
@@ -83,7 +104,16 @@ function ContactsStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Contacts" component={Contacts} />
+      <Stack.Screen
+  name="FriendRequests"
+  component={FriendRequestsScreen}
+  options={{ title: "Lời mời kết bạn" }}
+  key={new Date().getTime()} // ép render lại screen mỗi lần vào
+/>
+
+      
     </Stack.Navigator>
+    
   );
 }
 
@@ -261,7 +291,7 @@ export default function App() {
             {!isLoggedIn ? (
               <AuthStack />
             ) : (
-              <BottomTabs />
+              <MainAppStack />
             )}
           </NavigationContainer>
         </SafeAreaProvider>

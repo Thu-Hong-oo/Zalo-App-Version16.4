@@ -1,16 +1,16 @@
-"use client"
 
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { Phone, Lock } from "lucide-react"
 import axios from "axios"
 import 'bootstrap/dist/css/bootstrap.min.css'
+import api, { getBaseUrl, getApiUrl } from "../config/api";
 
 export default function Login({ setIsAuthenticated }) {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState("phone")
-  const [phoneNumber, setPhoneNumber] = useState("")
-  const [password, setPassword] = useState("")
+  const [phoneNumber, setPhoneNumber] = useState("0123456789")
+  const [password, setPassword] = useState("123456")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
@@ -34,7 +34,7 @@ export default function Login({ setIsAuthenticated }) {
       })
 
       // 1. Login request
-      const loginResponse = await axios.post("http://localhost:3000/api/auth/login", {
+      const loginResponse = await api.post("/auth/login", {
         phone: formattedPhone,
         password
       })
@@ -55,12 +55,7 @@ export default function Login({ setIsAuthenticated }) {
 
         try {
           // 2. Fetch user profile
-          const profileResponse = await axios.get("http://localhost:3000/api/users/profile", {
-            headers: {
-              Authorization: `Bearer ${accessToken}`
-            }
-          })
-
+          const profileResponse = await api.get("/users/profile")
           console.log("Profile response:", profileResponse.data)
 
           // Lưu thông tin user profile đầy đủ

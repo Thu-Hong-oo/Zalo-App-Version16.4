@@ -14,12 +14,19 @@ const dynamoDB = new AWS.DynamoDB.DocumentClient();
 const s3 = new AWS.S3();
 const BUCKETS = {
   MEDIA: 'media-zalolite',
-  USERS: 'users-zalolite'
+  USERS: 'users-zalolite',
+
+};
+const TABLES = {
+  USERS: 'users-zalolite',
+  GROUPS: 'groups-zalolite',
+  GROUP_MEMBERS: 'group_members-zalolite'
 };
 
 module.exports = {
   dynamoDB,
   s3,
   AWS,
-  BUCKETS
+  BUCKETS,
+  TABLES
 }; 

@@ -1,7 +1,13 @@
 // Optimized ChatDirectly component
-import React, { useState, useEffect, useRef, useContext, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useContext,
+  useMemo,
+  useCallback,
+} from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { io } from "socket.io-client";
 import EmojiPicker from "emoji-picker-react";
 import {
   ChevronLeft,
@@ -30,21 +36,26 @@ import {
   FileVideo,
   FileArchive,
   AlertCircle,
+  Maximize2,
 } from "lucide-react";
-import api from "../config/api";
+import api, { getBaseUrl, getApiUrl } from "../config/api";
 import "./css/ChatDirectly.css";
 import MessageContextMenu from "./MessageContextMenu";
 import ForwardMessageModal from "./ForwardMessageModal";
 import ConfirmModal from "../../../Web/src/components/ConfirmModal";
+import { SocketContext } from "../App";
+import VideoCall from './VideoCall';
+import CallMessage from './CallMessage';
 
 const ChatDirectly = () => {
-  const [message, setMessage] = useState("");
+  const { phone } = useParams();
   const [messages, setMessages] = useState([]);
-  const [isTyping, setIsTyping] = useState(false);
-  const [socket, setSocket] = useState(null);
-  const [userInfo, setUserInfo] = useState(null);
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const socket = useContext(SocketContext);
+  const [userInfo, setUserInfo] = useState(null);
+  const [isTyping, setIsTyping] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -55,13 +66,18 @@ const ChatDirectly = () => {
   const [showVideoPreview, setShowVideoPreview] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [oldestMessageDate, setOldestMessageDate] = useState(null);
+  const [visibleDates, setVisibleDates] = useState([]);
+  const [initialLoad, setInitialLoad] = useState(true);
+  const [isLoadingDate, setIsLoadingDate] = useState(false);
   const messagesEndRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const emojiPickerRef = useRef(null);
   const attachMenuRef = useRef(null);
   const fileInputRef = useRef(null);
   const documentInputRef = useRef(null);
-  const { phone } = useParams();
   const navigate = useNavigate();
   const [contextMenu, setContextMenu] = useState({
     visible: false,
@@ -87,6 +103,118 @@ const ChatDirectly = () => {
     title: "",
     message: "",
   });
+  const [isVideoCallOpen, setIsVideoCallOpen] = useState(false);
+  const [videoCallRoomName, setVideoCallRoomName] = useState(null);
+  const [videoCallId, setVideoCallId] = useState(null);
+  const [callId, setCallId] = useState(null);
+  const [roomName, setRoomName] = useState(null);
+  const [incomingCall, setIncomingCall] = useState(null);
+
+  // Lấy userId từ localStorage
+  const user = JSON.parse(localStorage.getItem('user'));
+
+  const identity = user.phone;
+
+
+  const extractFilenameFromUrl = (url) => {
+    if (!url) return null;
+    try {
+      // Ưu tiên lấy tên file từ query string nếu có
+      const urlObj = new URL(url, window.location.origin);
+      const filenameParam = urlObj.searchParams.get("filename");
+      if (filenameParam) {
+        return decodeURIComponent(filenameParam);
+      }
+      // Nếu không có, lấy phần cuối cùng sau dấu /
+      let lastPart = url.split("/").pop();
+      // Nếu có dấu ?, cắt bỏ phần query string
+      if (lastPart.includes("?")) {
+        lastPart = lastPart.split("?")[0];
+      }
+      return decodeURIComponent(lastPart);
+    } catch (error) {
+      console.error("Error extracting filename from URL:", error);
+      return null;
+    }
+  };
+
+  const formatDate = (timestamp) => {
+    try {
+      if (!timestamp) return "";
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return "";
+      return date.toLocaleDateString("vi-VN");
+    } catch (error) {
+      console.warn("Date formatting error:", error);
+      return "";
+    }
+  };
+
+  const formatFileSize = (bytes) => {
+    if (!bytes || isNaN(bytes)) return "";
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
+
+  const getFileIcon = (mimeType, fileName = "") => {
+    // Ưu tiên kiểm tra đuôi file nếu có
+    const ext = fileName.split('.').pop().toLowerCase();
+
+    // Kiểm tra đuôi file trước
+    if (ext === "doc" || ext === "docx") {
+      return <img src="/icons/word.svg" alt="Word" style={{ width:40 , height: 40 }} />;
+    }
+    if (ext === "pdf") {
+      return <img src="/icons/pdf.svg" alt="PDF" style={{ width: 40, height: 40 }} />;
+    }
+    if (ext === "xls" || ext === "xlsx") {
+      return <img src="/icons/excel.png" alt="Excel" style={{ width: 40, height: 40 }} />;
+    }
+    if (ext === "ppt" || ext === "pptx") {
+      return <img src="/icons/ppt.png" alt="PowerPoint" style={{ width: 40, height: 40 }} />;
+    }
+    if (ext === "zip" || ext === "rar") {
+      return <img src="/icons/zip.png" alt="Archive" style={{ width: 40, height: 40 }} />;
+    }
+
+    // Nếu không có đuôi file, mới kiểm tra mimeType
+    if (mimeType) {
+      if (mimeType.includes("word")) {
+        return <img src="/icons/word.svg" alt="Word" style={{ width: 40, height: 40 }} />;
+      }
+      if (mimeType.includes("pdf")) {
+        return <img src="/icons/pdf.svg" alt="PDF" style={{ width: 40, height: 40 }} />;
+      }
+      if (mimeType.includes("excel")) {
+        return <img src="/icons/excel.png" alt="Excel" style={{ width: 40, height: 40 }} />;
+      }
+      if (mimeType.includes("powerpoint")) {
+        return <img src="/icons/ppt.png" alt="PowerPoint" style={{ width: 40, height: 40 }} />;
+      }
+      if (mimeType.includes("zip") || mimeType.includes("rar")) {
+        return <img src="/icons/zip.png" alt="Archive" style={{ width: 40, height: 40 }} />;
+      }
+    }
+  };
+
+  const handleDownloadFile = (url, fileName) => {
+    let downloadFileName = fileName;
+    if (!downloadFileName && url) {
+      downloadFileName = extractFilenameFromUrl(url);
+    }
+    if (!downloadFileName) {
+      downloadFileName = "downloaded-file";
+    }
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = downloadFileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Close emoji picker when clicking outside
   useEffect(() => {
@@ -125,24 +253,412 @@ const ChatDirectly = () => {
     }
   };
 
-  const loadChatHistory = async () => {
-    try {
-      setLoading(true);
-      const res = await api.get(`/chat/history/${phone}`);
-      if (res.data.status === "success") {
-        const sorted = res.data.data.messages.sort(
-          (a, b) => a.timestamp - b.timestamp
+  const groupMessagesByDate = (messages) => {
+    const groups = {};
+    messages.forEach((msg) => {
+      const date = formatDate(msg.timestamp);
+      if (!groups[date]) {
+        groups[date] = [];
+      }
+      groups[date].push(msg);
+    });
+    return groups;
+  };
+
+  const loadChatHistory = useCallback(
+    async (loadMore = false) => {
+      try {
+        if (loadMore && !hasMore) return;
+
+        setIsLoadingMore(loadMore);
+        const options = {
+          limit: 50,
+        };
+
+        if (loadMore && oldestMessageDate) {
+          options.date = oldestMessageDate;
+          options.before = true;
+        }
+
+        const response = await api.get(`/chat/history/${phone}`, {
+          params: options,
+        });
+
+        if (response.data.status === "success" && response.data.data.messages) {
+          const messageArray = Object.values(response.data.data.messages)
+            .flat()
+            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+          setMessages((prev) => {
+            if (loadMore) {
+              const combined = [...messageArray, ...prev];
+              const unique = Array.from(
+                new Map(combined.map((msg) => [msg.messageId, msg])).values()
+              );
+              return unique.sort(
+                (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+              );
+            }
+            return messageArray;
+          });
+
+          // Update pagination state
+          setHasMore(response.data.data.pagination.hasMore);
+          if (response.data.data.pagination.oldestTimestamp) {
+            setOldestMessageDate(response.data.data.pagination.oldestTimestamp);
+          }
+
+          // Update visible dates
+          if (!loadMore) {
+            const today = formatDate(Date.now());
+            setVisibleDates([today]);
+            setInitialLoad(false);
+          }
+        }
+
+        // Set loading to false after successful data fetch
+        setLoading(false);
+      } catch (error) {
+        console.error("Error loading chat history:", error);
+        setError("Không thể tải lịch sử trò chuyện");
+        // Also set loading to false in case of error
+        setLoading(false);
+      } finally {
+        setIsLoadingMore(false);
+      }
+    },
+    [phone, hasMore]
+  );
+
+  const loadMoreMessages = useCallback(() => {
+    if (isLoadingDate) return;
+
+    const dates = Object.keys(groupMessagesByDate(messages)).sort(
+      (a, b) => new Date(a) - new Date(b)
+    );
+
+    // Find the oldest visible date
+    const oldestVisibleDate = visibleDates[visibleDates.length - 1];
+    const oldestVisibleIndex = dates.indexOf(oldestVisibleDate);
+
+    // Load just one previous date
+    if (oldestVisibleIndex > 0) {
+      const previousDate = dates[oldestVisibleIndex - 1];
+      setIsLoadingDate(true);
+      setVisibleDates((prev) => [...prev, previousDate]);
+
+      setTimeout(() => {
+        setIsLoadingDate(false);
+      }, 500);
+      return;
+    }
+
+    // If we've shown all local dates and there might be more on server
+    if (oldestVisibleIndex === 0 && hasMore && !isLoadingMore) {
+      loadChatHistory(true);
+    }
+  }, [
+    messages,
+    visibleDates,
+    hasMore,
+    isLoadingMore,
+    isLoadingDate,
+    loadChatHistory,
+  ]);
+
+  const handleScroll = useCallback(
+    (e) => {
+      const element = e.target;
+      if (element.scrollTop === 0) {
+        loadMoreMessages();
+      }
+    },
+    [loadMoreMessages]
+  );
+
+  // Update useEffect for initial load
+  useEffect(() => {
+    if (messages.length > 0) {
+      if (initialLoad) {
+        const today = formatDate(Date.now());
+        setVisibleDates([today]);
+        setInitialLoad(false);
+      }
+    }
+  }, [messages, initialLoad]);
+
+  // Update message rendering logic
+  const renderedMessages = useMemo(() => {
+    const messagesByDate = groupMessagesByDate(messages);
+
+    return Object.keys(messagesByDate)
+      .sort((a, b) => new Date(a) - new Date(b))
+      .map((date) => {
+        if (!visibleDates.includes(date)) {
+          return null;
+        }
+
+        const messagesForDate = messagesByDate[date];
+
+        return (
+          <div key={date} className="date-group">
+            <div className="date-header">
+              <div className="date-line"></div>
+              <span className="date-text">{date}</span>
+              <div className="date-line"></div>
+            </div>
+            {messagesForDate.map((msg, idx) => {
+              const isOther = msg.senderPhone !== localStorage.getItem("phone");
+              const isRecalled = msg.status === "recalled";
+
+              return (
+                <div
+                  key={msg.messageId || idx}
+                  className={`message ${isOther ? "received" : "sent"}`}
+                  onContextMenu={(e) => handleContextMenu(e, msg)}
+                >
+                  <div className={`message-content ${isRecalled ? "recalled" : ""}`}>
+                    {['call', 'video', 'audio'].includes(msg.type) ? (
+                      <CallMessage message={msg} />
+                    ) : isRecalled ? (
+                      <div className="recalled-message-box">
+                        <span className="recalled-icon" style={{ marginRight: 6, verticalAlign: 'middle' }}>
+                          <svg width="18" height="18" fill="#1976d2" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 18.2A8.2 8.2 0 1 1 12 3.8a8.2 8.2 0 0 1 0 16.4zm-.9-5.7h1.8v1.8h-1.8v-1.8zm0-7.2h1.8v5.4h-1.8V7.3z"/></svg>
+                        </span>
+                        <span className="recalled-text" style={{ fontStyle: 'italic', color: '#1976d2' }}>
+                          Tin nhắn đã bị thu hồi
+                        </span>
+                      </div>
+                    ) : msg.type === "file" ? (
+                      <div className="file-message">
+                        {msg.fileType?.startsWith("image/") ? (
+                          <div
+                            className="image-preview"
+                            onClick={() => handleImagePreview(msg.content)}
+                          >
+                            <img src={msg.content} alt="Image" />
+                          </div>
+                        ) : msg.fileType?.startsWith("video/") ? (
+                          <div
+                            className="video-preview"
+                            onClick={() => handleVideoPreview(msg.content)}
+                          >
+                            <video src={msg.content} controls />
+                          </div>
+                        ) : (
+                          <div
+                            className="document-preview"
+                            onClick={() => handleDownloadFile(msg.content, msg.fileName)}
+                          >
+                            <div className="document-icon">
+                              {getFileIcon(msg.fileType, msg.fileName || extractFilenameFromUrl(msg.content))}
+                            </div>
+                            <div className="document-info">
+                              <div className="document-name" style={{ fontWeight: 700, color: '#1565c0' }}>
+                                {msg.fileName || extractFilenameFromUrl(msg.content) || "File"}
+                              </div>
+                              {msg.fileSize && !isNaN(msg.fileSize) && msg.fileSize > 0 && (
+                                <div className="document-size">
+                                  {formatFileSize(msg.fileSize)}
+                                </div>
+                              )}
+                              <div className="document-desc" style={{ color: '#1976d2', fontSize: 13, marginTop: 2 }}>
+                                Tải về để xem lâu dài
+                              </div>
+                            </div>
+                            <div className="document-download">
+                              <button onClick={() => handleDownloadFile(msg.content, msg.fileName)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                <Download size={20} color="#1976d2" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p>{msg.content}</p>
+                    )}
+                    <div className="message-info">
+                      <span className="message-time">
+                        {new Date(msg.timestamp).toLocaleTimeString("vi-VN", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                      {!isOther && msg.status === "sending" && (
+                        <span className="loading-dot">
+                          <span>.</span>
+                          <span>.</span>
+                          <span>.</span>
+                        </span>
+                      )}
+                      {!isOther && msg.status === "delivered" && (
+                        <span className="message-status">Đã nhận</span>
+                      )}
+                      {isRecalled && (
+                        <span className="message-status">Đã thu hồi</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         );
-        setMessages(sorted);
+      })
+      .filter(Boolean);
+  }, [messages, visibleDates]);
+
+  const scrollToBottom = useCallback(() => {
+    const el = messagesEndRef.current;
+    if (!el) return;
+    const container = el.parentElement;
+    const isNearBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      150;
+    if (isNearBottom) el.scrollIntoView({ behavior: "smooth" });
+  }, []);
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!message.trim() && !selectedFiles.length) return;
+
+    let tempId = null;
+    try {
+      if (message.trim()) {
+        const currentUserPhone = localStorage.getItem("phone");
+        tempId = `temp-${Date.now()}`;
+        const newMsg = {
+          messageId: tempId,
+          senderPhone: currentUserPhone,
+          receiverPhone: phone,
+          content: message.trim(),
+          timestamp: Date.now(),
+          status: "sending",
+          isTempId: true,
+        };
+
+        setMessage("");
+        setMessages((prev) => [...prev, newMsg]);
         scrollToBottom();
+
+        socket.emit("send-message", {
+          tempId,
+          receiverPhone: phone,
+          content: newMsg.content,
+        });
+
+        socket.once("message-sent", (response) => {
+          if (response && response.messageId) {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.messageId === tempId
+                  ? {
+                      ...msg,
+                      messageId: response.messageId,
+                      isTempId: false,
+                      status: "sent",
+                    }
+                  : msg
+              )
+            );
+          }
+        });
+
+        socket.once("error", (error) => {
+          console.error("Error sending message:", error);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.messageId === tempId ? { ...msg, status: "error" } : msg
+            )
+          );
+        });
+      }
+
+      if (selectedFiles.length > 0) {
+        await handleUpload(selectedFiles);
       }
     } catch (err) {
-      console.error("Chat history error:", err);
-      setError("Không thể tải lịch sử chat");
-    } finally {
-      setLoading(false);
+      console.error("Error sending message:", err);
+      if (tempId) {
+        setMessages((prev) => prev.filter((msg) => msg.messageId !== tempId));
+      }
+      alert("Không thể gửi tin nhắn. Vui lòng thử lại.");
     }
   };
+
+  useEffect(() => {
+    if (!socket) return;
+    setLoading(true);
+    socket.emit("join-chat", { receiverPhone: phone });
+
+    socket.on("new-message", (msg) => {
+      setMessages((prev) => {
+        const all = [...prev, { ...msg, status: "received" }];
+        const unique = Array.from(new Map(all.map(m => [m.messageId, m])).values());
+        setOldestMessageDate(Math.min(msg.timestamp, oldestMessageDate || 0));
+        return unique.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      });
+      scrollToBottom();
+    });
+
+    socket.on("typing", ({ senderPhone }) => {
+      if (senderPhone === phone) {
+        setIsTyping(true);
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+        }
+        typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 3000);
+      }
+    });
+
+    socket.on("stop_typing", ({ senderPhone }) => {
+      if (senderPhone === phone) {
+        setIsTyping(false);
+      }
+    });
+
+    socket.on("message-recalled", ({ messageId }) => {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.messageId === messageId
+            ? { ...msg, content: "Tin nhắn đã bị thu hồi", status: "recalled" }
+            : msg
+        )
+      );
+    });
+
+    socket.on("message-deleted", ({ messageId }) => {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.messageId === messageId ? { ...msg, status: "deleted" } : msg
+        )
+      );
+    });
+
+    // Initial load
+    Promise.all([fetchUserInfo(), loadChatHistory()])
+      .catch((err) => {
+        console.error("Error during initial load:", err);
+        setError("Không thể tải dữ liệu chat");
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+
+    return () => {
+      if (socket) {
+        socket.emit("leave-chat", { receiverPhone: phone });
+        socket.off("new-message");
+        socket.off("typing");
+        socket.off("stop_typing");
+        socket.off("message-recalled");
+        socket.off("message-deleted");
+      }
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, [socket, phone, loadChatHistory]);
 
   const handleRecallMessage = async () => {
     try {
@@ -258,238 +774,6 @@ const ChatDirectly = () => {
     });
   };
 
-  const initializeSocket = () => {
-    const token = localStorage.getItem("accessToken");
-    if (!token) {
-      console.error("No access token found");
-      return;
-    }
-
-    const newSocket = io("http://:3000", {
-      auth: { token },
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-    });
-
-    newSocket.on("connect", () => {
-      console.log("Socket connected");
-      // Đăng ký nhận tin nhắn cho cuộc trò chuyện hiện tại
-      newSocket.emit("join-chat", { receiverPhone: phone });
-    });
-
-    newSocket.on("connect_error", (error) => {
-      console.error("Socket connection error:", error);
-    });
-
-    newSocket.on("disconnect", (reason) => {
-      console.log("Socket disconnected:", reason);
-    });
-
-    newSocket.on("typing", ({ senderPhone }) => {
-      if (senderPhone === phone) {
-        setIsTyping(true);
-        setTimeout(() => setIsTyping(false), 3000);
-      }
-    });
-
-    newSocket.on("stop_typing", ({ senderPhone }) => {
-      if (senderPhone === phone) setIsTyping(false);
-    });
-
-    newSocket.on("message-recalled", ({ messageId }) => {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.messageId === messageId
-            ? { ...msg, content: "Tin nhắn đã bị thu hồi", status: "recalled" }
-            : msg
-        )
-      );
-    });
-
-    setSocket(newSocket);
-
-    // Cleanup function
-    return () => {
-      if (newSocket) {
-        newSocket.emit("leave-chat", { receiverPhone: phone });
-        newSocket.disconnect();
-      }
-    };
-  };
-
-  useEffect(() => {
-    const cleanup = initializeSocket();
-    fetchUserInfo();
-    loadChatHistory();
-    return () => {
-      cleanup?.();
-    };
-  }, [phone]);
-
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleNewMessage = (msg) => {
-      if (!msg || !msg.messageId) return;
-
-      setMessages((prev) => {
-        // Kiểm tra tin nhắn đã tồn tại
-        const exists = prev.some(
-          (m) =>
-            m.messageId === msg.messageId ||
-            (m.content === msg.content &&
-              m.senderPhone === msg.senderPhone &&
-              Math.abs(m.timestamp - msg.timestamp) < 1000)
-        );
-
-        if (exists) return prev;
-        return [...prev, { ...msg, status: "received" }];
-      });
-      scrollToBottom();
-    };
-
-    const handleMessageRecalled = ({ messageId }) => {
-      if (!messageId) return;
-
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.messageId === messageId || msg.tempId === messageId
-            ? { ...msg, content: "Tin nhắn đã bị thu hồi", status: "recalled" }
-            : msg
-        )
-      );
-    };
-
-    socket.on("new-message", handleNewMessage);
-    socket.on("message-recalled", handleMessageRecalled);
-    socket.on("message-deleted", ({ messageId }) => {
-      if (!messageId) return;
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.messageId === messageId ? { ...msg, status: "deleted" } : msg
-        )
-      );
-    });
-
-    return () => {
-      socket.off("new-message", handleNewMessage);
-      socket.off("message-recalled", handleMessageRecalled);
-      socket.off("message-deleted");
-    };
-  }, [socket]);
-
-  // Thêm effect để tự động load lại tin nhắn khi có thay đổi
-  useEffect(() => {
-    if (socket?.connected) {
-      loadChatHistory();
-    }
-  }, [socket]);
-
-  const scrollToBottom = () => {
-    const el = messagesEndRef.current;
-    if (!el) return;
-    const container = el.parentElement;
-    const isNearBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight <
-      150;
-    if (isNearBottom) el.scrollIntoView({ behavior: "smooth" });
-  };
-
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!message.trim() && !selectedFiles.length) return;
-
-    let tempId = null;
-    try {
-      if (message.trim()) {
-        const currentUserPhone = localStorage.getItem("phone");
-        tempId = `temp-${Date.now()}`;
-        const newMsg = {
-          messageId: tempId,
-          senderPhone: currentUserPhone,
-          receiverPhone: phone,
-          content: message.trim(),
-          timestamp: Date.now(),
-          status: "sending",
-          isTempId: true,
-        };
-
-        setMessage("");
-        setMessages((prev) => [...prev, newMsg]);
-        scrollToBottom();
-
-        // Gửi tin nhắn qua socket và đợi phản hồi
-        socket.emit("send-message", {
-          tempId,
-          receiverPhone: phone,
-          content: newMsg.content,
-        });
-
-        // Lắng nghe phản hồi từ server
-        socket.once("message-sent", (response) => {
-          if (response && response.messageId) {
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.messageId === tempId
-                  ? {
-                      ...msg,
-                      messageId: response.messageId,
-                      isTempId: false,
-                      status: "sent",
-                    }
-                  : msg
-              )
-            );
-          }
-        });
-
-        socket.once("error", (error) => {
-          console.error("Error sending message:", error);
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.messageId === tempId ? { ...msg, status: "error" } : msg
-            )
-          );
-        });
-      }
-
-      if (selectedFiles.length > 0) {
-        await handleUpload(selectedFiles);
-      }
-    } catch (err) {
-      console.error("Error sending message:", err);
-      if (tempId) {
-        setMessages((prev) => prev.filter((msg) => msg.messageId !== tempId));
-      }
-      alert("Không thể gửi tin nhắn. Vui lòng thử lại.");
-    }
-  };
-
-  const extractFilenameFromUrl = (url) => {
-    if (!url) return null;
-    
-    try {
-      // Try to get the filename from the URL
-      const urlParts = url.split('/');
-      const lastPart = urlParts[urlParts.length - 1];
-      
-      // Check if the URL contains a filename parameter
-      const urlParams = new URLSearchParams(url);
-      const filenameParam = urlParams.get('filename');
-      
-      if (filenameParam) {
-        return decodeURIComponent(filenameParam);
-      }
-      
-      // If no filename parameter, use the last part of the URL
-      return lastPart;
-    } catch (error) {
-      console.error("Error extracting filename from URL:", error);
-      return null;
-    }
-  };
-
   const showError = (title, message) => {
     setErrorModal({
       isOpen: true,
@@ -522,7 +806,7 @@ const ChatDirectly = () => {
       console.log("Starting upload with token:", token);
       console.log("Files to upload:", files);
 
-      const response = await fetch("http://192.168.148.43:3000/api/chat/upload", {
+      const response = await fetch(getApiUrl() + "/chat/upload", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -544,24 +828,28 @@ const ChatDirectly = () => {
       result.data.urls.forEach((url, index) => {
         const file = files[index];
         const tempId = `temp-${Date.now()}-${index}`;
-        
+
         // Use the exact original filename
         const originalFileName = file.name;
-        
+
         // Append filename to URL for document types
         let fileUrl = url;
-        if (file.type.includes('pdf') || 
-            file.type.includes('word') || 
-            file.type.includes('document') || 
-            file.type.includes('powerpoint') || 
-            file.type.includes('presentation') ||
-            file.type.includes('excel') ||
-            file.type.includes('spreadsheet')) {
+        if (
+          file.type.includes("pdf") ||
+          file.type.includes("word") ||
+          file.type.includes("document") ||
+          file.type.includes("powerpoint") ||
+          file.type.includes("presentation") ||
+          file.type.includes("excel") ||
+          file.type.includes("spreadsheet")
+        ) {
           // Add filename as a query parameter to the URL
-          const separator = url.includes('?') ? '&' : '?';
-          fileUrl = `${url}${separator}filename=${encodeURIComponent(originalFileName)}`;
+          const separator = url.includes("?") ? "&" : "?";
+          fileUrl = `${url}${separator}filename=${encodeURIComponent(
+            originalFileName
+          )}`;
         }
-        
+
         // Thêm tin nhắn vào danh sách ngay lập tức
         const newMessage = {
           messageId: tempId,
@@ -666,55 +954,6 @@ const ChatDirectly = () => {
     setShowVideoPreview(true);
   };
 
-  const handleDownloadFile = (url, fileName) => {
-    // For document files, use the exact filename from S3 if available
-    let downloadFileName = fileName;
-    
-    if (!downloadFileName && url) {
-      // Try to extract the exact filename from the URL
-      downloadFileName = extractFilenameFromUrl(url);
-    }
-    
-    // If still no filename, use a default name
-    if (!downloadFileName) {
-      downloadFileName = 'downloaded-file';
-    }
-    
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = downloadFileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const getFileIcon = (mimeType) => {
-    if (mimeType.includes('image')) return <FileImage size={24} />;
-    if (mimeType.includes('video')) return <FileVideo size={24} />;
-    if (mimeType.includes('pdf')) return <FileText size={24} />;
-    if (mimeType.includes('word') || mimeType.includes('document')) return <FileText size={24} />;
-    if (mimeType.includes('powerpoint') || mimeType.includes('presentation')) return <FileText size={24} />;
-    if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('archive')) return <FileArchive size={24} />;
-    return <File size={24} />;
-  };
-
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  const handleTyping = () => {
-    if (!socket || typingTimeoutRef.current) return;
-    socket.emit("typing", { receiverPhone: phone });
-    typingTimeoutRef.current = setTimeout(() => {
-      socket.emit("stop_typing", { receiverPhone: phone });
-      typingTimeoutRef.current = null;
-    }, 1000);
-  };
-
   const onEmojiClick = (emojiObject) => {
     const cursor = document.querySelector(".message-input").selectionStart;
     const text =
@@ -752,11 +991,15 @@ const ChatDirectly = () => {
   };
 
   const handleForwardMessage = async (selectedUsers) => {
+    // Log từng receiverPhone để kiểm tra kiểu dữ liệu
+    selectedUsers.forEach((receiverPhone, idx) => {
+      console.log(`receiverPhone[${idx}]:`, receiverPhone, 'type:', typeof receiverPhone);
+    });
     try {
       const promises = selectedUsers.map((receiverPhone) =>
         api.post("/chat/messages/forward", {
           messageId: forwardModal.messageId,
-          receiverPhone,
+          receiverPhone:receiverPhone.id,
           content: forwardModal.messageContent,
         })
       );
@@ -775,105 +1018,73 @@ const ChatDirectly = () => {
     }
   };
 
-  const renderedMessages = useMemo(
-    () =>
-      messages
-        .filter((msg) => msg.status !== "deleted")
-        .map((msg, idx) => {
-          const isOther = msg.senderPhone !== localStorage.getItem("phone");
-          const isRecalled = msg.status === "recalled";
+  // Định nghĩa hàm mở giao diện video call
+  const openVideoCall = (roomName, callId) => {
+    setVideoCallRoomName(roomName);
+    setVideoCallId(callId);
+    setIsVideoCallOpen(true);
+  };
+  // Định nghĩa hàm đóng giao diện video call
+  const closeVideoCall = () => {
+    setIsVideoCallOpen(false);
+    setVideoCallRoomName(null);
+    setVideoCallId(null);
+  };
 
-          return (
-            <div
-              key={msg.messageId || idx}
-              className={`message ${isOther ? "received" : "sent"}`}
-              onContextMenu={(e) => handleContextMenu(e, msg)}
-            >
-              <div
-                className={`message-content ${isRecalled ? "recalled" : ""}`}
-              >
-                {msg.type === "file" ? (
-                  <div className="file-message">
-                    {msg.fileType?.startsWith("image/") ? (
-                      <div className="image-preview" onClick={() => handleImagePreview(msg.content)}>
-                        <img src={msg.content} alt="Image" />
-                      </div>
-                    ) : msg.fileType?.startsWith("video/") ? (
-                      <div className="video-preview" onClick={() => handleVideoPreview(msg.content)}>
-                        <video src={msg.content} controls />
-                      </div>
-                    ) : (
-                      <div className="document-preview" onClick={() => handleDownloadFile(msg.content, msg.fileName)}>
-                        <div className="document-icon">
-                          {getFileIcon(msg.fileType)}
-                        </div>
-                        <div className="document-info">
-                          <div className="document-name">
-                            {msg.fileName || extractFilenameFromUrl(msg.content) || "File"}
-                          </div>
-                          <div className="document-size">{formatFileSize(msg.fileSize)}</div>
-                        </div>
-                        <div className="document-download">
-                          <Download size={20} />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <p>{msg.content}</p>
-                )}
-                <div className="message-info">
-                  <span className="message-time">
-                    {new Date(msg.timestamp).toLocaleTimeString("vi-VN", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                  {!isOther && msg.status === "sending" && (
-                    <span className="loading-dot">
-                      <span>.</span>
-                      <span>.</span>
-                      <span>.</span>
-                    </span>
-                  )}
-                  {!isOther && msg.status === "delivered" && (
-                    <span className="message-status">Đã nhận</span>
-                  )}
-                  {isRecalled && (
-                    <span className="message-status">Đã thu hồi</span>
-                  )}
-                </div>
-              </div>
+  const handleVideoCall = async () => {
+    try {
+      const now = Date.now();
+      const res = await api.post('/video-call/room', { roomName: `room_${now}` });
+      setCallId(res.data.data.callId);
+      setRoomName(res.data.data.room.name);
+      setIsVideoCallOpen(true);
+    } catch (err) {
+      alert('Không thể tạo phòng video call');
+    }
+  };
 
-              {!isRecalled && (
-                <div className="message-actions">
-                  <button
-                    className="action-button forward"
-                    onClick={() => handleForwardClick(msg)}
-                    title="Chuyển tiếp"
-                  >
-                    <ArrowRight size={16} />
-                  </button>
-                  {!isOther && (
-                    <button
-                      className="action-button more"
-                      onClick={(e) => handleContextMenu(e, msg)}
-                      title="Thêm"
-                    >
-                      <MoreHorizontal size={16} />
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        }),
-    [messages]
-  );
+  useEffect(() => {
+    if (!socket) return;
+
+    socket.on('incoming-video-call', (data) => {
+      setIncomingCall(data);
+    });
+
+    socket.on('call-accepted', ({ callId, roomName }) => {
+      setIncomingCall(null);
+      openVideoCall(roomName, callId);
+    });
+
+    socket.on('call-declined', ({ callId }) => {
+      alert('Cuộc gọi bị từ chối');
+      setIncomingCall(null);
+    });
+
+    socket.on('call-ended', ({ callId }) => {
+      alert('Cuộc gọi đã kết thúc');
+      setIncomingCall(null);
+      closeVideoCall();
+    });
+
+    socket.on('call-timeout', ({ callId }) => {
+      alert('Cuộc gọi nhỡ');
+      setIncomingCall(null);
+      closeVideoCall();
+    });
+
+    return () => {
+      socket.off('incoming-video-call');
+      socket.off('call-accepted');
+      socket.off('call-declined');
+      socket.off('call-ended');
+      socket.off('call-timeout');
+    };
+  }, [socket]);
 
   if (loading) return <div className="loading">Đang tải...</div>;
   if (error) return <div className="error">{error}</div>;
 
+  //layout
   return (
     <div className="chat-directly">
       <div className="chat-header">
@@ -897,14 +1108,27 @@ const ChatDirectly = () => {
         </div>
         <div className="header-actions">
           {[Search, Phone, Video, UserPlus, Settings].map((Icon, i) => (
-            <button key={i}>
+            <button 
+              key={i}
+              onClick={() => {
+                if (Icon === Video) {
+                  handleVideoCall();
+                }
+              }}
+            >
               <Icon size={20} />
             </button>
           ))}
         </div>
       </div>
 
-      <div className="messages-container">
+      <div className="messages-container" onScroll={handleScroll}>
+        {isLoadingMore && (
+          <div className="loading-more">
+            <div className="loading-spinner"></div>
+            <span>Đang tải tin nhắn cũ...</span>
+          </div>
+        )}
         <div className="messages-list">
           {renderedMessages}
           <div ref={messagesEndRef} />
@@ -948,7 +1172,7 @@ const ChatDirectly = () => {
       <input
         type="file"
         ref={fileInputRef}
-        style={{ display: 'none' }}
+        style={{ display: "none" }}
         accept="image/*,video/*"
         multiple
         onChange={handleFileSelect}
@@ -956,7 +1180,7 @@ const ChatDirectly = () => {
       <input
         type="file"
         ref={documentInputRef}
-        style={{ display: 'none' }}
+        style={{ display: "none" }}
         accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.rar"
         multiple
         onChange={handleFileSelect}
@@ -975,9 +1199,7 @@ const ChatDirectly = () => {
             <div className="file-list">
               {selectedFiles.map((file, index) => (
                 <div key={index} className="file-item">
-                  <div className="file-icon">
-                    {getFileIcon(file.type)}
-                  </div>
+                  <div className="file-icon">{getFileIcon(file.type)}</div>
                   <div className="file-info">
                     <div className="file-name">{file.name}</div>
                     <div className="file-size">{formatFileSize(file.size)}</div>
@@ -1001,22 +1223,24 @@ const ChatDirectly = () => {
             {isUploading ? (
               <div className="upload-progress">
                 <div className="progress-bar">
-                  <div 
-                    className="progress-fill" 
+                  <div
+                    className="progress-fill"
                     style={{ width: `${uploadProgress}%` }}
                   ></div>
                 </div>
-                <div className="progress-text">Đang upload... {uploadProgress}%</div>
+                <div className="progress-text">
+                  Đang upload... {uploadProgress}%
+                </div>
               </div>
             ) : (
               <div className="modal-actions">
-                <button 
+                <button
                   className="cancel-button"
                   onClick={handleFilePreviewClose}
                 >
                   Hủy
                 </button>
-                <button 
+                <button
                   className="send-button"
                   onClick={() => handleUpload(selectedFiles)}
                   disabled={selectedFiles.length === 0}
@@ -1034,14 +1258,17 @@ const ChatDirectly = () => {
         <div className="modal-overlay">
           <div className="image-preview-modal">
             <div className="modal-header">
-              <button className="close-button" onClick={() => setShowImagePreview(false)}>
+              <button
+                className="close-button"
+                onClick={() => setShowImagePreview(false)}
+              >
                 <X size={24} />
               </button>
-              <button 
-                className="download-button"
-                onClick={() => handleDownloadFile(previewImage, "image.jpg")}
+              <button
+                className="expand-button"
+                onClick={() => window.open(previewImage, '_blank')}
               >
-                <Download size={24} />
+                <Maximize2 size={24} />
               </button>
             </div>
             <div className="image-container">
@@ -1056,14 +1283,17 @@ const ChatDirectly = () => {
         <div className="modal-overlay">
           <div className="video-preview-modal">
             <div className="modal-header">
-              <button className="close-button" onClick={() => setShowVideoPreview(false)}>
+              <button
+                className="close-button"
+                onClick={() => setShowVideoPreview(false)}
+              >
                 <X size={24} />
               </button>
-              <button 
-                className="download-button"
-                onClick={() => handleDownloadFile(previewVideo, "video.mp4")}
+              <button
+                className="expand-button"
+                onClick={() => window.open(previewVideo, '_blank')}
               >
-                <Download size={24} />
+                <Maximize2 size={24} />
               </button>
             </div>
             <div className="video-container">
@@ -1094,16 +1324,16 @@ const ChatDirectly = () => {
                 </div>
               )}
             </div>
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="toolbar-button"
               onClick={handleImageClick}
               title="Gửi ảnh hoặc video"
             >
               <ImageIcon size={20} />
             </button>
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="toolbar-button"
               onClick={handleDocumentClick}
               title="Gửi tài liệu"
@@ -1130,7 +1360,6 @@ const ChatDirectly = () => {
             value={message}
             onChange={(e) => {
               setMessage(e.target.value);
-              handleTyping();
             }}
             onBlur={() => socket?.emit("stop_typing", { receiverPhone: phone })}
             placeholder={`Nhập @, tin nhắn tới ${userInfo?.name || phone}`}
@@ -1142,7 +1371,14 @@ const ChatDirectly = () => {
               className="send-button"
               disabled={!message.trim() && selectedFiles.length === 0}
             >
-              <Send size={20} color={(message.trim() || selectedFiles.length > 0) ? "#1877f2" : "#666"} />
+              <Send
+                size={20}
+                color={
+                  message.trim() || selectedFiles.length > 0
+                    ? "#1877f2"
+                    : "#666"
+                }
+              />
             </button>
           </div>
         </form>
@@ -1160,19 +1396,58 @@ const ChatDirectly = () => {
             </div>
             <p className="error-message">{errorModal.message}</p>
             <div className="error-modal-footer">
-              <button 
+              <button
                 className="error-modal-button secondary"
                 onClick={closeError}
               >
                 Đóng
               </button>
-              <button 
+              <button
                 className="error-modal-button primary"
                 onClick={closeError}
               >
                 Thử lại
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      <VideoCall
+        isOpen={isVideoCallOpen}
+        onClose={closeVideoCall}
+        identity={identity}
+        receiverPhone={phone}
+        receiverName={userInfo?.name || phone}
+        roomName={videoCallRoomName}
+        isCreator={true}
+        callId={videoCallId}
+      />
+
+      {incomingCall && (
+        <div className="incoming-call-modal" style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999
+        }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 32, minWidth: 300, textAlign: 'center' }}>
+            <h3>Cuộc gọi đến từ {incomingCall.name}</h3>
+            <button
+              style={{ background: '#4caf50', color: '#fff', padding: 12, borderRadius: 8, margin: 8, fontSize: 16 }}
+              onClick={() => {
+                socket.emit('accept-video-call', { callId: incomingCall.callId });
+              }}
+            >
+              Nhận cuộc gọi
+            </button>
+            <button
+              style={{ background: '#f44336', color: '#fff', padding: 12, borderRadius: 8, margin: 8, fontSize: 16 }}
+              onClick={() => {
+                socket.emit('decline-video-call', { callId: incomingCall.callId });
+                setIncomingCall(null);
+              }}
+            >
+              Từ chối
+            </button>
           </div>
         </div>
       )}

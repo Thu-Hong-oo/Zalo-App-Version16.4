@@ -13,7 +13,7 @@ const connectedUsers = new Map();
 
 // Configure multer for file upload
 const upload = multer({
-    storage: multer.memoryStorage(),
+  storage: multer.memoryStorage(),
 });
 
 // Helper function để tạo participantId
@@ -66,7 +66,9 @@ const getConversations = async (req, res) => {
     const otherResult = await dynamoDB.scan(otherParams).promise();
 
     const conversationMap = new Map();
-    mainResult.Items.forEach((item) => conversationMap.set(item.conversationId, item));
+    mainResult.Items.forEach((item) =>
+      conversationMap.set(item.conversationId, item)
+    );
     otherResult.Items.forEach((item) => {
       if (!conversationMap.has(item.conversationId)) {
         conversationMap.set(item.conversationId, item);
@@ -103,7 +105,10 @@ const getConversations = async (req, res) => {
     const hasMore = hasMoreMain || hasMoreOther;
 
     const nextLastEvaluatedKey = hasMore
-      ? { main: mainResult.LastEvaluatedKey, other: otherResult.LastEvaluatedKey }
+      ? {
+          main: mainResult.LastEvaluatedKey,
+          other: otherResult.LastEvaluatedKey,
+        }
       : null;
 
     res.json({
@@ -113,8 +118,12 @@ const getConversations = async (req, res) => {
         pagination: {
           total: formattedConversations.length,
           hasMore,
-          lastEvaluatedKey: nextLastEvaluatedKey ? JSON.stringify(nextLastEvaluatedKey) : null,
-          currentPage: lastEvaluatedKey ? parseInt(JSON.parse(lastEvaluatedKey).page || 1) + 1 : 1,
+          lastEvaluatedKey: nextLastEvaluatedKey
+            ? JSON.stringify(nextLastEvaluatedKey)
+            : null,
+          currentPage: lastEvaluatedKey
+            ? parseInt(JSON.parse(lastEvaluatedKey).page || 1) + 1
+            : 1,
           limit: parseInt(limit),
         },
       },
@@ -145,7 +154,9 @@ const getChatHistory = async (req, res) => {
     const { phone } = req.params;
     const currentUserPhone = req.user.phone;
     const conversationId = createParticipantId(currentUserPhone, phone);
+    const { date, limit = 50, before = true } = req.query;
 
+    // Base query params
     const params = {
       TableName: process.env.MESSAGE_TABLE,
       IndexName: "conversationIndex",
@@ -153,29 +164,83 @@ const getChatHistory = async (req, res) => {
       ExpressionAttributeValues: {
         ":conversationId": conversationId,
       },
-      ScanIndexForward: true,
+      ScanIndexForward: !before, // true for ascending (older first), false for descending (newer first)
+      Limit: parseInt(limit),
     };
 
-    if (req.query.lastEvaluatedKey) params.ExclusiveStartKey = JSON.parse(req.query.lastEvaluatedKey);
-    if (req.query.limit) params.Limit = parseInt(req.query.limit);
+    // If date is provided, add timestamp condition
+    if (date) {
+      const timestamp = new Date(date).getTime();
+      if (before) {
+        // Get messages before this date
+        params.KeyConditionExpression += " AND timestamp < :timestamp";
+        params.ExpressionAttributeValues[":timestamp"] = timestamp;
+      } else {
+        // Get messages after this date
+        params.KeyConditionExpression += " AND timestamp > :timestamp";
+        params.ExpressionAttributeValues[":timestamp"] = timestamp;
+      }
+    }
 
     const result = await dynamoDB.query(params).promise();
 
+    // Group messages by date
+    const messagesByDate = {};
+    result.Items.forEach((message) => {
+      const messageDate = new Date(message.timestamp).toLocaleDateString(
+        "vi-VN"
+      );
+      if (!messagesByDate[messageDate]) {
+        messagesByDate[messageDate] = [];
+      }
+      messagesByDate[messageDate].push(message);
+    });
+
+    // Get the oldest and newest timestamps from the results
+    let oldestMessage = null;
+    let newestMessage = null;
+    if (result.Items.length > 0) {
+      const sortedMessages = [...result.Items].sort(
+        (a, b) => a.timestamp - b.timestamp
+      );
+      oldestMessage = sortedMessages[0];
+      newestMessage = sortedMessages[sortedMessages.length - 1];
+    }
+
+    // Format response
     res.json({
       status: "success",
       data: {
-        messages: result.Items,
-        lastEvaluatedKey: result.LastEvaluatedKey ? JSON.stringify(result.LastEvaluatedKey) : null,
+        messages: messagesByDate,
+        pagination: {
+          hasMore: result.LastEvaluatedKey !== undefined,
+          total: result.Items.length,
+          oldestTimestamp: oldestMessage?.timestamp,
+          newestTimestamp: newestMessage?.timestamp,
+          nextDate: result.LastEvaluatedKey
+            ? new Date(result.LastEvaluatedKey.timestamp).toISOString()
+            : null,
+        },
       },
     });
   } catch (error) {
     console.error("Error getting chat history:", error);
-    res.status(500).json({ status: "error", message: "Đã xảy ra lỗi khi lấy lịch sử chat" });
+    res.status(500).json({
+      status: "error",
+      message: "Đã xảy ra lỗi khi lấy lịch sử chat",
+      error: error.message,
+    });
   }
 };
 
 const upsertConversation = async (senderPhone, receiverPhone, lastMessage) => {
   try {
+    // Kiểm tra đầy đủ thông tin trước khi tạo conversation
+    if (!senderPhone || !receiverPhone) {
+      console.error('upsertConversation thiếu senderPhone hoặc receiverPhone', { senderPhone, receiverPhone });
+      return null;
+    }
+
     const conversationId = createParticipantId(senderPhone, receiverPhone);
     const timestamp = Date.now();
 
@@ -199,7 +264,9 @@ const upsertConversation = async (senderPhone, receiverPhone, lastMessage) => {
         },
         updatedAt: timestamp,
         timestamp: timestamp,
-        createdAt: existingConversation.Item ? existingConversation.Item.createdAt : timestamp,
+        createdAt: existingConversation.Item
+          ? existingConversation.Item.createdAt
+          : timestamp,
       },
     };
 
@@ -254,14 +321,20 @@ const initializeSocket = (io) => {
 
       socket.on("send-message", async (data) => {
         try {
-          const { receiverPhone, content, fileUrl, fileType } = data;
+          const { receiverPhone, content, fileUrl, fileType, tempId } = data;
           if (!receiverPhone || (!content && !fileUrl)) {
-            socket.emit("error", { message: "Thiếu thông tin người nhận hoặc nội dung tin nhắn" });
+            socket.emit("error", {
+              message: "Thiếu thông tin người nhận hoặc nội dung tin nhắn",
+              tempId,
+            });
             return;
           }
 
           if (content && content.length > 200) {
-            socket.emit("error", { message: "Tin nhắn quá dài" });
+            socket.emit("error", {
+              message: "Tin nhắn quá dài",
+              tempId,
+            });
             return;
           }
 
@@ -309,10 +382,40 @@ const initializeSocket = (io) => {
             });
           }
 
-          socket.emit("message-sent", { messageId, status: "sent" });
+          // Send confirmation back to sender with both messageId and tempId
+          socket.emit("message-sent", {
+            messageId,
+            tempId,
+            timestamp,
+            status: "sent",
+          });
+
+          // Emit conversation-updated cho cả người gửi và người nhận
+          const preview = {
+            conversationId,
+            lastMessage: fileUrl ? `[File] ${fileType || "file"}` : content,
+            timestamp,
+            sender: userPhone,
+            type: messageType,
+            fileType: fileUrl ? fileType : null,
+          };
+          socket.emit("conversation-updated", preview);
+          if (receiverSocket) {
+            receiverSocket.emit("conversation-updated", preview);
+          }
+
+          console.log("Message sent successfully:", {
+            messageId,
+            tempId,
+            timestamp,
+            status: "sent",
+          });
         } catch (error) {
           console.error("Error in send-message:", error);
-          socket.emit("error", { message: "Lỗi khi gửi tin nhắn" });
+          socket.emit("error", {
+            message: "Lỗi khi gửi tin nhắn",
+            tempId: data.tempId,
+          });
         }
       });
 
@@ -320,14 +423,16 @@ const initializeSocket = (io) => {
         const { receiverPhone } = data;
         if (!receiverPhone) return;
         const receiverSocket = connectedUsers.get(receiverPhone);
-        if (receiverSocket) receiverSocket.emit("typing", { senderPhone: userPhone });
+        if (receiverSocket)
+          receiverSocket.emit("typing", { senderPhone: userPhone });
       });
 
       socket.on("stop-typing", (data) => {
         const { receiverPhone } = data;
         if (!receiverPhone) return;
         const receiverSocket = connectedUsers.get(receiverPhone);
-        if (receiverSocket) receiverSocket.emit("stop-typing", { senderPhone: userPhone });
+        if (receiverSocket)
+          receiverSocket.emit("stop-typing", { senderPhone: userPhone });
       });
 
       socket.on("disconnect", () => {
@@ -362,22 +467,27 @@ const recallMessage = async (req, res) => {
 
     const messages = await dynamoDB.query(queryParams).promise();
     if (!messages.Items || messages.Items.length === 0) {
-      return res.status(404).json({ status: "error", message: "Không tìm thấy tin nhắn" });
+      return res
+        .status(404)
+        .json({ status: "error", message: "Không tìm thấy tin nhắn" });
     }
 
     const message = messages.Items[0];
     if (message.senderPhone !== senderPhone) {
-      return res.status(403).json({ status: "error", message: "Bạn không có quyền thu hồi tin nhắn này" });
+      return res.status(403).json({
+        status: "error",
+        message: "Bạn không có quyền thu hồi tin nhắn này",
+      });
     }
 
     // Check if message is too old to recall (e.g., older than 2 minutes)
     const messageAge = Date.now() - message.timestamp;
-    const MAX_RECALL_TIME = 2 * 60 * 1000; // 2 minutes in milliseconds
-    
+    const MAX_RECALL_TIME = 24 * 60 * 60 * 1000; // 2 minutes in milliseconds
+
     if (messageAge > MAX_RECALL_TIME) {
-      return res.status(400).json({ 
-        status: "error", 
-        message: "Không thể thu hồi tin nhắn sau 2 phút" 
+      return res.status(400).json({
+        status: "error",
+        message: "Không thể thu hồi tin nhắn sau 24h",
       });
     }
 
@@ -386,7 +496,10 @@ const recallMessage = async (req, res) => {
       Key: { messageId: messageId, timestamp: message.timestamp },
       UpdateExpression: "set #status = :status, content = :content",
       ExpressionAttributeNames: { "#status": "status" },
-      ExpressionAttributeValues: { ":status": "recalled", ":content": "Tin nhắn đã bị thu hồi" },
+      ExpressionAttributeValues: {
+        ":status": "recalled",
+        ":content": "Tin nhắn đã bị thu hồi",
+      },
       ReturnValues: "ALL_NEW",
     };
 
@@ -411,14 +524,22 @@ const recallMessage = async (req, res) => {
         conversationId,
         content: recallContent,
         type: message.type,
-        fileType: message.fileType
+        fileType: message.fileType,
       });
     }
 
-    res.json({ status: "success", message: "Đã thu hồi tin nhắn thành công", data: result.Attributes });
+    res.json({
+      status: "success",
+      message: "Đã thu hồi tin nhắn thành công",
+      data: result.Attributes,
+    });
   } catch (error) {
     console.error("Error recalling message:", error);
-    res.status(500).json({ status: "error", message: "Không thể thu hồi tin nhắn sau 2 phút", error: error.message });
+    res.status(500).json({
+      status: "error",
+      message: "Không thể thu hồi tin nhắn sau 2 phút",
+      error: error.message,
+    });
   }
 };
 
@@ -436,12 +557,16 @@ const deleteMessage = async (req, res) => {
 
     const messages = await dynamoDB.scan(queryParams).promise();
     if (!messages.Items || messages.Items.length === 0) {
-      return res.status(404).json({ status: "error", message: "Không tìm thấy tin nhắn" });
+      return res
+        .status(404)
+        .json({ status: "error", message: "Không tìm thấy tin nhắn" });
     }
 
     const message = messages.Items[0];
     if (message.senderPhone !== userPhone) {
-      return res.status(403).json({ status: "error", message: "Không có quyền xóa tin nhắn này" });
+      return res
+        .status(403)
+        .json({ status: "error", message: "Không có quyền xóa tin nhắn này" });
     }
 
     const updateParams = {
@@ -469,11 +594,11 @@ const deleteMessage = async (req, res) => {
 
     const receiverSocket = connectedUsers.get(message.receiverPhone);
     if (receiverSocket) {
-      receiverSocket.emit("message-deleted", { 
-        messageId, 
+      receiverSocket.emit("message-deleted", {
+        messageId,
         conversationId: message.conversationId,
         type: message.type,
-        fileType: message.fileType
+        fileType: message.fileType,
       });
     }
 
@@ -498,7 +623,9 @@ const forwardMessage = async (req, res) => {
 
     const messages = await dynamoDB.scan(queryParams).promise();
     if (!messages.Items || messages.Items.length === 0) {
-      return res.status(404).json({ status: "error", message: "Không tìm thấy tin nhắn gốc" });
+      return res
+        .status(404)
+        .json({ status: "error", message: "Không tìm thấy tin nhắn gốc" });
     }
 
     const originalMessage = messages.Items[0];
@@ -510,7 +637,7 @@ const forwardMessage = async (req, res) => {
     let messageContent = content || originalMessage.content;
     let messageType = originalMessage.type || "text";
     let fileType = null;
-    
+
     // If the original message is a file, preserve the file information
     if (originalMessage.type === "file") {
       messageContent = originalMessage.content; // Use the original file URL
@@ -531,12 +658,13 @@ const forwardMessage = async (req, res) => {
       originalMessageId: messageId,
     };
 
-    await dynamoDB.put({ TableName: process.env.MESSAGE_TABLE, Item: newMessage }).promise();
+    await dynamoDB
+      .put({ TableName: process.env.MESSAGE_TABLE, Item: newMessage })
+      .promise();
 
     // Update conversation with appropriate content based on message type
-    const conversationContent = messageType === "file" 
-      ? `[File] ${fileType || "file"}` 
-      : messageContent;
+    const conversationContent =
+      messageType === "file" ? `[File] ${fileType || "file"}` : messageContent;
 
     await upsertConversation(senderPhone, receiverPhone, {
       content: conversationContent,
@@ -550,49 +678,79 @@ const forwardMessage = async (req, res) => {
     res.json({ status: "success", data: { message: newMessage } });
   } catch (error) {
     console.error("Error forwarding message:", error);
-    res.status(500).json({ status: "error", message: "Lỗi khi chuyển tiếp tin nhắn", error: error.message });
+    res.status(500).json({
+      status: "error",
+      message: "Lỗi khi chuyển tiếp tin nhắn",
+      error: error.message,
+    });
   }
 };
 
 // Route to handle file uploads
-router.post("/upload", authMiddleware, upload.array("files"), async (req, res) => {
+router.post(
+  "/upload",
+  authMiddleware,
+  upload.array("files"),
+  async (req, res) => {
+    try {
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({
+          status: "error",
+          message: "Không có file nào được tải lên",
+          code: "NO_FILES",
+        });
+      }
+
+      const results = await uploadToS3(req.files);
+      const urls = results.map((result) => result.Location);
+
+      res.json({
+        status: "success",
+        data: {
+          urls,
+          files: req.files.map((file) => ({
+            originalname: file.originalname,
+            mimetype: file.mimetype,
+            size: file.size,
+          })),
+        },
+      });
+    } catch (error) {
+      console.error("Upload error:", error);
+      if (error.isValid === false) {
+        return res.status(400).json({
+          status: "error",
+          message: error.message,
+          code: error.code,
+        });
+      }
+      res.status(500).json({
+        status: "error",
+        message: "Đã xảy ra lỗi server",
+        code: "SERVER_ERROR",
+      });
+    }
+  }
+);
+// Đánh dấu đã đọc cho chat cá nhân
+router.post('/read/:phone', authMiddleware, async (req, res) => {
   try {
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({
-        status: "error",
-        message: "Không có file nào được tải lên",
-        code: "NO_FILES",
-      });
-    }
+    const currentUserPhone = req.user.phone;
+    const otherPhone = req.params.phone;
+    const conversationId = createParticipantId(currentUserPhone, otherPhone);
 
-    const results = await uploadToS3(req.files);
-    const urls = results.map((result) => result.Location);
+    // Cập nhật unreadCount về 0 cho currentUserPhone trong conversation
+    const updateParams = {
+      TableName: process.env.CONVERSATION_TABLE,
+      Key: { conversationId, participantId: currentUserPhone },
+      UpdateExpression: 'set unreadCount = :zero',
+      ExpressionAttributeValues: { ':zero': 0 },
+    };
+    await dynamoDB.update(updateParams).promise();
 
-    res.json({
-      status: "success",
-      data: {
-        urls,
-        files: req.files.map((file) => ({
-          originalname: file.originalname,
-          mimetype: file.mimetype,
-          size: file.size,
-        })),
-      },
-    });
+    res.json({ status: 'success' });
   } catch (error) {
-    console.error("Upload error:", error);
-    if (error.isValid === false) {
-      return res.status(400).json({
-        status: "error",
-        message: error.message,
-        code: error.code,
-      });
-    }
-    res.status(500).json({
-      status: "error",
-      message: "Đã xảy ra lỗi server",
-      code: "SERVER_ERROR",
-    });
+    res.status(500).json({ status: 'error', message: error.message });
   }
 });
 
@@ -603,9 +761,152 @@ router.put("/messages/recall", authMiddleware, recallMessage);
 router.delete("/messages/delete", authMiddleware, deleteMessage);
 router.post("/messages/forward", authMiddleware, forwardMessage);
 
+// Hàm gửi thông báo cuộc gọi
+const sendCallMessage = async ({ conversationId, senderPhone, receiverPhone, status, duration, type, callId }) => {
+  try {
+    // Kiểm tra đầy đủ thông tin trước khi tạo message
+    if (!senderPhone || !receiverPhone) {
+      console.error('sendCallMessage thiếu senderPhone hoặc receiverPhone', { senderPhone, receiverPhone });
+      return null;
+    }
+
+    // Đảm bảo conversationId được tạo đúng từ 2 số điện thoại
+    const correctConversationId = [senderPhone, receiverPhone].sort().join('_');
+    if (conversationId !== correctConversationId) {
+      console.warn('sendCallMessage: conversationId không khớp với senderPhone và receiverPhone', {
+        provided: conversationId,
+        correct: correctConversationId
+      });
+      conversationId = correctConversationId;
+    }
+
+    const timestamp = Date.now();
+    let content = '';
+    
+    switch (status) {
+      case 'started':
+        content = 'Bắt đầu cuộc gọi video';
+        break;
+      case 'ended':
+        content = `Kết thúc cuộc gọi video${duration ? ` (${duration}s)` : ''}`;
+        break;
+      case 'missed':
+        content = 'Cuộc gọi nhỡ';
+        break;
+      case 'declined':
+        content = 'Cuộc gọi bị từ chối';
+        break;
+      default:
+        content = `Cuộc gọi video đã bị hủy`;
+    }
+
+    const messageId = uuidv4();
+    const messageParams = {
+      TableName: process.env.MESSAGE_TABLE,
+      Item: {
+        messageId,
+        conversationId,
+        senderPhone,
+        receiverPhone,
+        content,
+        timestamp,
+        status: 'sent',
+        type: type || 'call',
+        callStatus: status,
+        duration: duration || 0,
+        callId
+      }
+    };
+
+    // Nếu là message call, chỉ cho phép tạo 1 bản ghi với cùng conversationId, callId, callStatus
+    if (callId && status) {
+      // Check duplicate trước khi tạo
+      const existingCheck = await dynamoDB.query({
+        TableName: process.env.MESSAGE_TABLE,
+        IndexName: 'conversationIndex',
+        KeyConditionExpression: 'conversationId = :cid',
+        FilterExpression: 'callId = :callId AND callStatus = :status',
+        ExpressionAttributeValues: {
+          ':cid': conversationId,
+          ':callId': callId,
+          ':status': status
+        }
+      }).promise();
+      if (existingCheck.Items.length > 0) {
+        console.log('Duplicate call message prevented');
+        return null;
+      }
+      try {
+        await dynamoDB.put({
+          TableName: process.env.MESSAGE_TABLE,
+          Item: messageParams.Item || messageParams,
+          ConditionExpression: 'attribute_not_exists(callId) AND attribute_not_exists(callStatus)'
+        }).promise();
+      } catch (err) {
+        if (err.code === 'ConditionalCheckFailedException') {
+          console.log('Duplicate call message prevented by DynamoDB condition');
+          return null;
+        }
+        throw err;
+      }
+    } else {
+      await dynamoDB.put({
+        TableName: process.env.MESSAGE_TABLE,
+        Item: messageParams.Item || messageParams
+      }).promise();
+    }
+
+    // Cập nhật conversation
+    await upsertConversation(senderPhone, receiverPhone, {
+      content,
+      timestamp,
+      senderId: senderPhone
+    });
+
+    // Gửi thông báo qua socket nếu người nhận hoặc người gửi đang online
+    const receiverSocket = connectedUsers.get(receiverPhone);
+    if (receiverSocket) {
+      receiverSocket.emit('new-message', {
+        messageId,
+        conversationId,
+        senderPhone,
+        content,
+        timestamp,
+        status: 'delivered',
+        type: type || 'call',
+        callStatus: status,
+        duration: duration || 0,
+        callId
+      });
+    }
+    // Gửi cho cả sender nếu online (và không trùng receiver)
+    const senderSocket = connectedUsers.get(senderPhone);
+    if (senderSocket && senderPhone !== receiverPhone) {
+      senderSocket.emit('new-message', {
+        messageId,
+        conversationId,
+        senderPhone,
+        content,
+        timestamp,
+        status: 'delivered',
+        type: type || 'call',
+        callStatus: status,
+        duration: duration || 0,
+        callId
+      });
+    }
+
+    return messageId;
+  } catch (error) {
+    console.error('Error sending call message:', error);
+    throw error;
+  }
+};
+
 // Export
 module.exports = {
   routes: router,
   socket: initializeSocket,
   connectedUsers,
+  sendCallMessage  // Export hàm sendCallMessage
 };

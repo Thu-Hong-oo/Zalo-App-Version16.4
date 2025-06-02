@@ -1,8 +1,8 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const Joi = require('joi');
-const User = require('../user/model');
-const twilioService = require('../../core/services/twilioService');
+const Joi = require('joi');//Xác thực dữ liệu đầu vào
+const User = require('../user/userService');
+const twilioService = require('../../services/twilioService');
 require('dotenv').config();
 
 // Helper function to format phone number
@@ -24,19 +24,25 @@ const formatPhoneNumber = (phone) => {
 };
 
 // Token generation function
-const generateTokens = (phone) => {
+const generateTokens = (user) => {
     if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
         throw new Error('JWT secrets are not configured');
     }
 
     const accessToken = jwt.sign(
-        { phone },
+        { 
+            userId: user.userId,
+            phone: user.phone 
+        },
         process.env.JWT_SECRET,
         { expiresIn: process.env.JWT_EXPIRATION || '24h' }
     );
     
     const refreshToken = jwt.sign(
-        { phone },
+        { 
+            userId: user.userId,
+            phone: user.phone 
+        },
         process.env.JWT_REFRESH_SECRET,
         { expiresIn: process.env.JWT_REFRESH_TOKEN_EXPIRATION || '7d' }
     );
@@ -140,7 +146,7 @@ const sendRegisterOTP = async (req, res) => {
         // Check if phone number already exists
         const existingUser = await User.getByPhone(formattedPhone);
         if (existingUser) {
-            return res.status(400).json({ message: 'Số điện thoại đã được đăng ký' });
+            return res.status(409).json({ message: 'Số điện thoại đã được đăng ký' });
         }
 
         // Send OTP using twilioService
@@ -191,7 +197,7 @@ const completeRegistration = async (req, res) => {
         // Check if phone number already exists
         const existingUser = await User.getByPhone(formattedPhone);
         if (existingUser) {
-            return res.status(400).json({ message: 'Số điện thoại đã được đăng ký' });
+            return res.status(409).json({ message: 'Số điện thoại đã được đăng ký' });
         }
 
         // Hash password
@@ -206,13 +212,14 @@ const completeRegistration = async (req, res) => {
         });
 
         // Generate tokens
-        const { accessToken, refreshToken } = generateTokens(formattedPhone);
+        const { accessToken, refreshToken } = generateTokens(user);
 
         res.status(201).json({
             message: 'Đăng ký thành công',
             accessToken,
             refreshToken,
             user: {
+                userId: user.userId,
                 phone: user.phone,
                 name: user.name
             }
@@ -248,27 +255,30 @@ const login = async (req, res) => {
         }
 
         // Update user status to online
-        await User.update(formattedPhone, {
-            name: user.name,
-            status: 'online'
-        });
+        await User.update(user.userId, { status: 'online' });
 
         // Generate tokens
-        const { accessToken, refreshToken } = generateTokens(formattedPhone);
+        const { accessToken, refreshToken } = generateTokens(user);
 
-        res.status(200).json({
+        // Remove password from user object
+        const { password: _, ...userWithoutPassword } = user;
+
+        res.json({
             message: 'Đăng nhập thành công',
             accessToken,
             refreshToken,
+
             user: {
+                userId: user.userId,
                 phone: user.phone,
                 name: user.name,
                 status: 'online'
             }
+
         });
     } catch (error) {
-        console.error('Lỗi khi đăng nhập:', error);
-        res.status(500).json({ message: 'Đăng nhập thất bại' });
+        console.error('Login error:', error);
+        res.status(500).json({ message: 'Đăng nhập thất bại', error: error.message });
     }
 };
 
@@ -296,6 +306,7 @@ const resendOTP = async (req, res) => {
 // Refresh token
 const refreshToken = async (req, res) => {
     try {
+        // Validate input
         const { error } = refreshTokenSchema.validate(req.body);
         if (error) {
             return res.status(400).json({ message: error.details[0].message });
@@ -303,37 +314,33 @@ const refreshToken = async (req, res) => {
 
         const { refreshToken: token } = req.body;
 
-        try {
-            // Verify refresh token with JWT_REFRESH_SECRET
-            const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
-            const { phone } = decoded;
+        // Verify refresh token
+        const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+        const { phone, userId } = decoded;
 
-            // Check if user exists
-            const user = await User.getByPhone(phone);
-            if (!user) {
-                return res.status(404).json({ message: 'Không tìm thấy người dùng' });
-            }
-
-            // Generate new tokens
-            const { accessToken, refreshToken: newRefreshToken } = generateTokens(phone);
-
-            res.status(200).json({
-                message: 'Làm mới token thành công',
-                accessToken,
-                refreshToken: newRefreshToken
-            });
-        } catch (tokenError) {
-            if (tokenError.name === 'JsonWebTokenError') {
-                return res.status(401).json({ message: 'Refresh token không hợp lệ' });
-            }
-            if (tokenError.name === 'TokenExpiredError') {
-                return res.status(401).json({ message: 'Refresh token đã hết hạn' });
-            }
-            throw tokenError;
+        // Get user from database
+        const user = await User.getByPhone(phone);
+        if (!user) {
+            return res.status(401).json({ message: 'User not found' });
         }
+
+        // Generate new tokens
+        const { accessToken, refreshToken: newRefreshToken } = generateTokens(user);
+
+        res.json({
+            message: 'Token refreshed successfully',
+            accessToken,
+            refreshToken: newRefreshToken
+        });
     } catch (error) {
-        console.error('Lỗi khi làm mới token:', error);
-        res.status(500).json({ message: 'Làm mới token thất bại' });
+        if (error.name === 'JsonWebTokenError') {
+            return res.status(401).json({ message: 'Invalid refresh token' });
+        }
+        if (error.name === 'TokenExpiredError') {
+            return res.status(401).json({ message: 'Refresh token expired' });
+        }
+        console.error('Refresh token error:', error);
+        res.status(500).json({ message: 'Token refresh failed' });
     }
 };
 
@@ -522,7 +529,7 @@ const requireOnlineStatus = async (req, res, next) => {
     }
 };
 
-// Change password - không yêu cầu trạng thái online
+// Change password - không yêu cầu trạng thái online//vì có thể thay đổi lúc đăng nhập
 const changePassword = async (req, res) => {
     try {
         const { error } = changePasswordSchema.validate(req.body);

@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from "react"
+import { useState, useEffect, createContext, useContext, useCallback } from "react"
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom"
 import {
   Search,
@@ -19,173 +19,242 @@ import {
 } from "lucide-react"
 import "bootstrap/dist/css/bootstrap.min.css"
 import "./App.css"
-
-import { io } from "socket.io-client"
+import { Provider } from 'react-redux';
+import { store } from './redux/store';
+import { useDispatch, useSelector } from 'react-redux';
+import { updateGroup, updateGroupMembers, removeGroup } from './redux/slices/groupSlice';
+import { setUser, updateUserAvatar, updateUserProfile, updateUserStatus } from './redux/slices/userSlice';
+import { io } from "socket.io-client";
+import { getSocketUrl } from "./config/api";
 import Login from "./components/Login"
 import ChatDirectly from "./components/ChatDirectly"
-import api from "./config/api"
+import GroupChat from "./components/GroupChat"
+import FriendList from "./components/FriendList";
+import FriendPanel from "./components/FriendPanel";
+import FriendRequests from "./components/FriendRequests";
+import AddFriendModal from "./components/AddFriendModal";
+import CreateGroupModal from "./components/CreateGroupModal";
+import ChatList from "./components/ChatList";
+import SelfProfileModal from "./components/SelfProfileModal";
+import VideoCall from "./components/VideoCall";
+// Tạo context cho socket
+export const SocketContext = createContext(null);
+export const useSocket = () => useContext(SocketContext);
 
-// Create socket context
-export const SocketContext = createContext(null)
+const debounce = (func, wait) => {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+};
 
 function MainApp({ setIsAuthenticated }) {
-  const [activeTab, setActiveTab] = useState("Ưu tiên")
   const [currentSlide, setCurrentSlide] = useState(0)
-  const [user, setUser] = useState(null)
+  const [user, setUserState] = useState(null)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
-  const [chats, setChats] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [userCache, setUserCache] = useState({})
-  const [selectedChat, setSelectedChat] = useState(null)
+  const [sidebarTab, setSidebarTab] = useState("chat"); // mặc định là chat
+  const [showAddFriendModal, setShowAddFriendModal] = useState(false);
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [socket, setSocket] = useState(null);
+  const [selectedChat, setSelectedChat] = useState(null);
+  const [showSelfProfileModal, setShowSelfProfileModal] = useState(false);
+  const [incomingCall, setIncomingCall] = useState(null);
+  const [showVideoCall, setShowVideoCall] = useState(false);
+  const [videoCallProps, setVideoCallProps] = useState({});
+
   const navigate = useNavigate()
-  const socket = useContext(SocketContext)
+  const dispatch = useDispatch();
+  const reduxUser = useSelector(state => state.user);
 
-  const fetchUserInfo = async (phone) => {
-    try {
-      if (userCache[phone]) {
-        return userCache[phone]
-      }
 
-      const response = await api.get(`/users/${phone}`)
-      if (response.data) {
-        setUserCache(prev => ({
-          ...prev,
-          [phone]: response.data
-        }))
-        return response.data
-      }
-    } catch (error) {
-      console.error("Get user info error:", error)
-      return null
-    }
-  }
-
-  const fetchConversations = async () => {
-    try {
-      const response = await api.get('/chat/conversations');
-      
-      if (response.data.status === 'success' && response.data.data?.conversations) {
-        const newChats = await Promise.all(
-          response.data.data.conversations.map(async (conv) => {
-            const otherParticipant = conv.participant.isCurrentUser
-              ? conv.otherParticipant
-              : conv.participant;
-  
-            const userInfo = await fetchUserInfo(otherParticipant.phone);
-  
-            return {
-              id: conv.conversationId,
-              title: userInfo?.name || otherParticipant.phone,
-              message: conv.lastMessage.content,
-              time: formatTime(conv.lastMessage.timestamp),
-              avatar: userInfo?.avatar,
-              isFromMe: conv.lastMessage.isFromMe,
-              unreadCount: conv.unreadCount || 0,
-              otherParticipantPhone: otherParticipant.phone,
-              senderName: conv.lastMessage.isFromMe ? 'Bạn' : (userInfo?.name || otherParticipant.phone)
-            };
-          })
-        );
-  
-        // 🔍 So sánh dữ liệu mới với dữ liệu cũ
-        const isEqual = JSON.stringify(newChats) === JSON.stringify(chats);
-        if (!isEqual) {
-          setChats(newChats);
-        }
-  
-        setError(null);
-      }
-    } catch (err) {
-      console.error("Error in fetchConversations:", err);
-      setError(err.message || "Failed to load conversations");
-    } finally {
-      setLoading(false);
-    }
-  };
-  
+  // Khởi tạo socket khi đăng nhập
+  useEffect(() => {
+    const token = localStorage.getItem("accessToken");
+    if (!token) return;
+    const newSocket = io(getSocketUrl(), {
+      auth: { token },
+      reconnection: true,
+      transports: ["websocket", "polling"],
+    });
+    setSocket(newSocket);
+    return () => newSocket.disconnect();
+  }, []);
 
   // Initial fetch and user setup
   useEffect(() => {
-    const userStr = localStorage.getItem("user")
+    const userStr = localStorage.getItem("user");
     if (userStr) {
       try {
-        const userData = JSON.parse(userStr)
-        setUser(userData)
+        const userData = JSON.parse(userStr);
+        console.log("userData", userData);
+        setUserState(userData);
+        dispatch(setUser(userData));
       } catch (err) {
-        console.error("Error parsing user data:", err)
+        console.error("Error parsing user data:", err);
       }
     }
-    fetchConversations()
-  }, []) // Run only once on mount
+  }, [dispatch]);
 
-  // Socket event handlers
+  // Tích hợp socket realtime user update
+  useEffect(() => {
+    if (!socket || !reduxUser?.userId) return;
+    // Join vào room riêng
+    socket.emit('join', `user:${reduxUser.userId}`);
+    // Avatar update
+    socket.on('user:avatar_updated', (data) => {
+      dispatch(updateUserAvatar(data.avatarUrl));
+      // Update localStorage
+      const userLS = JSON.parse(localStorage.getItem('user'));
+      if (userLS) {
+        userLS.avatar = data.avatarUrl;
+        localStorage.setItem('user', JSON.stringify(userLS));
+      }
+    });
+    // Profile update
+    socket.on('user:profile_updated', (data) => {
+      dispatch(updateUserProfile(data));
+      const userLS = JSON.parse(localStorage.getItem('user'));
+      if (userLS) {
+        Object.assign(userLS, data);
+        localStorage.setItem('user', JSON.stringify(userLS));
+      }
+    });
+    // Status update
+    socket.on('user:status_updated', (data) => {
+      dispatch(updateUserStatus(data.status));
+      const userLS = JSON.parse(localStorage.getItem('user'));
+      if (userLS) {
+        userLS.status = data.status;
+        localStorage.setItem('user', JSON.stringify(userLS));
+      }
+    });
+    return () => {
+      socket.off('user:avatar_updated');
+      socket.off('user:profile_updated');
+      socket.off('user:status_updated');
+    };
+  }, [socket, reduxUser?.userId, dispatch]);
+
+  // Lắng nghe tất cả các event nhóm và dispatch redux
   useEffect(() => {
     if (!socket) return;
-  
-    const handleNewMessage = async (data) => {
-      console.log("New message received:", data)
-      await fetchConversations()
-    }
-  
-    const handleMessageRead = async (data) => {
-      console.log("Message read status updated:", data)
-      await fetchConversations()
-    }
-  
-    const handleNewConversation = async (data) => {
-      console.log("New conversation created:", data)
-      await fetchConversations()
-    }
-  
-    // Socket listeners
-    socket.on("new_message", handleNewMessage)
-    socket.on("message_read", handleMessageRead)
-    socket.on("new_conversation", handleNewConversation)
-  
-    // 🔄 Polling ẩn mỗi 3s để làm mới trong trường hợp socket miss
-    const pollingInterval = setInterval(() => {
-      fetchConversations()
-    }, 3000)
-  
-    // ✅ Dùng Page Visibility API để load lại khi user quay lại tab
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        fetchConversations()
-      }
-    }
-    document.addEventListener("visibilitychange", handleVisibilityChange)
-  
+
+    const handleGroupUpdated = (payload) => {
+      dispatch(updateGroup(payload));
+    };
+    const handleMemberJoined = (payload) => {
+      dispatch(updateGroupMembers({ groupId: payload.groupId, members: payload.members }));
+    };
+    const handleMemberRemoved = (payload) => {
+      dispatch(updateGroupMembers({ groupId: payload.groupId, members: payload.members }));
+    };
+    const handleGroupDissolved = (groupId) => {
+      dispatch(removeGroup(groupId));
+      // Optionally: chuyển hướng về trang chủ nếu đang ở group đó
+      // navigate('/app');
+    };
+
+    socket.on('group:updated', handleGroupUpdated);
+    socket.on('group:member_joined', handleMemberJoined);
+    socket.on('group:member_removed', handleMemberRemoved);
+    socket.on('group:dissolved', handleGroupDissolved);
+    socket.on('call:offer', handleCallOffer);
+    socket.on('call:answer', handleCallAnswer);
+    socket.on('call:ice_candidate', handleCallIceCandidate);
+    socket.on('call:end', handleCallEnd);
+
     return () => {
-      socket.off("new_message", handleNewMessage)
-      socket.off("message_read", handleMessageRead)
-      socket.off("new_conversation", handleNewConversation)
-      clearInterval(pollingInterval)
-      document.removeEventListener("visibilitychange", handleVisibilityChange)
-    }
-  }, [socket])
-  
+      socket.off('group:updated', handleGroupUpdated);
+      socket.off('group:member_joined', handleMemberJoined);
+      socket.off('group:member_removed', handleMemberRemoved);
+      socket.off('group:dissolved', handleGroupDissolved);
+      socket.off('call:offer', handleCallOffer);
+      socket.off('call:answer', handleCallAnswer);
+      socket.off('call:ice_candidate', handleCallIceCandidate);
+      socket.off('call:end', handleCallEnd);
+    };
+  }, [socket, dispatch]);
 
-  const formatTime = (timestamp) => {
-    const date = new Date(timestamp)
-    const now = new Date()
-    const diff = now - date
+  // Video Call Handlers
+  const handleCallOffer = useCallback(({ offer, callerId }) => {
+    if (socket) {
+      socket.emit('video-call-answer', {
+        callerId,
+        answer: offer
+      });
+    }
+  }, [socket]);
 
-    if (diff < 24 * 60 * 60 * 1000) {
-      return date.toLocaleTimeString("vi-VN", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+  const handleCallAnswer = useCallback(({ answer }) => {
+    if (socket) {
+      socket.emit('video-call-answer', {
+        answer
+      });
     }
-    if (diff < 7 * 24 * 60 * 60 * 1000) {
-      const days = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"]
-      return days[date.getDay()]
+  }, [socket]);
+
+  const handleCallIceCandidate = useCallback(({ candidate }) => {
+    if (socket) {
+      socket.emit('ice-candidate', {
+        candidate
+      });
     }
-    return date.toLocaleDateString("vi-VN", {
-      day: "2-digit",
-      month: "2-digit",
-    })
-  }
+  }, [socket]);
+
+  const handleCallEnd = useCallback(() => {
+    if (socket) {
+      socket.emit('end-video-call');
+    }
+  }, [socket]);
+
+  useEffect(() => {
+    if (socket) {
+      // Video Call Events
+      socket.on('video-call-offer', handleCallOffer);
+      socket.on('video-call-answer', handleCallAnswer);
+      socket.on('ice-candidate', handleCallIceCandidate);
+      socket.on('video-call-ended', handleCallEnd);
+
+      return () => {
+        socket.off('video-call-offer', handleCallOffer);
+        socket.off('video-call-answer', handleCallAnswer);
+        socket.off('ice-candidate', handleCallIceCandidate);
+        socket.off('video-call-ended', handleCallEnd);
+      };
+    }
+  }, [socket, handleCallOffer, handleCallAnswer, handleCallIceCandidate, handleCallEnd]);
+
+  // Lắng nghe cuộc gọi đến
+  useEffect(() => {
+    if (!socket) return;
+    const handleIncomingCall = (data) => {
+      setIncomingCall(data);
+    };
+    socket.on('incoming-video-call', handleIncomingCall);
+    return () => socket.off('incoming-video-call', handleIncomingCall);
+  }, [socket]);
+
+  // Khi người gọi nhận được call-accepted thì join VideoCall
+  useEffect(() => {
+    if (!socket) return;
+    const handleCallAccepted = (data) => {
+      setVideoCallProps({
+        isOpen: true,
+        callId: data.callId,
+        roomName: data.roomName,
+        isCreator: true,
+        // Có thể truyền thêm identity, localName, remoteName, ...
+      });
+      setShowVideoCall(true);
+    };
+    socket.on('call-accepted', handleCallAccepted);
+    return () => socket.off('call-accepted', handleCallAccepted);
+  }, [socket]);
 
   const handleLogout = () => {
     localStorage.removeItem("accessToken")
@@ -201,11 +270,6 @@ function MainApp({ setIsAuthenticated }) {
 
   const handleNextSlide = () => {
     setCurrentSlide((prev) => (prev < 4 ? prev + 1 : 4))
-  }
-
-  const handleChatClick = (chat) => {
-    setSelectedChat(chat.otherParticipantPhone)
-    navigate(`/app/chat/${chat.otherParticipantPhone}`)
   }
 
   const slides = [
@@ -236,240 +300,251 @@ function MainApp({ setIsAuthenticated }) {
   ]
 
   return (
-    <div className="d-flex vh-100" style={{ backgroundColor: "#f0f5ff" }}>
-      {/* Sidebar */}
-      <div className="sidebar">
-        <div className="sidebar-top">
-          <div className="user-profile">
-            <div>
-              <img 
-                src={user?.avatar} 
-                alt={user?.name || "User"} 
-                className="avatar"
-                title={user?.name || "User"}
-                onError={(e) => {
-                  e.target.onerror = null;
-                  e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || "User")}&background=random`;
-                }}
-                style={{
-                  width: "48px",
-                  height: "48px",
-                  borderRadius: "50%",
-                  objectFit: "cover"
-                }}
-              />
-              {user?.status === "online" && (
-                <span className="status-badge"></span>
-              )}
-            </div>
-          </div>
-          <div className="nav-items">
-            <button className="nav-item active">
-              <MessageCircle size={24} />
-            </button>
-            <button className="nav-item">
-              <Users size={24} />
-            </button>
-            <button className="nav-item">
-              <FileText size={24} />
-            </button>
-            <button className="nav-item">
-              <Cloud size={24} />
-            </button>
-            <button className="nav-item">
-              <CheckSquare size={24} />
-            </button>
-            <button className="nav-item">
-              <Database size={24} />
-            </button>
-            <button className="nav-item">
-              <Briefcase size={24} />
-            </button>
-          </div>
-        </div>
-        <div className="sidebar-bottom">
-          <button 
-            className="nav-item settings"
-            onClick={() => setShowProfileMenu(!showProfileMenu)}
-          >
-            <Settings size={24} />
-            {showProfileMenu && (
-              <div className="profile-menu">
-                <button className="menu-item">
-                  <User size={16} />
-                  Thông tin tài khoản
-                </button>
-                <hr />
-                <button className="menu-item danger" onClick={handleLogout}>
-                  <LogOut size={16} />
-                  Đăng xuất
-                </button>
-              </div>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Chat List */}
-      <div className="chat-list">
-        <div className="chat-list-header">
-          <div className="search-box">
-            <div className="search-input-container">
-              <Search size={20} className="search-icon" />
-              <input 
-                type="text" 
-                placeholder="Tìm kiếm bạn bè, nhóm chat" 
-                className="search-input"
-              />
-            </div>
-            <button className="action-button" title="Thêm bạn">
-              <User size={20} />
-            </button>
-            <button className="action-button" title="Tạo nhóm chat">
-              <Users size={20} />
-            </button>
-          </div>
-        </div>
-
-        <div className="chat-tabs">
-          <button
-            className={`chat-tab ${activeTab === "Ưu tiên" ? "active" : ""}`}
-            onClick={() => setActiveTab("Ưu tiên")}
-          >
-            Ưu tiên
-          </button>
-          <button
-            className={`chat-tab ${activeTab === "Khác" ? "active" : ""}`}
-            onClick={() => setActiveTab("Khác")}
-          >
-            Khác
-          </button>
-        </div>
-        {/* Chat items */}
-        <div className="chat-items">
-          {loading ? (
-            <div className="loading-state">Đang tải...</div>
-          ) : error ? (
-            <div className="error-state">
-              <p>{error}</p>
-              <button onClick={fetchConversations}>Thử lại</button>
-            </div>
-          ) : chats.length === 0 ? (
-            <div className="empty-state">Không có cuộc trò chuyện nào</div>
-          ) : (
-            chats.map((chat) => (
-              <div
-                key={chat.id}
-                className={`chat-item ${selectedChat === chat.otherParticipantPhone ? 'active' : ''}`}
-                onClick={() => handleChatClick(chat)}
-              >
-                <div className="chat-avatar">
-                  {chat.avatar ? (
-                    <img src={chat.avatar} alt={chat.title} />
-                  ) : (
-                    <div className="avatar-placeholder">
-                      {chat.title.slice(0, 2).toUpperCase()}
-                    </div>
-                  )}
-                  {chat.unreadCount > 0 && (
-                    <span className="unread-badge">{chat.unreadCount}</span>
-                  )}
-                </div>
-                <div className="chat-info">
-                  <div className="chat-header">
-                    <h3 className="chat-title">{chat.title}</h3>
-                    <span className="chat-time">{chat.time}</span>
-               
-                  </div>
-                     <p className={`chat-message ${chat.unreadCount > 0 ? 'unread' : ''}`}>
-                    {chat.message}
-                  </p>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="main-content">
-        <Routes>
-          <Route path="chat/:phone" element={<ChatDirectly />} />
-          <Route path="/" element={
-            <div className="welcome-screen">
-              <div className="carousel-container">
-                <button className="carousel-btn prev" onClick={handlePrevSlide}>
-                  <ChevronLeft size={24} />
-                </button>
-                <div className="carousel-content">
-                  {slides[currentSlide] && (
-                    <>
-                      <img
-                        src={slides[currentSlide].image}
-                        alt={slides[currentSlide].title}
-                        className="carousel-image"
-                      />
-                      <div className="welcome-text">
-                        <h2>{slides[currentSlide].title}</h2>
-                        <p>{slides[currentSlide].description}</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-                <button className="carousel-btn next" onClick={handleNextSlide}>
-                  <ChevronRight size={24} />
-                </button>
-              </div>
-              
-              <div className="carousel-indicators">
-                {slides.map((slide, index) => (
-                  <button
-                    key={slide.id}
-                    className={`carousel-indicator ${currentSlide === index ? 'active' : ''}`}
-                    onClick={() => setCurrentSlide(index)}
+    <SocketContext.Provider value={socket}>
+      <div className="d-flex vh-100" style={{ backgroundColor: "#f0f5ff" }}>
+        {/* Sidebar */}
+        <div className="sidebar">
+          <div className="sidebar-top">
+            <div className="user-profile">
+            
+                <button
+                  className="profile-avatar-btn"
+                  onClick={() => setShowSelfProfileModal(true)}
+                 
+                >
+                  <img
+                    src={reduxUser?.avatar || '/default-avatar.png'}
+                    alt={reduxUser?.name || "User"}
+                    className="avatar-sidebar"
+                    title={reduxUser?.name || "User"}
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(reduxUser?.name || "User")}&background=random`;
+                    }}
                   />
-                ))}
-              </div>
+                 {reduxUser?.status === "online" && (
+                  <span className="status-badge"></span>
+                )}
+                </button>
+               
+            
             </div>
-          } />
-        </Routes>
+            <div className="nav-items">
+              <button
+                className={`nav-item${sidebarTab === 'chat' ? ' active' : ''}`}
+                onClick={() => setSidebarTab('chat')}
+              >
+                <MessageCircle size={24} />
+              </button>
+              <button
+                className={`nav-item${sidebarTab === 'friends' ? ' active' : ''}`}
+                onClick={() => setSidebarTab('friends')}
+              >
+                <User size={24} />
+              </button>
+              <button className="nav-item">
+                <FileText size={24} />
+              </button>
+              <button className="nav-item">
+                <Cloud size={24} />
+              </button>
+              <button className="nav-item">
+                <CheckSquare size={24} />
+              </button>
+              <button className="nav-item">
+                <Database size={24} />
+              </button>
+              <button className="nav-item">
+                <Briefcase size={24} />
+              </button>
+            </div>
+          </div>
+          <div className="sidebar-bottom">
+            <button
+              className="nav-item settings"
+              onClick={() => setShowProfileMenu(!showProfileMenu)}
+            >
+              <Settings size={24} />
+              {showProfileMenu && (
+                <div className="profile-menu">
+                  <button className="menu-item" onClick={() => setShowSelfProfileModal(true)}>
+                    <User size={16} />
+                    Thông tin tài khoản
+                  </button>
+                  <hr />
+                  <button className="menu-item danger" onClick={handleLogout}>
+                    <LogOut size={16} />
+                    Đăng xuất
+                  </button>
+                </div>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Layout: Khi ở tab chat, hiển thị ChatList + main-content; Khi ở tab friends, chỉ hiển thị FriendPanel */}
+        {user && socket && (
+          <>
+            {sidebarTab === 'chat' && (
+              <>
+                <ChatList
+                  user={user}
+                  setShowAddFriendModal={setShowAddFriendModal}
+                  setShowCreateGroupModal={setShowCreateGroupModal}
+                  socket={socket}
+                  selectedChat={selectedChat}
+                  setSelectedChat={setSelectedChat}
+                />
+                <div className="main-content">
+                  <Routes>
+                    <Route path="/" element={
+                      <div className="welcome-screen">
+                        <div className="carousel-container">
+                          <button className="carousel-btn prev" onClick={handlePrevSlide}>
+                            <ChevronLeft size={24} />
+                          </button>
+                          <div className="carousel-content">
+                            {slides[currentSlide] && (
+                              <>
+                                <img
+                                  src={slides[currentSlide].image}
+                                  alt={slides[currentSlide].title}
+                                  className="carousel-image"
+                                />
+                                <div className="welcome-text">
+                                  <h2>{slides[currentSlide].title}</h2>
+                                  <p>{slides[currentSlide].description}</p>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          <button className="carousel-btn next" onClick={handleNextSlide}>
+                            <ChevronRight size={24} />
+                          </button>
+                        </div>
+                        <div className="carousel-indicators">
+                          {slides.map((slide, index) => (
+                            <button
+                              key={slide.id}
+                              className={`carousel-indicator ${currentSlide === index ? 'active' : ''}`}
+                              onClick={() => setCurrentSlide(index)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    } />
+                    <Route path="chat/:phone" element={<ChatDirectly />} />
+                    <Route path="friends" element={<FriendList />} />
+                    <Route path="contacts" element={<FriendPanel />} />
+                    <Route path="chat/:conversationId" element={<ChatDirectly />} />
+                    <Route path="chat/id/:userId" element={<ChatDirectly />} />
+                    <Route path="groups/:groupId" element={<GroupChat selectedChat={selectedChat} />} />
+                    <Route path="friend-requests" element={<FriendRequests />} />
+                    <Route path="call/:callId" element={<VideoCall />} />
+                  </Routes>
+                </div>
+              </>
+            )}
+            {sidebarTab === 'friends' && (
+              <FriendPanel />
+            )}
+          </>
+        )}
+
+        {showAddFriendModal && (
+          <AddFriendModal
+            currentUser={user} //Truyền toàn bộ user object
+            onClose={() => setShowAddFriendModal(false)}
+          />
+        )}
+        {showSelfProfileModal && (
+          <SelfProfileModal
+            onClose={() => setShowSelfProfileModal(false)}
+            userId={user.userId}
+          />
+        )}
+
+        {/* Modals */}
+        <CreateGroupModal
+          isOpen={showCreateGroupModal}
+          onClose={() => setShowCreateGroupModal(false)}
+          onGroupCreated={null} // Xử lý group mới sẽ do ChatList quản lý
+        />
+
+        {/* <GroupSidebar
+          isOpen={showProfileMenu}
+          onClose={() => setShowProfileMenu(false)}
+        /> */}
+
+        {incomingCall && (
+          <div className="incoming-call-modal">
+            <div>
+              <b>{incomingCall.senderPhone}</b> đang gọi cho bạn
+            </div>
+            <button
+              onClick={async () => {
+                socket.emit('accept-video-call', { callId: incomingCall.callId });
+                setVideoCallProps({
+                  isOpen: true,
+                  callId: incomingCall.callId,
+                  roomName: incomingCall.roomName,
+                  isCreator: false,
+                  // Có thể truyền thêm identity, localName, remoteName, ...
+                });
+                setShowVideoCall(true);
+                setIncomingCall(null);
+              }}
+            >
+              Nhận cuộc gọi
+            </button>
+            <button
+              onClick={() => {
+                socket.emit('decline-video-call', { callId: incomingCall.callId });
+                setIncomingCall(null);
+              }}
+            >
+              Từ chối
+            </button>
+          </div>
+        )}
+
+        {showVideoCall && (
+          <VideoCall
+            {...videoCallProps}
+            onClose={() => setShowVideoCall(false)}
+          />
+        )}
+
       </div>
-    </div>
+    </SocketContext.Provider>
   )
 }
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [socket, setSocket] = useState(null)
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    const token = localStorage.getItem("accessToken");
+    const user = localStorage.getItem("user");
+    return !!(token && user);
+  });
 
+  // Check authentication on mount and when localStorage changes
   useEffect(() => {
-    const token = localStorage.getItem("accessToken")
-    if (token) {
-      setIsAuthenticated(true)
-      const newSocket = io("http://localhost:3000", {
-        auth: {
-          token
-        }
-      })
+    const checkAuth = () => {
+      const token = localStorage.getItem("accessToken");
+      const user = localStorage.getItem("user");
+      setIsAuthenticated(!!(token && user));
+    };
 
-      newSocket.on("connect", () => {
-        console.log("Socket connected!")
-      })
+    // Check auth on mount
+    checkAuth();
 
-      newSocket.on("disconnect", () => {
-        console.log("Socket disconnected!")
-      })
-
-      setSocket(newSocket)
-
-      return () => {
-        newSocket.close()
-      }
-    }
-  }, [isAuthenticated])
+    // Listen for storage changes
+    window.addEventListener('storage', checkAuth);
+    return () => window.removeEventListener('storage', checkAuth);
+  }, []);
 
   return (
-    <SocketContext.Provider value={socket}>
+    <Provider store={store}>
       <Routes>
         <Route
           path="/login"
@@ -493,170 +568,8 @@ function App() {
         />
         <Route path="/" element={<Navigate to="/app" replace />} />
       </Routes>
-    </SocketContext.Provider>
-  )
-}
-
-function ChatItem({ avatars, name, message, time, count, hasMore }) {
-  return (
-    <div className="chat-item" style={{ 
-      padding: '12px 16px',
-      display: 'flex',
-      alignItems: 'flex-start',
-      borderBottom: '1px solid #E6E8EB',
-      cursor: 'pointer',
-      ':hover': {
-        backgroundColor: '#f5f5f5'
-      }
-    }}>
-      <div style={{ position: 'relative', marginRight: '12px' }}>
-        {avatars.length === 1 ? (
-          <div style={{ 
-            width: '48px', 
-            height: '48px', 
-            borderRadius: '12px',
-            overflow: 'hidden'
-          }}>
-            <img 
-              src={avatars[0]} 
-              alt="" 
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover'
-              }}
-            />
-          </div>
-        ) : (
-          <div style={{ 
-            position: 'relative',
-            width: '48px',
-            height: '48px'
-          }}>
-            <div style={{
-              position: 'absolute',
-              top: '0',
-              left: '0',
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              border: '2px solid white'
-            }}>
-              <img 
-                src={avatars[0]} 
-                alt=""
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover'
-                }}
-              />
-            </div>
-            <div style={{
-              position: 'absolute',
-              bottom: '0',
-              right: '0',
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              overflow: 'hidden',
-              border: '2px solid white'
-            }}>
-              <img 
-                src={avatars[1]} 
-                alt=""
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover'
-                }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          marginBottom: '4px'
-        }}>
-          <h3 style={{ 
-            margin: 0,
-            fontSize: '14px',
-            fontWeight: '500',
-            color: '#081C36',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
-          }}>
-            {name}
-          </h3>
-          <span style={{ 
-            fontSize: '12px',
-            color: '#7589A3',
-            whiteSpace: 'nowrap',
-            marginLeft: '8px'
-          }}>
-            {time}
-          </span>
-        </div>
-
-        <div style={{ 
-          display: 'flex',
-          alignItems: 'center'
-        }}>
-          <p style={{ 
-            margin: 0,
-            fontSize: '13px',
-            color: '#7589A3',
-            flex: 1,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
-          }}>
-            {message}
-          </p>
-
-          <div style={{ 
-            display: 'flex',
-            alignItems: 'center',
-            marginLeft: '8px'
-          }}>
-            {count && (
-              <span style={{ 
-                backgroundColor: '#0068FF',
-                color: 'white',
-                padding: '2px 6px',
-                borderRadius: '12px',
-                fontSize: '12px',
-                fontWeight: '500',
-                minWidth: '20px',
-                textAlign: 'center'
-              }}>
-                {count}
-              </span>
-            )}
-            {hasMore && (
-              <span style={{ 
-                backgroundColor: '#E6E8EB',
-                color: '#7589A3',
-                padding: '2px 6px',
-                borderRadius: '12px',
-                fontSize: '12px',
-                marginLeft: '4px'
-              }}>
-                +
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+    </Provider>
+  );
 }
 
 export default App 
