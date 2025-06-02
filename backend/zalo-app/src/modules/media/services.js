@@ -1,9 +1,8 @@
 const { s3, BUCKETS } = require('../../config/aws');
 const path = require('path');
 
-const MAX_FILE_SIZE = 10*1024 * 1024; // tối đa 500KB
+const MAX_FILE_SIZE = 10*1024 * 1024; 
 const MAX_TOTAL_SIZE = 10*1024 * 1024;
-
 const FILE_TYPE_MATCH = [
     "image/png",
     "image/jpeg",
@@ -17,7 +16,11 @@ const FILE_TYPE_MATCH = [
     "application/vnd.rar",
     "application/zip",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/x-compressed",
+    "application/x-rar-compressed",
+    "application/vnd.ms-excel"
 ];
 
 const validateFile = (file) => {
@@ -36,7 +39,7 @@ const validateFile = (file) => {
     if (file.size > MAX_FILE_SIZE) {
         return {
             isValid: false,
-            message: `File "${file.originalname}" vượt quá giới hạn 10MB (hiện tại: ${(file.size/1024).toFixed(2)}KB)`,
+            message: `File "${file.originalname}" vượt quá giới hạn 10MB (hiện tại: ${(totalSize/(1024*1024)).toFixed(2)})`,
             code: "FILE_TOO_LARGE"
         };
     }
@@ -55,9 +58,12 @@ const uploadSingleFile = (file) => {
         throw error;
     }
 
+    // Tạo key duy nhất
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 8);
-    const key = `${file.originalname}`;
+    const fileExtension = path.extname(file.originalname);
+    const fileNameWithoutExt = path.basename(file.originalname, fileExtension);
+    const key = `${fileNameWithoutExt}_${timestamp}_${randomStr}${fileExtension}`;
 
     const params = {
         Bucket: BUCKETS.MEDIA,
@@ -93,7 +99,7 @@ const uploadToS3 = async (files, conversationId) => {
     if (totalSize > MAX_TOTAL_SIZE) {
         throw {
             isValid: false,
-            message: `Tổng dung lượng vượt quá 10MB. Hiện tại là ${(totalSize/1024).toFixed(2)}KB`,
+            message: `Tổng dung lượng vượt quá 10MB. Hiện tại là ${(totalSize/(1024*1024)).toFixed(2)} MB`,
             code: "TOTAL_SIZE_EXCEEDED"
         };
     }
